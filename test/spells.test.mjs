@@ -482,6 +482,24 @@ test("cover: the basic auto-attack (spawnBolt) honors obstacle cover", () => {
   sim.arena.setLayout(null);
 });
 
+test("cover: a blocked bolt reports blocked:true so the sim can emit impact VFX", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  sim.arena.setLayout({
+    plateaus: [],
+    obstacles: [{ id: 1, type: "wall", x: 3, z: 0, r: 0.6, height: 2.5, rot: 0 }],
+  });
+  const bolt = new Bolt("a", 1.2, 0, 0, 0xff5a1e, { groundY: CFG.PLATFORM_TOP });
+  let blocked = false;
+  const dt = 1 / CFG.TICK_RATE;
+  for (let t = 0; t < 1 && !bolt.dead; t += dt) {
+    const r = bolt.step(dt, [a, b], sim.arena, { movementOnly: true });
+    if (r && r.blocked) { blocked = true; break; }
+  }
+  assert.ok(blocked, "bolt blocked by cover must return blocked:true");
+  sim.arena.setLayout(null);
+});
+
 test("cover: a THIN obstacle still blocks a fast bolt (no tunneling)", () => {
   const sim = playingSim();
   const a = sim.players.get("a"), b = sim.players.get("b");

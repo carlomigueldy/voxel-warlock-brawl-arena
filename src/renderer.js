@@ -527,6 +527,13 @@ export class GameRenderer {
           this.audio?.play("hit", this._panFor(ev.x));
           this._shake = Math.min(0.6, this._shake + 0.15);
           break;
+        case "boltFizzle":
+          // Projectile dispersed against cover — burst at the impact point,
+          // tinted to the projectile colour, at the bolt's height (y).
+          this._addEffect(this._burstAt(ev.x, ev.z, ev.c || 0xffcc44, { count: 14, speed: 6, life: 0.4 }, ev.y ?? 1.0));
+          this.audio?.play("hit", this._panFor(ev.x));
+          this._shake = Math.min(0.4, this._shake + 0.08);
+          break;
         case "projectileClash":
           this._addEffect(this._burstAt(ev.x, ev.z, 0x9fe6ff, { count: 26, speed: 10, life: 0.45 }));
           this._addEffect(this._ringPulse(ev.x, ev.z, 2.2, 0xffffff));
@@ -592,9 +599,9 @@ export class GameRenderer {
     }
   }
 
-  _burstAt(x, z, color, opts) {
+  _burstAt(x, z, color, opts, y = 1.0) {
     const g = buildBurst(color, opts);
-    g.position.set(x, 1.0, z);
+    g.position.set(x, y, z);
     return g;
   }
 

@@ -123,7 +123,7 @@ export class Bolt {
         arena && typeof arena.obstaclesBlockingRay === "function") {
       if (arena.obstaclesBlockingRay(this.prevX, this.prevZ, this.y, this.x, this.z, this.y)) {
         this.dead = true;
-        return { hit: null };
+        return { hit: null, blocked: true };
       }
     }
 

@@ -424,7 +424,11 @@ export class Simulation {
     const playerArr = [...this.players.values()];
     const spawned = [];
     for (const b of this.bolts) {
-      b.step(dt, playerArr, this.arena, { movementOnly: true });
+      const mres = b.step(dt, playerArr, this.arena, { movementOnly: true });
+      // Projectile dispersed against terrain/obstacle cover → impact VFX.
+      if (mres && mres.blocked) {
+        this.events.push({ type: "boltFizzle", x: +b.x.toFixed(2), z: +b.z.toFixed(2), y: +b.y.toFixed(2), c: b.color, by: b.ownerId });
+      }
       if (b._spawn && b._spawn.length) spawned.push(...b._spawn);
     }
     this.resolveProjectileClashes();
