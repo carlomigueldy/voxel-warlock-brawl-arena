@@ -14,6 +14,7 @@ const main = fs.readFileSync("src/main.js", "utf8");
 const ui = fs.readFileSync("src/ui.js", "utf8");
 const input = fs.readFileSync("src/input.js", "utf8");
 const html = fs.readFileSync("index.html", "utf8");
+const renderer = fs.readFileSync("src/renderer.js", "utf8");
 
 test("host start is gated by Simulation.startMatch result", () => {
   assert.match(main, /if \(!sim\.startMatch\(\)\)/);
@@ -205,11 +206,43 @@ test("arena builds, animates, and disposes hazard detail props", () => {
 });
 
 test("projectile clash events trigger dedicated VFX and SFX", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
   const audio = fs.readFileSync("src/audio.js", "utf8");
   assert.match(renderer, /case "projectileClash"/);
   assert.match(renderer, /projectileClash/);
   assert.match(audio, /case "projectileClash"/);
+});
+
+test("renderer declares Meshy GLB assets for runes and projectile kinds", () => {
+  assert.match(renderer, /MESHY_ASSETS/);
+  for (const asset of [
+    "assets/meshy/ability-rune.glb",
+    "assets/meshy/projectile-fireball.glb",
+    "assets/meshy/projectile-boomerang.glb",
+    "assets/meshy/projectile-homing.glb",
+    "assets/meshy/projectile-bouncer.glb",
+    "assets/meshy/projectile-splitter.glb",
+    "assets/meshy/projectile-disable.glb",
+    "assets/meshy/projectile-meteor.glb",
+  ]) {
+    assert.match(renderer, new RegExp(asset.replace(/[./-]/g, "\\$&")));
+    assert.ok(fs.existsSync(asset), `${asset} should exist`);
+  }
+});
+
+test("renderer loads Meshy GLBs with procedural fallbacks", () => {
+  assert.match(renderer, /GLTFLoader/);
+  assert.match(renderer, /_loadMeshyAsset/);
+  assert.match(renderer, /buildBolt\(b\.c, b\.k \|\| "fireball"\)/);
+  assert.match(renderer, /buildRune\(r\.c \|\| 0xffffff\)/);
+});
+
+test("renderer labels ability runes with spell names", () => {
+  assert.match(renderer, /import \{ CFG, SPELLS \} from "\.\/config\.js";/);
+  assert.match(renderer, /SPELLS\[r\.spell\]\?\.name/);
+  assert.match(renderer, /_makeLabel\(name, r\.c \|\| 0xffffff, 1\.65\)/);
+  assert.match(renderer, /userData\.label/);
+  assert.match(renderer, /const label = group\.userData\.label/);
+  assert.match(renderer, /if \(label\) group\.add\(label\)/);
 });
 
 console.log(`\n${passed} source checks passed.`);

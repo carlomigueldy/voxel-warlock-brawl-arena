@@ -149,6 +149,14 @@ test("disable silences the target on projectile hit", () => {
   assert.strictEqual(b.canCast("fireball"), false);
 });
 
+test("disable projectile snapshots expose their visual kind", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a");
+  a.x = 0; a.z = 0; a.aim = 0;
+  cast(sim, "a", "disable", 5, 0);
+  assert.strictEqual(sim.snapshot().bolts[0].k, "disable");
+});
+
 test("wind walk and rush boost the caster status", () => {
   const sim = playingSim();
   cast(sim, "a", "windWalk");

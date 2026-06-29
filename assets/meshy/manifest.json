@@ -1,0 +1,57 @@
+{
+  "provider": "Meshy.AI MCP",
+  "generatedAt": "2026-06-29",
+  "style": "voxel low-poly 3D fantasy game assets",
+  "format": "glb",
+  "totalCreditsConsumed": 160,
+  "assets": [
+    {
+      "key": "ability-rune",
+      "file": "ability-rune.glb",
+      "taskId": "019f12bf-2355-71ee-8cb3-a7ee1b80e416",
+      "creditsConsumed": 20
+    },
+    {
+      "key": "projectile-fireball",
+      "file": "projectile-fireball.glb",
+      "taskId": "019f12bf-290d-725a-bd2e-9c2e6eb1baa1",
+      "creditsConsumed": 20
+    },
+    {
+      "key": "projectile-boomerang",
+      "file": "projectile-boomerang.glb",
+      "taskId": "019f12bf-2eeb-7568-ba39-dae5eb7d9ec9",
+      "creditsConsumed": 20
+    },
+    {
+      "key": "projectile-homing",
+      "file": "projectile-homing.glb",
+      "taskId": "019f12bf-34a3-7262-b9fe-f43903bc2015",
+      "creditsConsumed": 20
+    },
+    {
+      "key": "projectile-bouncer",
+      "file": "projectile-bouncer.glb",
+      "taskId": "019f12bf-3a1f-7335-83f6-747c29d62a89",
+      "creditsConsumed": 20
+    },
+    {
+      "key": "projectile-splitter",
+      "file": "projectile-splitter.glb",
+      "taskId": "019f12bf-415a-756a-9750-ec1c015b74af",
+      "creditsConsumed": 20
+    },
+    {
+      "key": "projectile-disable",
+      "file": "projectile-disable.glb",
+      "taskId": "019f12bf-4773-7336-bd82-ce767e0524bb",
+      "creditsConsumed": 20
+    },
+    {
+      "key": "projectile-meteor",
+      "file": "projectile-meteor.glb",
+      "taskId": "019f12bf-4d83-71f2-85f0-6d150aa9f312",
+      "creditsConsumed": 20
+    }
+  ]
+}
