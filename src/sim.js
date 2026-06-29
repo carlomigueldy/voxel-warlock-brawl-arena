@@ -265,6 +265,7 @@ export class Simulation {
       p.falling = false;
       p.vx = p.vz = p.vy = 0;
       p.charge = 0;
+      p._hazardTime = 0;
     }
   }
 
@@ -360,7 +361,7 @@ export class Simulation {
           if (p.alive) {
             p.x = p.timeshift.x; p.z = p.timeshift.z;
             p.charge = p.timeshift.charge;
-            p.vx = p.vz = 0; p.falling = false; p.vy = 0;
+            p.vx = p.vz = 0; p.falling = false; p.vy = 0; p._hazardTime = 0;
             this.events.push({ type: "timeshiftReturn", id: p.id, x: p.x, z: p.z });
           }
           p.timeshift = null;

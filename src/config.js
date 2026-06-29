@@ -47,6 +47,8 @@ export const CFG = {
 
   // --- Warlock movement ---
   MOVE_SPEED: 9,             // units/sec
+  HAZARD_MOVE_SPEED_MUL: 0.3,
+  HAZARD_DEATH_DELAY: 3.5,
   PLAYER_RADIUS: 0.6,
   PLAYER_HEIGHT: 1.8,
   FRICTION: 6.0,             // knockback velocity decay per sec (exponential-ish)

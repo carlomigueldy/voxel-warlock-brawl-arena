@@ -59,6 +59,7 @@ export class Player {
     this._nextBotFireAt = 0;
     this._nextBotAbilityAt = 0;
     this._botCastId = 0;
+    this._hazardTime = 0;
   }
 
   // Recompute modifiers from the player's item loadout.
@@ -141,6 +142,7 @@ export class Player {
     this._nextBotFireAt = 0;
     this._nextBotAbilityAt = 0;
     this._botCastId = 0;
+    this._hazardTime = 0;
     this.status = {
       windWalk: 0, rush: 0, shield: 0, shieldCharges: 0, disabled: 0,
       gravity: 0, gravX: 0, gravZ: 0, gravPull: 0, linkedTo: null, link: 0,
@@ -171,12 +173,14 @@ export class Player {
     const [mx, mz] = this.input.move;
     const mlen = Math.hypot(mx, mz);
     const knockSpeed = Math.hypot(this.vx, this.vz);
+    const inHazard = !arena.isOnPlatform(this.x, this.z);
 
     // Movement control is reduced while being knocked back hard, but Rush and
     // Wind Walk improve mobility per the handbook.
     let speed = CFG.MOVE_SPEED * this.mods.speedMul;
     if (this.status.windWalk > 0) speed *= SPELLS.windWalk.speedMul;
     if (this.status.rush > 0) speed *= SPELLS.rush.speedMul;
+    if (inHazard) speed *= CFG.HAZARD_MOVE_SPEED_MUL;
     const control = knockSpeed > 2 ? 0.25 : 1.0;
     if (mlen > 0.01) {
       const nx = mx / mlen, nz = mz / mlen;
@@ -218,11 +222,15 @@ export class Player {
       if (this._lavaGrace > 0) {
         this._lavaGrace -= dt;
       } else {
-        this.falling = true;
-        this.vy = 1.5; // small pop as they leave the ledge
+        this._hazardTime += dt;
+        if (this._hazardTime >= CFG.HAZARD_DEATH_DELAY) {
+          this.falling = true;
+          this.vy = 1.5;
+        }
       }
     } else {
       this._lavaGrace = undefined;
+      this._hazardTime = 0;
     }
   }
 
@@ -276,6 +284,7 @@ export class Player {
       al: this.alive,
       sp: this.spectating,
       f: this.falling,
+      hz: this._hazardTime > 0 && !this.falling ? +Math.max(0, CFG.HAZARD_DEATH_DELAY - this._hazardTime).toFixed(2) : 0,
       s: this.score,
       // status flags for VFX (1/0 to keep the packet small)
       ww: this.status.windWalk > 0 ? 1 : 0,

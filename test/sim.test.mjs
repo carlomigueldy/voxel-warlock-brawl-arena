@@ -130,7 +130,12 @@ test("charge increases knockback on subsequent hits (Smash-style)", () => {
   assert.ok(secondKb > firstKb, "knockback did not scale with charge");
 });
 
-test("a player knocked past the edge falls and dies", () => {
+test("hazard death delay stays within the recovery target window", () => {
+  assert.ok(CFG.HAZARD_DEATH_DELAY >= 3);
+  assert.ok(CFG.HAZARD_DEATH_DELAY <= 5);
+});
+
+test("a player knocked into the hazard zone gets a short recovery window before dying", () => {
   const sim = new Simulation();
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
@@ -138,8 +143,81 @@ test("a player knocked past the edge falls and dies", () => {
   const b = sim.players.get("b");
   b.x = CFG.ARENA_RADIUS - 0.1; b.z = 0;
   b.vx = 60; // huge shove off the edge
-  advance(sim, 3);
-  assert.strictEqual(b.alive, false, "player off the edge should be dead");
+  advance(sim, 1);
+  assert.strictEqual(b.alive, true, "player should survive briefly in the hazard zone");
+  assert.strictEqual(b.falling, false, "player should remain controllable during the recovery window");
+  advance(sim, CFG.HAZARD_DEATH_DELAY + 0.2);
+  assert.strictEqual(b.alive, false, "player should die after the hazard death delay expires");
+});
+
+test("a player in the hazard zone can recover by moving back onto the platform", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const b = sim.players.get("b");
+  b.x = CFG.ARENA_RADIUS + 0.2; b.z = 0;
+  b.vx = 0; b.vz = 0;
+  sim.setInput("b", { move: [-1, 0], aim: Math.PI, fire: false, seq: 1 });
+  advance(sim, 0.5);
+  assert.strictEqual(b.alive, true);
+  assert.strictEqual(b.falling, false);
+  assert.ok(sim.arena.isOnPlatform(b.x, b.z), "player should be back on the platform");
+  advance(sim, CFG.HAZARD_DEATH_DELAY + 0.2);
+  assert.strictEqual(b.alive, true, "recovered player should not keep burning after returning");
+});
+
+test("hazard zone exposes a local countdown before the fall", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const b = sim.players.get("b");
+  b.x = CFG.ARENA_RADIUS + 0.2; b.z = 0;
+  b.vx = 0; b.vz = 0;
+  sim.step(1 / CFG.TICK_RATE);
+  const snap = sim.snapshot().players.find((p) => p.id === "b");
+  assert.ok(snap.hz > 0, "hazard countdown should be visible in snapshots");
+  assert.ok(snap.hz <= CFG.HAZARD_DEATH_DELAY);
+});
+
+test("swap can recover a player from the hazard zone", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  const b = sim.players.get("b");
+  a.x = 1; a.z = 0;
+  b.x = CFG.ARENA_RADIUS + 0.2; b.z = 0;
+  b.vx = 0; b.vz = 0;
+  sim.setInput("b", { move: [0, 0], aim: Math.PI, fire: false, seq: 1, casts: [{ id: 1, spell: "swap", tx: 0, tz: 0 }] });
+  sim.step(1 / CFG.TICK_RATE);
+  assert.ok(sim.arena.isOnPlatform(b.x, b.z), "swap should move the hazard-zone player back to the platform");
+  assert.strictEqual(b.alive, true);
+});
+
+test("hazard zone movement is slowed but still allows spell recovery", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const b = sim.players.get("b");
+  b.x = 0; b.z = 0;
+  sim.setInput("b", { move: [1, 0], aim: 0, fire: false, seq: 1 });
+  advance(sim, 0.25);
+  const normalDistance = b.x;
+  b.x = CFG.ARENA_RADIUS + 0.2; b.z = 0;
+  b.vx = 0; b.vz = 0;
+  sim.setInput("b", { move: [1, 0], aim: 0, fire: false, seq: 2 });
+  advance(sim, 0.25);
+  const hazardDistance = b.x - (CFG.ARENA_RADIUS + 0.2);
+  assert.ok(hazardDistance > 0, "player should still have movement control in the hazard zone");
+  assert.ok(hazardDistance < normalDistance * 0.5, "hazard zone movement should be meaningfully slowed");
+  sim.setInput("b", { move: [0, 0], aim: 0, fire: false, seq: 3, casts: [{ id: 1, spell: "teleport", tx: 0, tz: 0 }] });
+  sim.step(1 / CFG.TICK_RATE);
+  assert.ok(sim.arena.isOnPlatform(b.x, b.z), "teleport should allow hazard-zone recovery");
+  assert.strictEqual(b.alive, true);
 });
 
 test("round ends with a winner when only one survives", () => {
