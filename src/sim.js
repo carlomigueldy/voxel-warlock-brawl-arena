@@ -1,6 +1,6 @@
 // Pure, authoritative game simulation. Deliberately free of Three.js so it can
 // run on the host and be unit-tested headlessly in Node.
-import { CFG } from "./config.js";
+import { CFG, SPELLS, SPELL_ORDER } from "./config.js";
 import { Player } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
@@ -21,11 +21,14 @@ export const PHASE = {
 };
 
 export class Simulation {
-  constructor() {
+  constructor(options = {}) {
+    this.allAbilitiesAtStart = options.allAbilitiesAtStart !== false;
     this.players = new Map(); // id -> Player
     this.bolts = [];
     this.meteors = [];        // in-flight meteors (delayed AoE)
+    this.runes = [];
     this._meteorId = 1;
+    this._runeId = 1;
     this.arena = new LogicArena();
     this.phase = PHASE.LOBBY;
     this.round = 0;
@@ -40,6 +43,8 @@ export class Simulation {
     if (this.players.has(id)) return this.players.get(id);
     const idx = this.players.size;
     const p = new Player(id, name, idx);
+    if (this.allAbilitiesAtStart) p.setAllSpells();
+    else p.setStarterSpells();
     if (this.phase !== PHASE.LOBBY) {
       p.alive = false;
       p.spectating = true;
@@ -114,6 +119,7 @@ export class Simulation {
     this.round++;
     this.bolts = [];
     this.meteors = [];
+    this.runes = [];
     this.arena.reset();
     this.playTime = 0;
     this.phase = PHASE.COUNTDOWN;
@@ -123,7 +129,26 @@ export class Simulation {
     const list = [...this.players.values()];
     const n = Math.max(1, list.length);
     const spawnR = Math.min(CFG.ARENA_RADIUS - 3, 12);
-    list.forEach((p, i) => p.spawn((i / n) * Math.PI * 2, spawnR));
+    list.forEach((p, i) => {
+      p.spawn((i / n) * Math.PI * 2, spawnR);
+      if (this.allAbilitiesAtStart) p.setAllSpells();
+      else p.setStarterSpells();
+    });
+    if (!this.allAbilitiesAtStart) this.spawnRunes();
+  }
+
+  spawnRunes() {
+    const spells = SPELL_ORDER.filter((id) => id !== "fireball");
+    this.runes = spells.map((spell, i) => {
+      const angle = (i / spells.length) * Math.PI * 2;
+      const ring = CFG.RUNE_SPAWN_RADIUS * (0.65 + 0.35 * ((i % 3) / 2));
+      return {
+        id: this._runeId++,
+        spell,
+        x: +(Math.cos(angle) * ring).toFixed(3),
+        z: +(Math.sin(angle) * ring).toFixed(3),
+      };
+    });
   }
 
   returnToLobby() {
@@ -133,6 +158,7 @@ export class Simulation {
     this.lastWinnerId = null;
     this.matchWinnerId = null;
     this.bolts = [];
+    this.runes = [];
     this.arena.reset();
     for (const p of this.players.values()) {
       p.alive = true;
@@ -276,6 +302,8 @@ export class Simulation {
     }
     this.meteors = this.meteors.filter((m) => !m.dead);
 
+    this.resolveRunePickups();
+
     // Death detection (falling players that reached lava become !alive in step()).
     for (const p of this.players.values()) {
       if (!p.alive && p._countedDeath !== this.round) {
@@ -285,6 +313,26 @@ export class Simulation {
     }
 
     this.resolveRoundIfNeeded();
+  }
+
+  resolveRunePickups() {
+    if (this.allAbilitiesAtStart || !this.runes.length) return;
+    const remaining = [];
+    for (const rune of this.runes) {
+      let picked = false;
+      for (const p of this.players.values()) {
+        if (!p.alive || p.falling || p.spectating || p.hasSpell(rune.spell)) continue;
+        const d = Math.hypot(p.x - rune.x, p.z - rune.z);
+        if (d <= CFG.RUNE_RADIUS + CFG.PLAYER_RADIUS) {
+          p.acquireSpell(rune.spell);
+          this.events.push({ type: "runePickup", id: p.id, spell: rune.spell, x: rune.x, z: rune.z });
+          picked = true;
+          break;
+        }
+      }
+      if (!picked) remaining.push(rune);
+    }
+    this.runes = remaining;
   }
 
   endRound(winner) {
@@ -316,6 +364,7 @@ export class Simulation {
         id: m.id, x: +m.x.toFixed(2), z: +m.z.toFixed(2),
         t: +m.t.toFixed(2), fall: m.fall, r: m.radius,
       })),
+      runes: this.runes.map((r) => ({ id: r.id, spell: r.spell, x: r.x, z: r.z, c: SPELLS[r.spell]?.color || 0xffffff })),
       events: this.events,
     };
   }

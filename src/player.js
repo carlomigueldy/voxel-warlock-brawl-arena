@@ -23,6 +23,7 @@ export class Player {
 
     // Per-spell cooldown timers (id -> seconds remaining).
     this.cooldowns = {};
+    this.spells = new Set(["fireball"]);
 
     // Active status effects with remaining durations.
     this.status = {
@@ -82,9 +83,26 @@ export class Player {
     return s.cd * (1 - this.mods.cdr);
   }
 
+  hasSpell(spellId) {
+    return this.spells.has(spellId);
+  }
+
+  acquireSpell(spellId) {
+    if (SPELLS[spellId]) this.spells.add(spellId);
+  }
+
+  setAllSpells() {
+    this.spells = new Set(Object.keys(SPELLS));
+  }
+
+  setStarterSpells() {
+    this.spells = new Set(["fireball"]);
+  }
+
   canCast(spellId) {
     if (!this.alive || this.falling) return false;
     if (this.status.disabled > 0) return false;
+    if (!this.hasSpell(spellId)) return false;
     return (this.cooldowns[spellId] || 0) <= 0;
   }
 
@@ -253,6 +271,7 @@ export class Player {
       lk: this.status.linkedTo || null,
       // per-spell cooldowns for the local HUD bar
       cds: this._cdSnapshot(),
+      spells: [...this.spells],
     };
   }
 

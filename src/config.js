@@ -29,6 +29,10 @@ export const CFG = {
   CHARGE_MAX: 4.0,           // cap so it stays playable
   CHARGE_DECAY: 0.05,        // charge bleeds off slowly per sec while alive
 
+  // --- Ability acquisition ---
+  RUNE_RADIUS: 0.8,
+  RUNE_SPAWN_RADIUS: 13,
+
   // --- Rounds ---
   ROUND: {
     COUNTDOWN: 3,            // seconds before a round begins

@@ -36,11 +36,11 @@ let latestSnapshot = null;
 let inGame = false;
 
 // ---------- HOST FLOW ----------
-function startHosting(name) {
+function startHosting(name, options = {}) {
   role = "host";
   ui.setMenuStatus("Creating room…");
 
-  const sim = new Simulation();
+  const sim = new Simulation({ allAbilitiesAtStart: options.allAbilitiesAtStart });
 
   host = new Host({
     name,

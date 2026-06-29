@@ -264,4 +264,37 @@ test("cannot cast while on cooldown", () => {
   assert.ok(Math.abs(a.x - x1) < 0.001, "teleport fired while on cooldown");
 });
 
+test("players without all starting abilities cannot cast unacquired spells", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  a.x = 0; a.z = 0;
+  cast(sim, "a", "teleport", 5, 0);
+  assert.ok(Math.abs(a.x) < 0.001, "teleport fired before acquisition");
+});
+
+test("spell runes grant abilities on pickup", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  sim.runes = [{ id: 1, spell: "teleport", x: a.x, z: a.z }];
+  sim.step(1 / CFG.TICK_RATE);
+  assert.ok(a.hasSpell("teleport"), "teleport was not acquired");
+  assert.strictEqual(sim.runes.length, 0, "picked up rune was not removed");
+});
+
+test("snapshots include runes and acquired spell ids", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  const snap = JSON.parse(JSON.stringify(sim.snapshot()));
+  assert.ok(Array.isArray(snap.runes), "runes missing from snapshot");
+  const me = snap.players.find((p) => p.id === "a");
+  assert.deepStrictEqual(me.spells, ["fireball"], "acquired spells missing from player snapshot");
+});
+
 console.log(`\n${passed} spellbook tests passed.`);

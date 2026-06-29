@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { CFG } from "./config.js";
 import { Arena } from "./arena.js";
 import {
-  buildWarlock, buildBolt, buildBurst, buildLightning, buildMeteor,
+  buildWarlock, buildBolt, buildBurst, buildLightning, buildMeteor, buildRune,
 } from "./voxel.js";
 
 export class GameRenderer {
@@ -33,6 +33,7 @@ export class GameRenderer {
     this.playerMeshes = new Map(); // id -> {group, label}
     this.boltMeshes = new Map();   // id -> group
     this.meteorMeshes = new Map(); // id -> group
+    this.runeMeshes = new Map();   // id -> group
     this.effects = [];             // transient VFX groups with .userData.update
     this.linkLines = new Map();    // "a|b" -> line
     this.localId = null;
@@ -189,6 +190,24 @@ export class GameRenderer {
       }
     }
 
+    const runeSeen = new Set();
+    for (const r of snapshot.runes || []) {
+      runeSeen.add(r.id);
+      let g = this.runeMeshes.get(r.id);
+      if (!g) {
+        g = buildRune(r.c || 0xffffff);
+        this.scene.add(g);
+        this.runeMeshes.set(r.id, g);
+      }
+      g.position.set(r.x, 0.25, r.z);
+    }
+    for (const id of [...this.runeMeshes.keys()]) {
+      if (!runeSeen.has(id)) {
+        this.scene.remove(this.runeMeshes.get(id));
+        this.runeMeshes.delete(id);
+      }
+    }
+
     // Link lines between linked warlocks.
     this._updateLinks(snapshot);
 
@@ -296,6 +315,10 @@ export class GameRenderer {
         case "timeshiftReturn":
           this._addEffect(this._burstAt(ev.x ?? 0, ev.z ?? 0, 0x88ddff, { count: 10 }));
           break;
+        case "runePickup":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0x7cff5a, { count: 18, speed: 6 }));
+          this.audio?.play("cast", this._panFor(ev.x || 0));
+          break;
         case "sfx":
           this.audio?.play(ev.sfx, this._panFor(ev.x || 0));
           break;
@@ -362,6 +385,11 @@ export class GameRenderer {
     for (const m of this.boltMeshes.values()) {
       m.rotation.y += dt * 6;
       m.rotation.x += dt * 4;
+    }
+
+    for (const g of this.runeMeshes.values()) {
+      g.rotation.y += dt * 1.8;
+      if (g.userData.core) g.userData.core.position.y = 0.55 + Math.sin(t * 4) * 0.08;
     }
 
     // Advance transient VFX and cull finished ones.

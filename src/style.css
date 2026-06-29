@@ -56,6 +56,11 @@ input {
 input:focus { border-color: var(--accent2); }
 
 .menu-row { margin-bottom: 16px; }
+.menu-toggle {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  color: var(--muted); font-size: 14px; margin: -4px 0 16px;
+}
+.menu-toggle input { width: auto; accent-color: var(--accent); }
 .menu-actions { display: flex; flex-direction: column; gap: 14px; align-items: center; }
 .join-box { display: flex; gap: 10px; width: 100%; }
 .join-box input { text-transform: uppercase; letter-spacing: 4px; }
@@ -154,6 +159,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   padding: 3px; transition: border-color 0.15s, box-shadow 0.15s;
 }
 .ability-slot.ready { box-shadow: 0 0 8px rgba(124,255,90,0.35); border-color: rgba(124,255,90,0.6); }
+.ability-slot.locked { opacity: 0.35; filter: grayscale(1); }
 .ability-swatch {
   position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
   width: 16px; height: 16px; border-radius: 4px; box-shadow: 0 0 6px currentColor;
