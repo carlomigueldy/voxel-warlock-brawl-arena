@@ -56,6 +56,7 @@ function startHosting(name, options = {}) {
     onPlayerJoin: (peerId, pname) => {
       const p = sim.addPlayer(peerId, pname);
       playerMeta.set(peerId, { name: pname, colorIndex: p.colorIndex });
+      if (sim.phase === PHASE.LOBBY) applyBotSettings();
       // Tell everyone the full meta table so labels/colors match.
       pushLobby();
       if (sim.phase !== PHASE.LOBBY) host.sendTo(peerId, { type: MSG.STATE, ...sim.snapshot() });
@@ -67,6 +68,7 @@ function startHosting(name, options = {}) {
       playerMeta.delete(peerId);
       pushLobby();
       if (sim.phase === PHASE.LOBBY) {
+        applyBotSettings();
         ui.showLobby(host.code, { isHost: true });
         inGame = false;
       }
@@ -77,7 +79,13 @@ function startHosting(name, options = {}) {
 
   host.onInput((peerId, msg) => sim.setInput(peerId, msg));
 
+  ui.on("bots", () => {
+    applyBotSettings();
+    pushLobby();
+  });
+
   ui.on("start", () => {
+    applyBotSettings();
     if (!sim.startMatch()) {
       ui.setLobbyStatus("Need at least 2 warlocks to start.");
       return;
@@ -86,6 +94,21 @@ function startHosting(name, options = {}) {
     ui.showGame();
     inGame = true;
   });
+
+  function applyBotSettings() {
+    const { count, skill } = ui.getBotSettings();
+    sim.setBotRoster(count, skill);
+    syncBotMeta();
+  }
+
+  function syncBotMeta() {
+    for (const id of [...playerMeta.keys()]) {
+      if (id.startsWith("bot:")) playerMeta.delete(id);
+    }
+    for (const p of sim.botPlayers()) {
+      playerMeta.set(p.id, { name: p.name, colorIndex: p.colorIndex, isBot: true });
+    }
+  }
 
   function pushLobby() {
     const players = metaToArray();
@@ -147,7 +170,7 @@ function startJoining(name, code) {
     },
     onLobby: (msg) => {
       playerMeta.clear();
-      msg.players.forEach((p) => playerMeta.set(p.id, { name: p.name, colorIndex: p.colorIndex }));
+      msg.players.forEach((p) => playerMeta.set(p.id, { name: p.name, colorIndex: p.colorIndex, isBot: !!p.isBot }));
       ui.renderPlayerList(msg.players, msg.hostId);
     },
     onStart: () => {
@@ -223,7 +246,7 @@ function playTransitionAudio(snap) {
 }
 
 function metaToArray() {
-  return [...playerMeta.entries()].map(([id, m]) => ({ id, name: m.name, colorIndex: m.colorIndex }));
+  return [...playerMeta.entries()].map(([id, m]) => ({ id, name: m.name, colorIndex: m.colorIndex, isBot: !!m.isBot }));
 }
 
 ui.on("host", startHosting);

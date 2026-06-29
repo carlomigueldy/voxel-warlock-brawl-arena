@@ -51,6 +51,7 @@ export const CFG = {
   INPUT_RATE: 30,            // client input send rate (Hz)
   PEER_PREFIX: "vwb-",       // PeerJS id namespace so room codes are short
   MAX_PLAYERS: 6,
+  BOT_SKILLS: ["smart", "brilliant", "expert"],
 
   // Player colors (low-poly palette) assigned by join order.
   COLORS: [0xff5a3c, 0x4cc9ff, 0x7cff5a, 0xffd23c, 0xc04cff, 0xff4ca8],

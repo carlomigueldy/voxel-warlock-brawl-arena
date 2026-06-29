@@ -60,4 +60,11 @@ test("ability bar filters slots by acquired spells from snapshots", () => {
   assert.match(ui, /slot\.classList\.toggle\("locked"/);
 });
 
+test("host lobby exposes bot count and difficulty controls", () => {
+  assert.match(html, /id="bot-count"/);
+  assert.match(html, /id="bot-skill"/);
+  assert.match(ui, /getBotSettings/);
+  assert.match(main, /sim\.setBotRoster/);
+});
+
 console.log(`\n${passed} source checks passed.`);
