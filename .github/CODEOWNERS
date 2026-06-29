@@ -1,0 +1,7 @@
+# Default owner for everything in the repo.
+* @carlomigueldy
+
+# Backlog and agent workflow artifacts.
+/AGENTS.md @carlomigueldy
+/feature_list.json @carlomigueldy
+/.agents/ @carlomigueldy
