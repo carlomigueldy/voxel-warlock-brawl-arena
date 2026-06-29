@@ -1,9 +1,10 @@
 // All DOM/UI wiring: menus, lobby, HUD, room code, invite link, QR code.
 // QRCode is loaded globally from a <script> tag (window.QRCode).
-import { CFG, SPELLS, SPELL_ORDER } from "./config.js";
+import { CFG, SPELLS, SPELL_ORDER, getArenaHazard } from "./config.js";
 
 const $ = (id) => document.getElementById(id);
 const escapeHTML = (value) => String(value).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+const hex = (n) => "#" + (n >>> 0).toString(16).padStart(6, "0").slice(-6);
 
 export class UI {
   constructor() {
@@ -26,6 +27,12 @@ export class UI {
       centerMsg: $("center-msg"), touch: $("touch-controls"),
       abilityBar: $("ability-bar"),
       btnSfx: $("btn-sfx"), btnMusic: $("btn-music"),
+      // Custom control shells (native inputs above remain the source of truth).
+      abilitiesToggleUi: $("abilities-toggle-ui"),
+      landSizeUi: $("land-size-ui"),
+      arenaWorldUi: $("arena-world-ui"),
+      botCountUi: $("bot-count-ui"), botCountValue: $("bot-count-value"),
+      botSkillUi: $("bot-skill-ui"),
     };
     this.handlers = {};
     this.audio = null;
@@ -35,13 +42,171 @@ export class UI {
     this.preview = null;
     this.selectedCharacter = this._initialCharacter();
     this._populateArenaControls();
+    this._buildCustomControls();
     this._buildCharacterCards();
+    this._spawnEmbers();
     this._bind();
     this._prefillFromUrl();
     this._maybeShowTouch();
   }
 
-  // Attach a live 3D preview (CharacterPreview) and show the saved selection.
+  // ---- Custom (non-native) menu controls ----------------------------------
+  // Each custom widget writes through to a hidden native <input>/<select> so the
+  // existing getters (getArenaSettings/getBotSettings/allAbilitiesAtStart) and
+  // the source test-suite contracts keep working unchanged.
+  _buildCustomControls() {
+    this._buildAbilitiesToggle();
+    this._buildArenaCards();
+    this._buildLandSizeSegmented();
+    this._buildBotControls();
+  }
+
+  _buildAbilitiesToggle() {
+    const btn = this.el.abilitiesToggleUi;
+    const native = this.el.allAbilitiesToggle;
+    if (!btn || !native) return;
+    const sync = () => {
+      const on = native.checked;
+      btn.classList.toggle("is-on", on);
+      btn.setAttribute("aria-checked", String(on));
+      const state = btn.querySelector(".rune-toggle-state");
+      if (state) state.textContent = on ? "ON" : "OFF";
+    };
+    btn.addEventListener("click", () => { native.checked = !native.checked; sync(); });
+    sync();
+  }
+
+  _buildArenaCards() {
+    const wrap = this.el.arenaWorldUi;
+    const native = this.el.arenaWorld;
+    if (!wrap || !native) return;
+    wrap.replaceChildren();
+    CFG.ARENA_WORLDS.forEach((world) => {
+      const hazard = getArenaHazard(world.id);
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "arena-card";
+      card.setAttribute("role", "radio");
+      card.dataset.value = world.id;
+      card.style.setProperty("--card-color", hex(world.top));
+      card.innerHTML =
+        `<span class="arena-card-orb"></span>` +
+        `<span class="arena-card-name">${escapeHTML(world.name)}</span>` +
+        `<span class="arena-card-hazard">${escapeHTML(hazard.name)}</span>` +
+        `<span class="arena-card-check">✓</span>`;
+      card.addEventListener("click", () => this._selectArena(world.id));
+      wrap.appendChild(card);
+    });
+    this._selectArena(native.value || CFG.DEFAULT_ARENA_WORLD);
+  }
+
+  _selectArena(id) {
+    if (this.el.arenaWorld) this.el.arenaWorld.value = id;
+    this.el.arenaWorldUi?.querySelectorAll(".arena-card").forEach((c) => {
+      const on = c.dataset.value === id;
+      c.classList.toggle("is-active", on);
+      c.setAttribute("aria-checked", String(on));
+    });
+  }
+
+  _buildLandSizeSegmented() {
+    const wrap = this.el.landSizeUi;
+    const native = this.el.landSize;
+    if (!wrap || !native) return;
+    wrap.replaceChildren();
+    Object.values(CFG.ARENA_LAND_SIZES).forEach((size) => {
+      const opt = document.createElement("button");
+      opt.type = "button";
+      opt.className = "seg-option";
+      opt.setAttribute("role", "radio");
+      opt.dataset.value = size.id;
+      opt.textContent = size.name;
+      opt.addEventListener("click", () => this._selectSegment(wrap, native, size.id));
+      wrap.appendChild(opt);
+    });
+    this._selectSegment(wrap, native, native.value || CFG.DEFAULT_ARENA_LAND_SIZE);
+  }
+
+  _selectSegment(wrap, native, value, onChange) {
+    if (native) native.value = value;
+    wrap.querySelectorAll(".seg-option").forEach((o) => {
+      const on = o.dataset.value === value;
+      o.classList.toggle("is-active", on);
+      o.setAttribute("aria-checked", String(on));
+    });
+    onChange?.();
+  }
+
+  _buildBotControls() {
+    // Stepper -> #bot-count
+    const stepper = this.el.botCountUi;
+    const countInput = this.el.botCount;
+    const valueEl = this.el.botCountValue;
+    if (stepper && countInput && valueEl) {
+      const max = CFG.MAX_PLAYERS - 1;
+      const render = () => {
+        const v = Math.max(0, Math.min(max, Number.parseInt(countInput.value, 10) || 0));
+        countInput.value = String(v);
+        valueEl.textContent = String(v);
+        valueEl.classList.remove("bump");
+        void valueEl.offsetWidth;
+        valueEl.classList.add("bump");
+        stepper.querySelector('[data-step="-1"]').disabled = v <= 0;
+        stepper.querySelector('[data-step="1"]').disabled = v >= max;
+      };
+      stepper.querySelectorAll(".stepper-btn").forEach((b) => {
+        b.addEventListener("click", () => {
+          const step = Number.parseInt(b.dataset.step, 10) || 0;
+          countInput.value = String((Number.parseInt(countInput.value, 10) || 0) + step);
+          render();
+          this.handlers.bots?.(this.getBotSettings());
+        });
+      });
+      render();
+    }
+    // Segmented -> #bot-skill
+    const skillWrap = this.el.botSkillUi;
+    const skillNative = this.el.botSkill;
+    if (skillWrap && skillNative) {
+      skillWrap.replaceChildren();
+      const labels = { smart: "Smart", brilliant: "Brilliant", expert: "Expert" };
+      CFG.BOT_SKILLS.forEach((skill) => {
+        const opt = document.createElement("button");
+        opt.type = "button";
+        opt.className = "seg-option";
+        opt.setAttribute("role", "radio");
+        opt.dataset.value = skill;
+        opt.textContent = labels[skill] || skill;
+        opt.addEventListener("click", () => this._selectSegment(skillWrap, skillNative, skill, () => this.handlers.bots?.(this.getBotSettings())));
+        skillWrap.appendChild(opt);
+      });
+      this._selectSegment(skillWrap, skillNative, skillNative.value || "smart");
+    }
+  }
+
+  // Floating ember particle bed — the menu/lobby signature ambience.
+  _spawnEmbers() {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const colors = ["var(--ember)", "var(--arcane)", "var(--gold)", "var(--rune)"];
+    document.querySelectorAll(".ember-field").forEach((field) => {
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < 26; i++) {
+        const e = document.createElement("span");
+        e.className = "ember";
+        e.style.left = Math.random() * 100 + "%";
+        e.style.setProperty("--s", (3 + Math.random() * 5).toFixed(1) + "px");
+        e.style.setProperty("--dur", (7 + Math.random() * 8).toFixed(1) + "s");
+        e.style.setProperty("--delay", (-Math.random() * 12).toFixed(1) + "s");
+        e.style.setProperty("--drift", (Math.random() * 80 - 40).toFixed(0) + "px");
+        e.style.setProperty("--c", colors[i % colors.length]);
+        frag.appendChild(e);
+      }
+      field.appendChild(frag);
+    });
+  }
+
+  on(event, fn) { this.handlers[event] = fn; }
+
   setPreview(preview) {
     this.preview = preview;
     if (preview) preview.select(this.selectedCharacter);
@@ -63,19 +228,14 @@ export class UI {
       card.type = "button";
       card.className = "char-card";
       card.dataset.character = ch.id;
-      const hex = "#" + ch.color.toString(16).padStart(6, "0");
-      card.style.setProperty("--char-color", hex);
-      const swatch = document.createElement("span");
-      swatch.className = "char-card-swatch";
-      swatch.style.background = hex;
-      const name = document.createElement("span");
-      name.className = "char-card-name";
-      name.textContent = ch.name;
-      const blurb = document.createElement("span");
-      blurb.className = "char-card-blurb";
-      blurb.textContent = ch.blurb;
-      card.append(swatch, name, blurb);
-      card.onclick = () => this._selectCharacter(ch.id);
+      card.setAttribute("role", "radio");
+      card.style.setProperty("--char-color", hex(ch.color));
+      card.innerHTML =
+        `<span class="char-card-swatch"></span>` +
+        `<span class="char-card-name">${escapeHTML(ch.name)}</span>` +
+        `<span class="char-card-blurb">${escapeHTML(ch.blurb)}</span>` +
+        `<span class="char-card-check">✓</span>`;
+      card.addEventListener("click", () => this._selectCharacter(ch.id));
       this.el.charCards.appendChild(card);
     }
     this._highlightCharacter(this.selectedCharacter);
@@ -93,14 +253,14 @@ export class UI {
   _highlightCharacter(id) {
     if (!this.el.charCards) return;
     for (const card of this.el.charCards.children) {
-      card.classList.toggle("selected", card.dataset.character === id);
+      const on = card.dataset.character === id;
+      card.classList.toggle("is-active", on);
+      card.setAttribute("aria-checked", String(on));
     }
     if (this.el.charPreviewName) {
       this.el.charPreviewName.textContent = (CFG.CHARACTERS.find((c) => c.id === id) || {}).name || "";
     }
   }
-
-  on(event, fn) { this.handlers[event] = fn; }
 
   setAudio(audio) {
     this.audio = audio;
@@ -264,6 +424,9 @@ export class UI {
       this.handlers.host?.(name, { allAbilitiesAtStart: this.allAbilitiesAtStart(), character: this.selectedCharacter, ...this.getArenaSettings() });
     };
     this.el.btnJoin.onclick = () => this._tryJoin();
+    this.el.joinCode.addEventListener("input", () => {
+      this.el.joinCode.value = this.el.joinCode.value.toUpperCase();
+    });
     this.el.joinCode.addEventListener("keydown", (e) => {
       if (e.key === "Enter") this._tryJoin();
     });
