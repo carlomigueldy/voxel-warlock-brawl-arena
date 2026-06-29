@@ -8,6 +8,7 @@ import { Host, Client } from "./net.js";
 import { UI } from "./ui.js";
 import { AudioEngine } from "./audio.js";
 import { CharacterPreview } from "./preview.js";
+import { preloadAssets } from "./loader.js";
 
 const ui = new UI();
 const renderer = new GameRenderer(document.getElementById("game-canvas"));
@@ -17,7 +18,9 @@ renderer.setAudio(audio);
 ui.setAudio(audio);
 ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
 
-// Live 360° character preview on the menu.
+// Live 360° character preview — wired up immediately so it warms up behind
+// the loader screen. preview.start() is also called in ui.showMenu() but it
+// has an idempotent guard, so double-calling is safe.
 const charPreviewCanvas = document.getElementById("char-preview");
 if (charPreviewCanvas) {
   const preview = new CharacterPreview(charPreviewCanvas);
@@ -25,13 +28,7 @@ if (charPreviewCanvas) {
   preview.start();
 }
 
-// Browsers require a gesture to start audio; resume on first interaction.
-function unlockAudio() {
-  audio.resume();
-  audio.startMusic();
-}
-addEventListener("pointerdown", unlockAudio, { once: true });
-addEventListener("keydown", unlockAudio, { once: true });
+// Audio resumes on any interaction during gameplay (for mobile Safari etc.).
 input.onCast = () => audio.resume();
 
 // Metadata about every player (id -> {name, colorIndex}) for labels/scoreboard,
@@ -279,4 +276,52 @@ ui.on("spellSlotHotkey", (index, key) => {
   if (input.setSpellSlotHotkey(index, key)) ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
 });
 
-ui.showMenu();
+// ---- Loading gate: preload assets, then wait for a user gesture to enter. ----
+// The #loader overlay (z-index 200) covers everything while this runs.
+// A 12 s safety timeout ensures a stalled CDN asset never hard-blocks entry.
+(async () => {
+  const loaderEl = document.getElementById("loader");
+  const barEl = document.getElementById("loader-bar");
+  const pctEl = document.getElementById("loader-pct");
+  const enterEl = document.getElementById("loader-enter");
+
+  const safetyTimeout = new Promise((r) => setTimeout(r, 12000));
+
+  try {
+    await Promise.race([
+      preloadAssets({
+        onProgress(p) {
+          const v = Math.min(100, Math.round(p * 100));
+          if (barEl) {
+            barEl.style.width = v + "%";
+            barEl.parentElement?.setAttribute("aria-valuenow", String(v));
+          }
+          if (pctEl) pctEl.textContent = v + "%";
+        },
+      }),
+      safetyTimeout,
+    ]);
+  } catch { /* individual asset errors are handled inside preloadAssets */ }
+
+  if (barEl) barEl.style.width = "100%";
+  if (pctEl) pctEl.textContent = "100%";
+  if (enterEl) enterEl.classList.remove("hidden");
+
+  // Wait for the player's first deliberate interaction.
+  await new Promise((resolve) => {
+    addEventListener("pointerdown", resolve, { once: true });
+    addEventListener("keydown", resolve, { once: true });
+  });
+
+  // Unlock audio on this gesture (browsers require a user gesture for AudioContext).
+  audio.resume();
+  audio.startMusic();
+
+  // Fade the loader out, then reveal the menu.
+  if (loaderEl) {
+    loaderEl.classList.add("loader-fade-out");
+    setTimeout(() => loaderEl.classList.add("hidden"), 560);
+  }
+
+  ui.showMenu();
+})();

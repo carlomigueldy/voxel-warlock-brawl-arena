@@ -16,7 +16,7 @@ import {
 } from "./character.js";
 import { archetypeForEvent } from "./animations.js";
 
-const MESHY_ASSETS = {
+export const MESHY_ASSETS = {
   rune: "assets/meshy/ability-rune.glb",
   projectiles: {
     fireball: "assets/meshy/projectile-fireball.glb",

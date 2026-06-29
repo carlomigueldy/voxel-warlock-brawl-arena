@@ -42,11 +42,13 @@ export class UI {
     this.spellSlotHotkeys = [...CFG.DEFAULT_SPELL_SLOT_HOTKEYS];
     this.preview = null;
     this.selectedCharacter = this._initialCharacter();
+    this._menuScreen = "play";
     this._populateArenaControls();
     this._buildCustomControls();
     this._buildCharacterCards();
     this._spawnEmbers();
     this._bind();
+    this._bindNavSpine();
     this._prefillFromUrl();
     this._maybeShowTouch();
   }
@@ -495,12 +497,42 @@ export class UI {
     setTimeout(() => (btn.textContent = label), 1400);
   }
 
+  // ---- Cinematic menu sub-screen navigation ----
+
+  /** Switch to one of the four named sub-screens ("play" | "characters" | "settings" | "join"). */
+  _showMenuScreen(name) {
+    this._menuScreen = name;
+    // Toggle sub-screens.
+    this.el.menu.querySelectorAll(".sub-screen").forEach((el) => {
+      const on = el.id === `screen-${name}`;
+      el.classList.toggle("sub-screen-hidden", !on);
+      el.setAttribute("aria-hidden", on ? "false" : "true");
+    });
+    // Update spine button active state.
+    this.el.menu.querySelectorAll(".spine-btn").forEach((btn) => {
+      const on = btn.dataset.screen === name;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-current", on ? "true" : "false");
+    });
+  }
+
+  /** Wire the vertical spine nav buttons to sub-screen switching. */
+  _bindNavSpine() {
+    this.el.menu.querySelectorAll(".spine-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this._showMenuScreen(btn.dataset.screen));
+    });
+    // Initialise to "play" sub-screen.
+    this._showMenuScreen("play");
+  }
+
   // ---- screen transitions ----
   showMenu() {
     this.el.menu.classList.remove("hidden");
     this.el.lobby.classList.add("hidden");
     this.el.hud.classList.add("hidden");
     if (this.el.touch) this.el.touch.classList.add("hidden");
+    // Reset to the root "play" sub-screen so returning from lobby feels clean.
+    this._showMenuScreen("play");
     this.preview?.start();
   }
 
