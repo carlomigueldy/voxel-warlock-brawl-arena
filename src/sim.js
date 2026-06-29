@@ -299,6 +299,7 @@ export class Simulation {
     const ox = owner.x + Math.cos(owner.aim) * (CFG.PLAYER_RADIUS + 0.6);
     const oz = owner.z + Math.sin(owner.aim) * (CFG.PLAYER_RADIUS + 0.6);
     this.bolts.push(new Bolt(owner.id, ox, oz, owner.aim, owner.color));
+    this.events.push({ type: "cast", spell: "fireball", id: owner.id, x: owner.x, z: owner.z });
     owner.cooldown = owner.isBot && Number.isFinite(owner._botFireCooldown)
       ? owner._botFireCooldown
       : CFG.BOLT_COOLDOWN;

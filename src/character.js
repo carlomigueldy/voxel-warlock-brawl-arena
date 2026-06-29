@@ -2,16 +2,41 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { CFG } from "./config.js";
+import { CastAnimator } from "./animations.js";
 
-const ASSET = {
-  base: new URL("../assets/warlock-player-rigged.glb", import.meta.url).href,
-  walk: new URL("../assets/warlock-player-walking.glb", import.meta.url).href,
-  run: new URL("../assets/warlock-player-running.glb", import.meta.url).href,
+// Each selectable character is a Meshy-rigged voxel warlock with its own
+// skinned walk/run clips. The skeletons share the same bone layout, so the
+// CastAnimator overlays (animations.js) apply uniformly across all of them.
+const url = (p) => new URL(p, import.meta.url).href;
+export const CHARACTER_ASSETS = {
+  ember: {
+    base: url("../assets/characters/ember-warlock-rigged.glb"),
+    walk: url("../assets/characters/ember-warlock-walking.glb"),
+    run: url("../assets/characters/ember-warlock-running.glb"),
+  },
+  frost: {
+    base: url("../assets/characters/frost-mage-rigged.glb"),
+    walk: url("../assets/characters/frost-mage-walking.glb"),
+    run: url("../assets/characters/frost-mage-running.glb"),
+  },
+  storm: {
+    base: url("../assets/characters/storm-shaman-rigged.glb"),
+    walk: url("../assets/characters/storm-shaman-walking.glb"),
+    run: url("../assets/characters/storm-shaman-running.glb"),
+  },
+  moss: {
+    base: url("../assets/characters/moss-necromancer-rigged.glb"),
+    walk: url("../assets/characters/moss-necromancer-walking.glb"),
+    run: url("../assets/characters/moss-necromancer-running.glb"),
+  },
 };
+export const DEFAULT_CHARACTER = "ember";
 const TARGET_HEIGHT = CFG.PLAYER_HEIGHT;
 
-let _loadPromise = null;
-let _template = null;
+let _loadPromises = new Map(); // characterId -> Promise
+let _templates = new Map();    // characterId -> template
+let _loadPromise = null;       // active default load (legacy callers)
+let _template = null;          // active default template (legacy callers)
 
 function findClip(gltf, hint) {
   const anims = gltf.animations || [];
@@ -20,12 +45,18 @@ function findClip(gltf, hint) {
   return anims.find((c) => (c.name || "").toLowerCase().includes(lc)) || anims[0];
 }
 
-export function loadCharacterTemplate() {
-  if (_loadPromise) return _loadPromise;
+export function loadCharacterTemplate(characterId = DEFAULT_CHARACTER) {
+  const id = CHARACTER_ASSETS[characterId] ? characterId : DEFAULT_CHARACTER;
+  if (_loadPromises.has(id)) {
+    const p = _loadPromises.get(id);
+    _loadPromise = p;
+    return p;
+  }
+  const assets = CHARACTER_ASSETS[id];
   const loader = new GLTFLoader();
   const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
 
-  _loadPromise = Promise.all([load(ASSET.base), load(ASSET.walk), load(ASSET.run)])
+  const promise = Promise.all([load(assets.base), load(assets.walk), load(assets.run)])
     .then(([base, walk, run]) => {
       const idleClip = findClip(base, "clip0") || (base.animations || [])[0] || null;
       const walkClip = findClip(walk, "walk");
@@ -56,22 +87,29 @@ export function loadCharacterTemplate() {
           o.frustumCulled = false;
         }
       });
-      _template = { scene, clips: { idle: idleClip, walk: walkClip, run: runClip } };
-      return _template;
+      const template = { id, scene, clips: { idle: idleClip, walk: walkClip, run: runClip } };
+      _templates.set(id, template);
+      _template = template;
+      return template;
     });
 
-  return _loadPromise;
+  _loadPromises.set(id, promise);
+  _loadPromise = promise;
+  return promise;
 }
 
-export function characterReady() {
-  return !!_template;
+export function characterReady(characterId = DEFAULT_CHARACTER) {
+  const id = CHARACTER_ASSETS[characterId] ? characterId : DEFAULT_CHARACTER;
+  return _templates.has(id);
 }
 
-export function buildCharacterInstance(color) {
-  if (!_template) return null;
+export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
+  const id = CHARACTER_ASSETS[characterId] ? characterId : DEFAULT_CHARACTER;
+  const template = _templates.get(id) || _template;
+  if (!template) return null;
 
   const root = new THREE.Group();
-  const model = cloneSkinned(_template.scene);
+  const model = cloneSkinned(template.scene);
   root.add(model);
 
   const tint = new THREE.Color(color);
@@ -98,12 +136,17 @@ export function buildCharacterInstance(color) {
     a.play();
     return a;
   };
-  actions.idle = make(_template.clips.idle);
-  actions.walk = make(_template.clips.walk);
-  actions.run = make(_template.clips.run);
+  actions.idle = make(template.clips.idle);
+  actions.walk = make(template.clips.walk);
+  actions.run = make(template.clips.run);
 
   const current = actions.idle || actions.walk || actions.run;
   if (current) current.setEffectiveWeight(1);
+
+  // Capture the model's rest transform so cast overlays are applied relative to
+  // it (and so we can ease back to rest when no cast is playing).
+  const restPos = model.position.clone();
+  const restRot = model.rotation.clone();
 
   const state = {
     root,
@@ -111,8 +154,13 @@ export function buildCharacterInstance(color) {
     mixer,
     actions,
     current,
+    cast: new CastAnimator(),
     w: { idle: current === actions.idle ? 1 : 0, walk: 0, run: 0 },
   };
+
+  // Fire a cast animation archetype (attack/slam/dash/buff/channel). Triggered
+  // by the renderer when the simulation reports this warlock cast something.
+  state.triggerCast = (archetype) => state.cast.trigger(archetype);
 
   state.update = (info) => {
     const dt = Math.min(0.05, Math.max(0.0001, info.dt || 0.016));
@@ -120,7 +168,9 @@ export function buildCharacterInstance(color) {
     const gait = Math.min(1, (info.speed || 0) / maxSpeed);
     let tIdle = 0, tWalk = 0, tRun = 0;
 
-    if (gait < 0.08) {
+    if (info.falling) {
+      tIdle = 1;
+    } else if (gait < 0.08) {
       tIdle = 1;
     } else if (gait < 0.6) {
       const k = (gait - 0.08) / (0.6 - 0.08);
@@ -147,8 +197,47 @@ export function buildCharacterInstance(color) {
     if (actions.run) actions.run.setEffectiveTimeScale(rate);
 
     mixer.update(dt);
+
+    // Layer the cast archetype as a skeleton-agnostic whole-body gesture on top
+    // of the locomotion clips. Each archetype reads distinctly without needing a
+    // bespoke skinned clip per ability.
+    state.cast.update(dt);
+    applyCastOverlay(model, restPos, restRot, state.cast, info);
   };
 
   root.userData.character = state;
   return root;
+}
+
+// Distinct whole-body poses per cast archetype, blended in by the CastAnimator
+// weight. Applied to the model root so it works on any Meshy skeleton.
+function applyCastOverlay(model, restPos, restRot, cast, info) {
+  const t = (info && info.time) || 0;
+  let pitch = 0, lift = 0, lean = 0, twist = 0;
+  const wgt = cast.weight;
+
+  if (wgt > 0.0001 && cast.archetype) {
+    switch (cast.archetype) {
+      case "attack": // sharp forward jab toward the aim
+        pitch = -0.55; lift = 0.05; lean = 0.12;
+        break;
+      case "slam": // raise then crash down (sinusoidal over the gesture)
+        pitch = 0.5 - Math.sin(t * 20) * 0.15; lift = 0.18;
+        break;
+      case "dash": // crouched lunge
+        pitch = 0.35; lift = -0.12; lean = 0.3;
+        break;
+      case "buff": // arms-up flourish, slight upward pop
+        pitch = -0.7; lift = 0.16; twist = Math.sin(t * 16) * 0.1;
+        break;
+      case "channel": // braced, leaning back while pulling a foe
+        pitch = 0.28; lean = -0.18; twist = Math.sin(t * 10) * 0.16;
+        break;
+    }
+  }
+
+  model.rotation.x = restRot.x + pitch * wgt;
+  model.rotation.z = restRot.z + lean * wgt;
+  model.rotation.y = restRot.y + twist * wgt;
+  model.position.y = restPos.y + lift * wgt;
 }
