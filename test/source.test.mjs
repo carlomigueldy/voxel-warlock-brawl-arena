@@ -190,4 +190,12 @@ test("arena builds, animates, and disposes hazard detail props", () => {
   assert.match(arena, /this\.details/);
 });
 
+test("projectile clash events trigger dedicated VFX and SFX", () => {
+  const renderer = fs.readFileSync("src/renderer.js", "utf8");
+  const audio = fs.readFileSync("src/audio.js", "utf8");
+  assert.match(renderer, /case "projectileClash"/);
+  assert.match(renderer, /projectileClash/);
+  assert.match(audio, /case "projectileClash"/);
+});
+
 console.log(`\n${passed} source checks passed.`);

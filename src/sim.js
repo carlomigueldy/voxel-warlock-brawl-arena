@@ -5,6 +5,22 @@ import { Player } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
 
+// Minimum distance between two points moving linearly from (a0->a1) and
+// (b0->b1) over a unit time step, plus the midpoint at closest approach. Used
+// for swept projectile-vs-projectile collision so fast bolts that cross between
+// ticks still register a clash instead of tunneling.
+function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
+  const rx = a0x - b0x, rz = a0z - b0z;          // initial relative position
+  const vx = (a1x - a0x) - (b1x - b0x);          // relative velocity over step
+  const vz = (a1z - a0z) - (b1z - b0z);
+  const vv = vx * vx + vz * vz;
+  let t = vv > 1e-12 ? -(rx * vx + rz * vz) / vv : 0;
+  if (t < 0) t = 0; else if (t > 1) t = 1;
+  const ax = a0x + (a1x - a0x) * t, az = a0z + (a1z - a0z) * t;
+  const bx = b0x + (b1x - b0x) * t, bz = b0z + (b1z - b0z) * t;
+  return { dist: Math.hypot(ax - bx, az - bz), x: (ax + bx) * 0.5, z: (az + bz) * 0.5 };
+}
+
 // A lightweight logical arena (no rendering) used by the sim.
 class LogicArena {
   constructor(world, landSize) {
@@ -372,8 +388,13 @@ export class Simulation {
     const playerArr = [...this.players.values()];
     const spawned = [];
     for (const b of this.bolts) {
-      const res = b.step(dt, playerArr, this.arena);
+      b.step(dt, playerArr, this.arena, { movementOnly: true });
       if (b._spawn && b._spawn.length) spawned.push(...b._spawn);
+    }
+    this.resolveProjectileClashes();
+    for (const b of this.bolts) {
+      if (b.dead) continue;
+      const res = b.step(0, playerArr, this.arena);
       if (res && res.hit != null) {
         const shooter = this.players.get(b.ownerId);
         const victim = this.players.get(res.hit);
@@ -426,6 +447,31 @@ export class Simulation {
     }
 
     this.resolveRoundIfNeeded();
+  }
+
+  resolveProjectileClashes() {
+    if (this.bolts.length < 2) return;
+    const r = CFG.BOLT_RADIUS * 2;
+    for (let i = 0; i < this.bolts.length; i++) {
+      const a = this.bolts[i];
+      if (a.dead) continue;
+      for (let j = i + 1; j < this.bolts.length; j++) {
+        const b = this.bolts[j];
+        if (b.dead || a.ownerId === b.ownerId) continue;
+        // Swept test against this tick's travel segments so fast projectiles
+        // that cross between ticks still clash instead of tunneling through.
+        const hit = closestApproach(
+          a.prevX, a.prevZ, a.x, a.z,
+          b.prevX, b.prevZ, b.x, b.z,
+        );
+        if (hit.dist <= r) {
+          a.dead = true;
+          b.dead = true;
+          this.events.push({ type: "projectileClash", x: +hit.x.toFixed(2), z: +hit.z.toFixed(2) });
+          break;
+        }
+      }
+    }
   }
 
   // Players can shoot a rune to destroy it, denying the ability to rivals.
