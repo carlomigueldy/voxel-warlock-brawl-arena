@@ -80,10 +80,22 @@ export class GameRenderer {
     sun.shadow.camera.bottom = -40;
     sun.shadow.camera.far = 120;
     this.scene.add(sun);
-    // Lava glow from below.
+    // Hazard glow from below (color is themed per map in _applyHazardTheme).
     const glow = new THREE.PointLight(0xff3a1e, 0.8, 60);
     glow.position.set(0, -6, 0);
     this.scene.add(glow);
+    this._hazardGlow = glow;
+  }
+
+  // Tint the under-glow light and the scene fog/background to match the active
+  // hazard so each map feels like its own place (lava, ocean, swamp, etc.).
+  _applyHazardTheme(hazard) {
+    if (!hazard || this._hazardId === hazard.id) return;
+    this._hazardId = hazard.id;
+    if (this._hazardGlow) this._hazardGlow.color.setHex(hazard.glow ?? hazard.color);
+    const fogHex = hazard.fog ?? 0x0d0b1a;
+    this.scene.background = new THREE.Color(fogHex);
+    if (this.scene.fog) this.scene.fog.color.setHex(fogHex);
   }
 
   _onResize() {
@@ -184,6 +196,7 @@ export class GameRenderer {
     this._lastSnapT = snapshot.t;
     this.arena.setWorld(snapshot.arenaWorld ?? CFG.DEFAULT_ARENA_WORLD);
     this.arena.setRadius(snapshot.arenaR ?? CFG.ARENA_RADIUS);
+    this._applyHazardTheme(this.arena.hazard);
 
     const seen = new Set();
     for (const ps of snapshot.players) {

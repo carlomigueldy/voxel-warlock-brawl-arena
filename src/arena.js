@@ -1,26 +1,41 @@
-// The arena: a shrinking voxel platform over a lava sea.
+// The arena: a shrinking voxel platform over a per-map environmental hazard
+// (lava sea, ocean, toxic swamp, sharp rocks, or arcane abyss).
 // Owns both the logical radius (used by the simulation) and the visuals.
 import * as THREE from "three";
-import { CFG, getArenaWorld, isOnArenaWorld } from "./config.js";
-import { buildPlatform, buildLava, animateLava } from "./voxel.js";
+import { CFG, getArenaWorld, getArenaHazard, isOnArenaWorld } from "./config.js";
+import { buildPlatform, buildHazard, animateHazard } from "./voxel.js";
 
 export class Arena {
   constructor(scene) {
     this.scene = scene;
     this.world = getArenaWorld(CFG.DEFAULT_ARENA_WORLD);
+    this.hazard = getArenaHazard(this.world.id);
     this.radius = CFG.ARENA_RADIUS;
     this._builtRadius = -1;
     this._builtWorld = null;
     this.platform = null;
-    this.lava = buildLava(160, CFG.LAVA_Y);
-    scene.add(this.lava);
+    this.lava = null; // current hazard surface (kept as `lava` for callers)
+    this._buildHazard();
     this.rebuild();
+  }
+
+  // (Re)build the themed hazard surface and swap it into the scene.
+  _buildHazard() {
+    this.hazard = getArenaHazard(this.world.id);
+    if (this.lava) {
+      this.scene.remove(this.lava);
+      this.lava.geometry?.dispose?.();
+      this.lava.material?.dispose?.();
+    }
+    this.lava = buildHazard(160, CFG.LAVA_Y, this.hazard);
+    this.scene.add(this.lava);
   }
 
   setWorld(worldId) {
     const world = getArenaWorld(worldId);
     if (world.id === this.world.id) return;
     this.world = world;
+    this._buildHazard();
     this.rebuild();
   }
 
@@ -50,12 +65,15 @@ export class Arena {
   }
 
   update(t) {
-    animateLava(this.lava, t);
+    animateHazard(this.lava, t);
   }
 
   reset(radius = CFG.ARENA_RADIUS, worldId = CFG.DEFAULT_ARENA_WORLD) {
-    this.world = getArenaWorld(worldId);
+    const world = getArenaWorld(worldId);
+    const worldChanged = world.id !== this.world.id;
+    this.world = world;
     this.radius = radius;
+    if (worldChanged || !this.lava) this._buildHazard();
     this.rebuild();
   }
 }

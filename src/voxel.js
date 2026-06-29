@@ -1,7 +1,7 @@
 // Low-poly voxel mesh builders. Everything is built from boxes for the
 // blocky aesthetic, merged where possible to keep draw calls down.
 import * as THREE from "three";
-import { CFG, getArenaWorld, isOnArenaWorld } from "./config.js";
+import { CFG, getArenaWorld, getArenaHazard, isOnArenaWorld } from "./config.js";
 
 function box(w, h, d, color, x = 0, y = 0, z = 0, flat = true) {
   const geo = new THREE.BoxGeometry(w, h, d);
@@ -338,25 +338,91 @@ export function buildPlatform(radius, worldId = CFG.DEFAULT_ARENA_WORLD) {
   return g;
 }
 
-// Animated lava plane (cheap vertex wobble via a shader-free approach).
-export function buildLava(size, y) {
-  const geo = new THREE.PlaneGeometry(size, size, 24, 24);
+// Build the animated hazard surface that surrounds and underlies the platform.
+// `hazard` is an entry from CFG.ARENA_HAZARDS; its `style`/color/amp drive both
+// the look and the per-frame motion in animateHazard so each map reads as its
+// own environment (lava sea, ocean, toxic swamp, sharp rocks, arcane abyss).
+export function buildHazard(size, y, hazard) {
+  const theme = hazard || getArenaHazard(CFG.DEFAULT_ARENA_WORLD);
+  const segs = theme.jagged ? 40 : 24;
+  const geo = new THREE.PlaneGeometry(size, size, segs, segs);
   geo.rotateX(-Math.PI / 2);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xff3a1e });
+
+  // Sharp rocks read as opaque flat-shaded stone; liquids glow without lighting.
+  const mat = theme.jagged
+    ? new THREE.MeshLambertMaterial({ color: theme.color, flatShading: true })
+    : new THREE.MeshBasicMaterial({ color: theme.color });
+
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.y = y;
-  // store base positions for wobble
   mesh.userData.base = geo.attributes.position.array.slice();
+  mesh.userData.hazard = theme;
+
+  // Pre-bake jagged spikes once; animateHazard leaves these static (just a tiny
+  // shimmer) so the rocks feel solid rather than fluid.
+  if (theme.jagged) {
+    const pos = geo.attributes.position;
+    const base = mesh.userData.base;
+    for (let i = 0; i < pos.count; i++) {
+      const x = base[i * 3];
+      const z = base[i * 3 + 2];
+      const spike = (Math.abs(Math.sin(x * 1.7) * Math.cos(z * 1.3)) ** 2) * 3.2;
+      base[i * 3 + 1] = pos.array[i * 3 + 1] + spike;
+      pos.array[i * 3 + 1] = base[i * 3 + 1];
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  }
   return mesh;
 }
 
-export function animateLava(mesh, t) {
+// Per-frame motion. The style decides the wave shape: lava churns, ocean rolls
+// in clean swells, swamp oozes slowly, rocks barely shimmer, the void pulses.
+export function animateHazard(mesh, t) {
+  if (!mesh) return;
+  const theme = mesh.userData.hazard || {};
+  const style = theme.style || "lava";
+  const amp = theme.amp ?? 0.4;
+  const speed = theme.speed ?? 1.5;
   const pos = mesh.geometry.attributes.position;
   const base = mesh.userData.base;
+  const tt = t * speed;
   for (let i = 0; i < pos.count; i++) {
     const x = base[i * 3];
     const z = base[i * 3 + 2];
-    pos.array[i * 3 + 1] = base[i * 3 + 1] + Math.sin(x * 0.3 + t * 1.5) * 0.4 + Math.cos(z * 0.4 + t) * 0.4;
+    const baseY = base[i * 3 + 1];
+    let h = 0;
+    switch (style) {
+      case "ocean":
+        // Long directional swells layered with a cross-chop.
+        h = Math.sin(x * 0.18 + tt) * amp + Math.sin((x + z) * 0.12 + tt * 0.7) * amp * 0.6;
+        break;
+      case "swamp":
+        // Slow, sparse bubbling — mostly still with occasional rises.
+        h = Math.sin(x * 0.5 + tt) * Math.cos(z * 0.5 + tt * 0.8) * amp;
+        break;
+      case "rocks":
+        // Static jagged field, only a faint heat-haze shimmer.
+        h = Math.sin(x * 2.0 + tt * 2) * amp;
+        break;
+      case "void":
+        // Concentric arcane pulse radiating from the center.
+        h = Math.sin(Math.hypot(x, z) * 0.4 - tt * 1.6) * amp;
+        break;
+      case "lava":
+      default:
+        h = Math.sin(x * 0.3 + tt) * amp + Math.cos(z * 0.4 + tt * 0.66) * amp;
+        break;
+    }
+    pos.array[i * 3 + 1] = baseY + h;
   }
   pos.needsUpdate = true;
+}
+
+// Back-compat aliases (older callers / any external refs).
+export function buildLava(size, y) {
+  return buildHazard(size, y, getArenaHazard(CFG.DEFAULT_ARENA_WORLD));
+}
+export function animateLava(mesh, t) {
+  return animateHazard(mesh, t);
 }

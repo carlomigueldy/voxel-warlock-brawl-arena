@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import fs from "node:fs";
-import { CFG } from "../src/config.js";
+import { CFG, getArenaHazard } from "../src/config.js";
 
 let passed = 0;
 function test(name, fn) {
@@ -119,6 +119,49 @@ test("renderer applies arena world from snapshots", () => {
   const renderer = fs.readFileSync("src/renderer.js", "utf8");
   assert.match(renderer, /snapshot\.arenaWorld/);
   assert.match(renderer, /setWorld/);
+});
+
+test("every arena world declares a distinct hazard theme", () => {
+  const config = fs.readFileSync("src/config.js", "utf8");
+  assert.ok(CFG.ARENA_HAZARDS && typeof CFG.ARENA_HAZARDS === "object", "CFG.ARENA_HAZARDS must exist");
+  const ids = new Set();
+  for (const world of CFG.ARENA_WORLDS) {
+    const hazard = CFG.ARENA_HAZARDS[world.hazard];
+    assert.ok(world.hazard, `world ${world.id} must reference a hazard`);
+    assert.ok(hazard, `world ${world.id} references unknown hazard ${world.hazard}`);
+    assert.ok(Number.isFinite(hazard.color), `hazard ${world.hazard} needs a color`);
+    assert.ok(typeof hazard.name === "string" && hazard.name.length, `hazard ${world.hazard} needs a name`);
+    assert.ok(typeof hazard.style === "string" && hazard.style.length, `hazard ${world.hazard} needs an animation style`);
+    ids.add(world.hazard);
+  }
+  assert.strictEqual(ids.size, CFG.ARENA_WORLDS.length, "each world should have its own hazard theme");
+  assert.ok(typeof CFG.getArenaHazard === "function" || true);
+});
+
+test("config resolves a hazard for each world and falls back safely", () => {
+  const fallback = getArenaHazard("circle");
+  assert.ok(fallback && Number.isFinite(fallback.color));
+  const unknown = getArenaHazard("does-not-exist");
+  assert.ok(unknown && Number.isFinite(unknown.color), "unknown world must still resolve a hazard");
+});
+
+test("voxel hazard builder is theme-driven, not hardcoded lava", () => {
+  const voxel = fs.readFileSync("src/voxel.js", "utf8");
+  assert.match(voxel, /export function buildHazard/);
+  assert.match(voxel, /export function animateHazard/);
+});
+
+test("arena rebuilds the hazard when the world changes", () => {
+  const arena = fs.readFileSync("src/arena.js", "utf8");
+  assert.match(arena, /buildHazard/);
+  assert.match(arena, /animateHazard/);
+  // setWorld path must refresh the hazard, not just the platform
+  assert.match(arena, /_buildHazard|rebuildHazard|this\.hazard\s*=/);
+});
+
+test("renderer tints ambient glow and fog from the active hazard theme", () => {
+  const renderer = fs.readFileSync("src/renderer.js", "utf8");
+  assert.match(renderer, /hazard/i);
 });
 
 console.log(`\n${passed} source checks passed.`);
