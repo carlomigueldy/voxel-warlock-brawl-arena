@@ -182,6 +182,11 @@ export class AudioEngine {
         this._tone({ type: "square", f0: 220, f1: 80, dur: 0.12, gain: 0.4, pan });
         this._noise({ dur: 0.1, gain: 0.3, type: "lowpass", freq: 1600, sweep: 200, pan });
         break;
+      case "projectileClash":
+        this._tone({ type: "square", f0: 520, f1: 120, dur: 0.18, gain: 0.38, pan });
+        this._tone({ type: "triangle", f0: 980, f1: 240, dur: 0.16, gain: 0.22, when: 0.03, pan });
+        this._noise({ dur: 0.16, gain: 0.32, type: "bandpass", freq: 1800, sweep: 380, q: 1.4, pan });
+        break;
       case "death":
         this._tone({ type: "sawtooth", f0: 300, f1: 50, dur: 0.7, gain: 0.45, pan });
         this._noise({ dur: 0.6, gain: 0.3, type: "lowpass", freq: 800, sweep: 60, pan });
