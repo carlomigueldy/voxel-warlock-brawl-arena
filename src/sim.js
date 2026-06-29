@@ -367,8 +367,12 @@ export class Simulation {
       }
     }
 
-    // Step players.
-    for (const p of this.players.values()) p.step(dt, this.arena);
+    // Step players, draining any feedback events they produced (e.g. the
+    // gravity implosion burst, which fires from within the status tick).
+    for (const p of this.players.values()) {
+      p.step(dt, this.arena);
+      if (p._events.length) { for (const ev of p._events) this.events.push(ev); }
+    }
 
     // Resolve Time Shift rewinds.
     for (const p of this.players.values()) {

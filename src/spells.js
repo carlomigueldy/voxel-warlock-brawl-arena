@@ -210,7 +210,7 @@ const HANDLERS = {
       const pd = Math.hypot(p.x - tx, p.z - tz);
       if (pd <= s.radius) {
         p.status.gravity = s.duration;
-        p.status.gravX = tx; p.status.gravZ = tz; p.status.gravPull = s.pull;
+        p.status.gravX = tx; p.status.gravZ = tz; p.status.gravPull = s.pull; p.status.gravBy = c.id;
       }
     }
     emit(sim, { type: "gravity", id: c.id, x: tx, z: tz, radius: s.radius, duration: s.duration });

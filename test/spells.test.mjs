@@ -468,6 +468,10 @@ test("gravity status expiry applies an outward impulse to a player still inside 
   // The outward impulse from applyHit should push b away from the field centre
   // (positive vx, since b is on the +x side).
   assert.ok(b.vx > vxBefore, "gravity expiry did not apply an outward impulse");
+  // The collapse should surface a feedback "hit" event (spark + SFX) credited
+  // to the field's caster, so the client payoff matches the authoritative fling.
+  const burst = sim.events.find((e) => e.type === "hit" && e.victim === "b" && e.by === "a");
+  assert.ok(burst, "gravity collapse did not emit a feedback hit event");
 });
 
 test("drain pull is larger against a high-charge target than a zero-charge target", () => {
