@@ -3,7 +3,7 @@
 // camera that follows the local warlock.
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CFG } from "./config.js";
+import { CFG, SPELLS } from "./config.js";
 import { Arena } from "./arena.js";
 import {
   buildWarlock, buildBolt, animateWarlock,
@@ -141,8 +141,10 @@ export class GameRenderer {
     group.userData.meshyPath = path;
     this._loadMeshyAsset(path, opts).then((asset) => {
       if (!asset || group.userData.meshyPath !== path || !group.parent) return;
+      const label = group.userData.label;
       group.clear();
       group.add(asset);
+      if (label) group.add(label);
       const light = new THREE.PointLight(color, 1.2, opts.lightDistance || 6);
       light.position.y = opts.lightY || 0;
       group.add(light);
@@ -371,6 +373,10 @@ export class GameRenderer {
       let g = this.runeMeshes.get(r.id);
       if (!g) {
         g = buildRune(r.c || 0xffffff);
+        const name = SPELLS[r.spell]?.name || r.spell || "Rune";
+        const label = this._makeLabel(name, r.c || 0xffffff, 1.65);
+        g.add(label);
+        g.userData.label = label;
         this._installMeshyAsset(g, MESHY_ASSETS.rune, MESHY_ASSET_OPTIONS.rune, r.c || 0xffffff);
         this.scene.add(g);
         this.runeMeshes.set(r.id, g);

@@ -215,4 +215,13 @@ test("renderer loads Meshy GLBs with procedural fallbacks", () => {
   assert.match(renderer, /buildRune\(r\.c \|\| 0xffffff\)/);
 });
 
+test("renderer labels ability runes with spell names", () => {
+  assert.match(renderer, /import \{ CFG, SPELLS \} from "\.\/config\.js";/);
+  assert.match(renderer, /SPELLS\[r\.spell\]\?\.name/);
+  assert.match(renderer, /_makeLabel\(name, r\.c \|\| 0xffffff, 1\.65\)/);
+  assert.match(renderer, /userData\.label/);
+  assert.match(renderer, /const label = group\.userData\.label/);
+  assert.match(renderer, /if \(label\) group\.add\(label\)/);
+});
+
 console.log(`\n${passed} source checks passed.`);
