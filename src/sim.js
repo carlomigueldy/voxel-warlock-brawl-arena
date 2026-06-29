@@ -27,6 +27,8 @@ export class Simulation {
     this.bolts = [];
     this.meteors = [];        // in-flight meteors (delayed AoE)
     this.runes = [];
+    this.runeSpawnTimer = 0;  // counts down to the next timed rune spawn
+    this.runePool = [];       // remaining spell ids queued to drop as runes
     this._meteorId = 1;
     this._runeId = 1;
     this.arena = new LogicArena();
@@ -120,6 +122,8 @@ export class Simulation {
     this.bolts = [];
     this.meteors = [];
     this.runes = [];
+    this.runePool = [];
+    this.runeSpawnTimer = 0;
     this.arena.reset();
     this.playTime = 0;
     this.phase = PHASE.COUNTDOWN;
@@ -137,18 +141,56 @@ export class Simulation {
     if (!this.allAbilitiesAtStart) this.spawnRunes();
   }
 
+  // Initialise rune mode: fill a shuffled pool of acquirable spells and seed the
+  // field up to the active cap. Remaining spells drip out over time.
   spawnRunes() {
-    const spells = SPELL_ORDER.filter((id) => id !== "fireball");
-    this.runes = spells.map((spell, i) => {
-      const angle = (i / spells.length) * Math.PI * 2;
-      const ring = CFG.RUNE_SPAWN_RADIUS * (0.65 + 0.35 * ((i % 3) / 2));
-      return {
-        id: this._runeId++,
-        spell,
-        x: +(Math.cos(angle) * ring).toFixed(3),
-        z: +(Math.sin(angle) * ring).toFixed(3),
-      };
-    });
+    this.runes = [];
+    this.runePool = this._shuffle(SPELL_ORDER.filter((id) => id !== "fireball"));
+    this.runeSpawnTimer = CFG.RUNE_SPAWN_INTERVAL;
+    const seed = Math.min(CFG.RUNE_MAX_ACTIVE, this.runePool.length);
+    for (let i = 0; i < seed; i++) this.spawnNextRune();
+  }
+
+  // Pop the next spell from the pool and drop it as a rune at a random spot.
+  spawnNextRune() {
+    if (this.runes.length >= CFG.RUNE_MAX_ACTIVE) return null;
+    if (!this.runePool.length) return null;
+    const spell = this.runePool.shift();
+    const angle = Math.random() * Math.PI * 2;
+    const ring = CFG.RUNE_SPAWN_RADIUS * (0.5 + 0.4 * Math.random());
+    const rune = {
+      id: this._runeId++,
+      spell,
+      x: +(Math.cos(angle) * ring).toFixed(3),
+      z: +(Math.sin(angle) * ring).toFixed(3),
+    };
+    this.runes.push(rune);
+    return rune;
+  }
+
+  _shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // Advance the rune spawn timer and refill the pool so abilities keep flowing.
+  stepRunes(dt) {
+    if (this.allAbilitiesAtStart) return;
+    if (!this.runePool.length && !this.runes.length) {
+      // All spells distributed/consumed for now — recycle the pool so the
+      // round keeps offering fresh abilities to fight over.
+      this.runePool = this._shuffle(SPELL_ORDER.filter((id) => id !== "fireball"));
+    }
+    if (this.runes.length >= CFG.RUNE_MAX_ACTIVE) return;
+    this.runeSpawnTimer -= dt;
+    if (this.runeSpawnTimer <= 0) {
+      this.spawnNextRune();
+      this.runeSpawnTimer = CFG.RUNE_SPAWN_INTERVAL;
+    }
   }
 
   returnToLobby() {
@@ -159,6 +201,8 @@ export class Simulation {
     this.matchWinnerId = null;
     this.bolts = [];
     this.runes = [];
+    this.runePool = [];
+    this.runeSpawnTimer = 0;
     this.arena.reset();
     for (const p of this.players.values()) {
       p.alive = true;
@@ -233,7 +277,15 @@ export class Simulation {
     // Resolve queued spell casts (one shot per cast id).
     for (const p of this.players.values()) {
       if (p.pendingCasts.length) {
-        for (const cast of p.pendingCasts) castSpell(this, p, cast);
+        for (const cast of p.pendingCasts) {
+          const fired = castSpell(this, p, cast);
+          // In rune mode, abilities are single-use: casting consumes the spell
+          // (Fireball is the permanent starter weapon and is never consumed).
+          if (fired && !this.allAbilitiesAtStart && cast.spell !== "fireball") {
+            p.removeSpell(cast.spell);
+            this.events.push({ type: "spellConsumed", id: p.id, spell: cast.spell });
+          }
+        }
         p.pendingCasts = [];
       }
     }
@@ -302,6 +354,8 @@ export class Simulation {
     }
     this.meteors = this.meteors.filter((m) => !m.dead);
 
+    this.stepRunes(dt);
+    this.resolveRuneDestruction();
     this.resolveRunePickups();
 
     // Death detection (falling players that reached lava become !alive in step()).
@@ -313,6 +367,26 @@ export class Simulation {
     }
 
     this.resolveRoundIfNeeded();
+  }
+
+  // Players can shoot a rune to destroy it, denying the ability to rivals.
+  resolveRuneDestruction() {
+    if (this.allAbilitiesAtStart || !this.runes.length || !this.bolts.length) return;
+    const remaining = [];
+    for (const rune of this.runes) {
+      let destroyed = false;
+      for (const b of this.bolts) {
+        if (b.dead) continue;
+        const d = Math.hypot(b.x - rune.x, b.z - rune.z);
+        if (d <= CFG.RUNE_RADIUS + CFG.BOLT_RADIUS) {
+          destroyed = true;
+          this.events.push({ type: "runeDestroyed", spell: rune.spell, by: b.ownerId, x: rune.x, z: rune.z });
+          break;
+        }
+      }
+      if (!destroyed) remaining.push(rune);
+    }
+    this.runes = remaining;
   }
 
   resolveRunePickups() {

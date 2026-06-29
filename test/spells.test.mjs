@@ -2,6 +2,7 @@
 // Run with: node test/spells.test.mjs
 import assert from "node:assert";
 import { Simulation, PHASE } from "../src/sim.js";
+import { Bolt } from "../src/bolt.js";
 import { CFG, SPELLS, SPELL_ORDER, ITEMS } from "../src/config.js";
 
 let passed = 0;
@@ -295,6 +296,77 @@ test("snapshots include runes and acquired spell ids", () => {
   assert.ok(Array.isArray(snap.runes), "runes missing from snapshot");
   const me = snap.players.find((p) => p.id === "a");
   assert.deepStrictEqual(me.spells, ["fireball"], "acquired spells missing from player snapshot");
+});
+
+test("rune mode starts with at most two active runes", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  assert.ok(sim.runes.length <= CFG.RUNE_MAX_ACTIVE, `too many active runes: ${sim.runes.length}`);
+});
+
+test("rune mode spawns new runes over time without exceeding active cap", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  sim.runes = [];
+  sim.runeSpawnTimer = 0;
+  sim.step(1 / CFG.TICK_RATE);
+  assert.strictEqual(sim.runes.length, 1, "first timed rune did not spawn");
+  advance(sim, CFG.RUNE_SPAWN_INTERVAL + 0.1);
+  assert.ok(sim.runes.length <= CFG.RUNE_MAX_ACTIVE, "active rune cap exceeded");
+  assert.ok(sim.runes.length >= 1, "timed runes stopped spawning");
+});
+
+test("rune acquired abilities are consumed when cast", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  a.acquireSpell("teleport");
+  a.x = 0; a.z = 0;
+  cast(sim, "a", "teleport", 5, 0);
+  assert.strictEqual(a.hasSpell("teleport"), false, "teleport was not consumed after cast");
+});
+
+test("all-abilities mode does not consume spells when cast", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a");
+  a.x = 0; a.z = 0;
+  cast(sim, "a", "teleport", 5, 0);
+  assert.strictEqual(a.hasSpell("teleport"), true, "teleport should remain in all-abilities mode");
+});
+
+test("a projectile destroys a targeted rune so it cannot be picked up", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  // Move both players far from the rune so neither can pick it up.
+  a.x = -10; a.z = -10; b.x = 10; b.z = 10;
+  sim.runes = [{ id: 99, spell: "teleport", x: 0, z: 0 }];
+  // A bolt sitting on top of the rune should destroy it.
+  sim.bolts = [new Bolt("a", 0, 0, 0, 0xffffff)];
+  sim.step(1 / CFG.TICK_RATE);
+  assert.strictEqual(sim.runes.length, 0, "rune was not destroyed by the projectile");
+  assert.strictEqual(a.hasSpell("teleport"), false, "shooter wrongly acquired the destroyed rune");
+});
+
+test("destroying a rune emits a runeDestroyed event", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = -10; a.z = -10; b.x = 10; b.z = 10;
+  sim.runes = [{ id: 7, spell: "meteor", x: 0, z: 0 }];
+  sim.bolts = [new Bolt("a", 0, 0, 0, 0xffffff)];
+  sim.step(1 / CFG.TICK_RATE);
+  assert.ok(sim.events.some((e) => e.type === "runeDestroyed" && e.spell === "meteor"),
+    "no runeDestroyed event emitted");
 });
 
 console.log(`\n${passed} spellbook tests passed.`);

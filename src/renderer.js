@@ -319,6 +319,11 @@ export class GameRenderer {
           this._addEffect(this._burstAt(ev.x, ev.z, 0x7cff5a, { count: 18, speed: 6 }));
           this.audio?.play("cast", this._panFor(ev.x || 0));
           break;
+        case "runeDestroyed":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0xff3a1e, { count: 22, speed: 8, life: 0.6 }));
+          this._addEffect(this._ringPulse(ev.x, ev.z, 2.5, 0xff3a1e));
+          this.audio?.play("hit", this._panFor(ev.x || 0));
+          break;
         case "sfx":
           this.audio?.play(ev.sfx, this._panFor(ev.x || 0));
           break;

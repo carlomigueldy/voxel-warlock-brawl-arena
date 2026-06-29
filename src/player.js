@@ -91,6 +91,10 @@ export class Player {
     if (SPELLS[spellId]) this.spells.add(spellId);
   }
 
+  removeSpell(spellId) {
+    if (spellId !== "fireball") this.spells.delete(spellId);
+  }
+
   setAllSpells() {
     this.spells = new Set(Object.keys(SPELLS));
   }
