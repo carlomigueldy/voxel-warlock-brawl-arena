@@ -53,9 +53,20 @@ test("disconnect handling sends the host back to lobby when a match cannot conti
 
 test("generated character asset URLs resolve relative to the character module", () => {
   const character = fs.readFileSync("src/character.js", "utf8");
-  assert.match(character, /new URL\("\.\.\/assets\/warlock-player-rigged\.glb", import\.meta\.url\)\.href/);
-  assert.match(character, /new URL\("\.\.\/assets\/warlock-player-walking\.glb", import\.meta\.url\)\.href/);
-  assert.match(character, /new URL\("\.\.\/assets\/warlock-player-running\.glb", import\.meta\.url\)\.href/);
+  // Character-aware loader resolves rigged + walk + run GLBs per selectable
+  // character relative to the module.
+  assert.match(character, /new URL\(p, import\.meta\.url\)\.href/);
+  assert.match(character, /assets\/characters\/ember-warlock-rigged\.glb/);
+  assert.match(character, /assets\/characters\/ember-warlock-walking\.glb/);
+  assert.match(character, /assets\/characters\/ember-warlock-running\.glb/);
+});
+
+test("character roster exposes four rigged voxel characters", () => {
+  const character = fs.readFileSync("src/character.js", "utf8");
+  assert.match(character, /export const CHARACTER_ASSETS/);
+  for (const id of ["ember", "frost", "storm", "moss"]) {
+    assert.match(character, new RegExp(`${id}:`), `roster must include ${id}`);
+  }
 });
 
 test("generated character model is scaled to the simulation player height", () => {
@@ -88,6 +99,30 @@ test("generated character tinting preserves single-material meshes", () => {
 test("generated character label height follows simulation player height", () => {
   const renderer = fs.readFileSync("src/renderer.js", "utf8");
   assert.match(renderer, /CFG\.PLAYER_HEIGHT \+ 0\.55/);
+});
+
+test("renderer triggers cast animations from simulation events", () => {
+  const renderer = fs.readFileSync("src/renderer.js", "utf8");
+  assert.match(renderer, /archetypeForEvent/);
+  // the cast trigger must be applied to the resolved caster's mesh
+  assert.match(renderer, /triggerCast|playCast/);
+});
+
+test("character GLB instances accept a cast archetype trigger", () => {
+  const character = fs.readFileSync("src/character.js", "utf8");
+  assert.match(character, /CastAnimator/);
+  assert.match(character, /triggerCast/);
+});
+
+test("character rig loads per-character walk and run animation clips", () => {
+  const character = fs.readFileSync("src/character.js", "utf8");
+  assert.match(character, /walk/i);
+  assert.match(character, /run/i);
+});
+
+test("voxel fallback warlock supports cast archetype overlays", () => {
+  const voxel = fs.readFileSync("src/voxel.js", "utf8");
+  assert.match(voxel, /castArchetype|triggerCast/);
 });
 
 test("host menu exposes all-abilities-at-start toggle", () => {

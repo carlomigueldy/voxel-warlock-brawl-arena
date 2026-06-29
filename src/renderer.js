@@ -13,6 +13,7 @@ import {
   characterReady,
   buildCharacterInstance,
 } from "./character.js";
+import { archetypeForEvent } from "./animations.js";
 
 export class GameRenderer {
   constructor(canvas) {
@@ -328,8 +329,22 @@ export class GameRenderer {
     }
   }
 
+  // Drive a caster's body-cast animation from a simulation event. Works for
+  // both the GLB rig (character.triggerCast) and the voxel fallback
+  // (group.userData.triggerCast).
+  _triggerCast(ev) {
+    const resolved = archetypeForEvent(ev);
+    if (!resolved) return;
+    const e = this.playerMeshes.get(resolved.id);
+    if (!e) return;
+    const char = e.group.userData.character;
+    if (char && char.triggerCast) char.triggerCast(resolved.archetype);
+    else if (e.group.userData.triggerCast) e.group.userData.triggerCast(resolved.archetype);
+  }
+
   _processEvents(events) {
     for (const ev of events) {
+      this._triggerCast(ev);
       switch (ev.type) {
         case "hit":
           this._addEffect(this._burstAt(ev.x, ev.z, 0xffcc44, { count: 16, speed: 7 }));
