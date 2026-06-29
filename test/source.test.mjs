@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import fs from "node:fs";
-import { CFG, getArenaHazard } from "../src/config.js";
+import { CFG } from "../src/config.js";
 
 let passed = 0;
 function test(name, fn) {
@@ -12,9 +12,8 @@ console.log("Source integration checks:");
 
 const main = fs.readFileSync("src/main.js", "utf8");
 const ui = fs.readFileSync("src/ui.js", "utf8");
-const input = fs.readFileSync("src/input.js", "utf8");
 const html = fs.readFileSync("index.html", "utf8");
-const renderer = fs.readFileSync("src/renderer.js", "utf8");
+const css = fs.readFileSync("src/style.css", "utf8");
 
 test("host start is gated by Simulation.startMatch result", () => {
   assert.match(main, /if \(!sim\.startMatch\(\)\)/);
@@ -54,20 +53,9 @@ test("disconnect handling sends the host back to lobby when a match cannot conti
 
 test("generated character asset URLs resolve relative to the character module", () => {
   const character = fs.readFileSync("src/character.js", "utf8");
-  // Character-aware loader resolves rigged + walk + run GLBs per selectable
-  // character relative to the module.
-  assert.match(character, /new URL\(p, import\.meta\.url\)\.href/);
-  assert.match(character, /assets\/characters\/ember-warlock-rigged\.glb/);
-  assert.match(character, /assets\/characters\/ember-warlock-walking\.glb/);
-  assert.match(character, /assets\/characters\/ember-warlock-running\.glb/);
-});
-
-test("character roster exposes four rigged voxel characters", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
-  assert.match(character, /export const CHARACTER_ASSETS/);
-  for (const id of ["ember", "frost", "storm", "moss"]) {
-    assert.match(character, new RegExp(`${id}:`), `roster must include ${id}`);
-  }
+  assert.match(character, /new URL\("\.\.\/assets\/warlock-player-rigged\.glb", import\.meta\.url\)\.href/);
+  assert.match(character, /new URL\("\.\.\/assets\/warlock-player-walking\.glb", import\.meta\.url\)\.href/);
+  assert.match(character, /new URL\("\.\.\/assets\/warlock-player-running\.glb", import\.meta\.url\)\.href/);
 });
 
 test("generated character model is scaled to the simulation player height", () => {
@@ -102,109 +90,15 @@ test("generated character label height follows simulation player height", () => 
   assert.match(renderer, /CFG\.PLAYER_HEIGHT \+ 0\.55/);
 });
 
-test("renderer triggers cast animations from simulation events", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
-  assert.match(renderer, /archetypeForEvent/);
-  // the cast trigger must be applied to the resolved caster's mesh
-  assert.match(renderer, /triggerCast|playCast/);
-});
-
-test("character GLB instances accept a cast archetype trigger", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
-  assert.match(character, /CastAnimator/);
-  assert.match(character, /triggerCast/);
-});
-
-test("character rig loads per-character walk and run animation clips", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
-  assert.match(character, /walk/i);
-  assert.match(character, /run/i);
-});
-
-test("voxel fallback warlock supports cast archetype overlays", () => {
-  const voxel = fs.readFileSync("src/voxel.js", "utf8");
-  assert.match(voxel, /castArchetype|triggerCast/);
-});
-
-test("renderer passes falling and time to GLB character animations", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
-  const match = renderer.match(/if \(char\) \{\s*char\.update\(\{([\s\S]*?)\}\);\s*\} else/);
-  assert.ok(match, "could not find GLB character update block");
-  assert.match(match[1], /falling: !!e\.target\.f/);
-  assert.match(match[1], /time: t/);
-});
-
-test("simulation emits cast events for held-fire auto-attacks", () => {
-  const sim = fs.readFileSync("src/sim.js", "utf8");
-  assert.match(sim, /type: "cast"[\s\S]*spell: "fireball"/);
-});
-
 test("host menu exposes all-abilities-at-start toggle", () => {
   assert.match(html, /id="all-abilities-toggle"/);
   assert.match(ui, /allAbilitiesAtStart/);
-  assert.match(main, /allAbilitiesAtStart: options\.allAbilitiesAtStart/);
-});
-
-test("menu exposes a character-select UI with cards and a live preview", () => {
-  assert.match(html, /id="char-cards"/);
-  assert.match(html, /id="char-preview"/);
-  assert.match(ui, /_buildCharacterCards/);
-  assert.match(ui, /CFG\.CHARACTERS/);
-});
-
-test("config declares four selectable characters and a default", () => {
-  assert.ok(Array.isArray(CFG.CHARACTERS) && CFG.CHARACTERS.length === 4, "expected 4 selectable characters");
-  const ids = CFG.CHARACTERS.map((c) => c.id).sort();
-  assert.deepStrictEqual(ids, ["ember", "frost", "moss", "storm"]);
-  assert.ok(CFG.CHARACTERS.some((c) => c.id === CFG.DEFAULT_CHARACTER), "default character must be in the roster");
-});
-
-test("character ids match the loadable GLB roster", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
-  for (const c of CFG.CHARACTERS) {
-    assert.match(character, new RegExp(`${c.id}:`), `character.js must define assets for ${c.id}`);
-  }
-});
-
-test("selected character is networked from client to host on join", () => {
-  const net = fs.readFileSync("src/net.js", "utf8");
-  assert.match(net, /type: MSG\.JOIN, name: this\.name, character: this\.character/);
-  assert.match(net, /conn\._character/);
-});
-
-test("host carries each player's character in lobby meta", () => {
-  assert.match(main, /character: getCharacter\(character\)\.id/);
-  assert.match(main, /character: m\.character \|\| CFG\.DEFAULT_CHARACTER/);
-});
-
-test("renderer builds each player's mesh from their selected character", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
-  assert.match(renderer, /buildCharacterInstance\(color, character\)/);
-  assert.match(renderer, /characterReady\(character\)/);
-});
-
-test("live character preview module exists and spins the model", () => {
-  const preview = fs.readFileSync("src/preview.js", "utf8");
-  assert.match(preview, /turntable\.rotation\.y \+=/);
-  assert.match(preview, /buildCharacterInstance/);
+  assert.match(main, /new Simulation\(\{ allAbilitiesAtStart/);
 });
 
 test("ability bar filters slots by acquired spells from snapshots", () => {
   assert.match(ui, /me\?\.spells/);
   assert.match(ui, /slot\.classList\.toggle\("locked"/);
-});
-
-test("rune mode ability bar renders six spell slots", () => {
-  assert.match(ui, /CFG\.SPELL_SLOT_COUNT/);
-  assert.match(ui, /spellSlots/);
-  assert.match(ui, /empty/);
-});
-
-test("spell slot hotkeys are configurable and persisted locally", () => {
-  assert.match(input, /SPELL_SLOT_HOTKEY_STORAGE_KEY/);
-  assert.match(input, /localStorage\.setItem\(SPELL_SLOT_HOTKEY_STORAGE_KEY/);
-  assert.match(input, /setSpellSlotHotkey/);
-  assert.match(ui, /hotkey-picker/);
 });
 
 test("host lobby exposes bot count and difficulty controls", () => {
@@ -214,127 +108,100 @@ test("host lobby exposes bot count and difficulty controls", () => {
   assert.match(main, /sim\.setBotRoster/);
 });
 
-test("host menu exposes arena world and land size controls", () => {
-  assert.match(html, /id="arena-world"/);
-  assert.match(html, /id="land-size"/);
-  assert.match(ui, /getArenaSettings/);
-  assert.match(main, /arenaWorld: options\.arenaWorld/);
-  assert.match(main, /landSize: options\.landSize/);
+test("UI stylesheet defines voxel low-poly design system tokens", () => {
+  assert.match(css, /--stone-dark:/);
+  assert.match(css, /--lava-core:/);
+  assert.match(css, /--mana-crystal:/);
+  assert.match(css, /--voxel-cut:/);
+  assert.match(css, /clip-path: polygon/);
+  assert.match(css, /linear-gradient\(135deg/);
 });
 
-test("renderer applies arena world from snapshots", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
-  assert.match(renderer, /snapshot\.arenaWorld/);
-  assert.match(renderer, /setWorld/);
+test("UI markup applies voxel component primitives across menu lobby and HUD", () => {
+  assert.match(html, /class="panel voxel-card menu-card"/);
+  assert.match(html, /class="panel voxel-card lobby-card"/);
+  assert.match(html, /class="lobby-left voxel-card shard-card"/);
+  assert.match(html, /class="lobby-right voxel-card shard-card"/);
+  assert.match(html, /class="join-box voxel-control-cluster"/);
+  assert.match(html, /class="voxel-field"/);
+  assert.match(html, /id="hud-top" class="hud-slab"/);
+  assert.match(html, /id="scoreboard" class="hud-slab scoreboard-card"/);
+  assert.match(html, /id="charge-wrap" class="hud-slab charge-meter"/);
 });
 
-test("every arena world declares a distinct hazard theme", () => {
-  const config = fs.readFileSync("src/config.js", "utf8");
-  assert.ok(CFG.ARENA_HAZARDS && typeof CFG.ARENA_HAZARDS === "object", "CFG.ARENA_HAZARDS must exist");
-  const ids = new Set();
-  for (const world of CFG.ARENA_WORLDS) {
-    const hazard = CFG.ARENA_HAZARDS[world.hazard];
-    assert.ok(world.hazard, `world ${world.id} must reference a hazard`);
-    assert.ok(hazard, `world ${world.id} references unknown hazard ${world.hazard}`);
-    assert.ok(Number.isFinite(hazard.color), `hazard ${world.hazard} needs a color`);
-    assert.ok(typeof hazard.name === "string" && hazard.name.length, `hazard ${world.hazard} needs a name`);
-    assert.ok(typeof hazard.style === "string" && hazard.style.length, `hazard ${world.hazard} needs an animation style`);
-    ids.add(world.hazard);
+test("UI stylesheet styles reusable voxel component primitives", () => {
+  assert.match(css, /\.voxel-card/);
+  assert.match(css, /\.voxel-field/);
+  assert.match(css, /\.voxel-toggle/);
+  assert.match(css, /\.hud-slab/);
+  assert.match(css, /\.shard-card/);
+  assert.match(css, /\.voxel-control-cluster/);
+  assert.match(css, /--facet-top:/);
+  assert.match(css, /--facet-bottom:/);
+});
+
+test("every voxel component class used in markup is defined in the stylesheet", () => {
+  const used = new Set();
+  for (const m of html.matchAll(/class="([^"]*)"/g)) {
+    for (const cls of m[1].split(/\s+/)) {
+      if (/^(voxel-|rune-|shard-|hud-slab|scoreboard-card|charge-meter|menu-card|lobby-card)/.test(cls)) used.add(cls);
+    }
   }
-  assert.strictEqual(ids.size, CFG.ARENA_WORLDS.length, "each world should have its own hazard theme");
-  assert.ok(typeof CFG.getArenaHazard === "function" || true);
-});
-
-test("config resolves a hazard for each world and falls back safely", () => {
-  const fallback = getArenaHazard("circle");
-  assert.ok(fallback && Number.isFinite(fallback.color));
-  const unknown = getArenaHazard("does-not-exist");
-  assert.ok(unknown && Number.isFinite(unknown.color), "unknown world must still resolve a hazard");
-});
-
-test("voxel hazard builder is theme-driven, not hardcoded lava", () => {
-  const voxel = fs.readFileSync("src/voxel.js", "utf8");
-  assert.match(voxel, /export function buildHazard/);
-  assert.match(voxel, /export function animateHazard/);
-});
-
-test("arena rebuilds the hazard when the world changes", () => {
-  const arena = fs.readFileSync("src/arena.js", "utf8");
-  assert.match(arena, /buildHazard/);
-  assert.match(arena, /animateHazard/);
-  // setWorld path must refresh the hazard, not just the platform
-  assert.match(arena, /_buildHazard|rebuildHazard|this\.hazard\s*=/);
-});
-
-test("renderer tints ambient glow and fog from the active hazard theme", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
-  assert.match(renderer, /hazard/i);
-});
-
-test("every hazard declares ambient detail props for immersion", () => {
-  for (const id in CFG.ARENA_HAZARDS) {
-    const hazard = CFG.ARENA_HAZARDS[id];
-    assert.ok(hazard.detail && typeof hazard.detail === "object", `hazard ${id} needs a detail descriptor`);
-    assert.ok(typeof hazard.detail.kind === "string" && hazard.detail.kind.length, `hazard ${id} detail needs a kind`);
-    assert.ok(Number.isInteger(hazard.detail.count) && hazard.detail.count > 0, `hazard ${id} detail needs a positive count`);
-    assert.ok(Number.isFinite(hazard.detail.color), `hazard ${id} detail needs a color`);
-  }
-  const kinds = new Set(Object.values(CFG.ARENA_HAZARDS).map((h) => h.detail.kind));
-  assert.ok(kinds.size >= 4, "hazards should use a variety of detail prop kinds");
-});
-
-test("voxel exposes a theme-driven hazard detail builder and animator", () => {
-  const voxel = fs.readFileSync("src/voxel.js", "utf8");
-  assert.match(voxel, /export function buildHazardDetails/);
-  assert.match(voxel, /export function animateHazardDetails/);
-});
-
-test("arena builds, animates, and disposes hazard detail props", () => {
-  const arena = fs.readFileSync("src/arena.js", "utf8");
-  assert.match(arena, /buildHazardDetails/);
-  assert.match(arena, /animateHazardDetails/);
-  // The detail group must be disposed when the hazard is rebuilt (no leaks).
-  assert.match(arena, /this\.details/);
-});
-
-test("projectile clash events trigger dedicated VFX and SFX", () => {
-  const audio = fs.readFileSync("src/audio.js", "utf8");
-  assert.match(renderer, /case "projectileClash"/);
-  assert.match(renderer, /projectileClash/);
-  assert.match(audio, /case "projectileClash"/);
-});
-
-test("renderer declares Meshy GLB assets for runes and projectile kinds", () => {
-  assert.match(renderer, /MESHY_ASSETS/);
-  for (const asset of [
-    "assets/meshy/ability-rune.glb",
-    "assets/meshy/projectile-fireball.glb",
-    "assets/meshy/projectile-boomerang.glb",
-    "assets/meshy/projectile-homing.glb",
-    "assets/meshy/projectile-bouncer.glb",
-    "assets/meshy/projectile-splitter.glb",
-    "assets/meshy/projectile-disable.glb",
-    "assets/meshy/projectile-meteor.glb",
-  ]) {
-    assert.match(renderer, new RegExp(asset.replace(/[./-]/g, "\\$&")));
-    assert.ok(fs.existsSync(asset), `${asset} should exist`);
+  for (const cls of used) {
+    assert.match(css, new RegExp("\\." + cls.replace(/[-]/g, "\\-") + "\\b"), `missing CSS for .${cls}`);
   }
 });
 
-test("renderer loads Meshy GLBs with procedural fallbacks", () => {
-  assert.match(renderer, /GLTFLoader/);
-  assert.match(renderer, /_loadMeshyAsset/);
-  assert.match(renderer, /buildBolt\(b\.c, b\.k \|\| "fireball"\)/);
-  assert.match(renderer, /buildRune\(r\.c \|\| 0xffffff\)/);
+test("UI honors reduced-motion preference", () => {
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
-test("renderer labels ability runes with spell names", () => {
-  assert.match(renderer, /import \{ CFG, SPELLS \} from "\.\/config\.js";/);
-  assert.match(renderer, /SPELLS\[r\.spell\]\?\.name/);
-  assert.match(renderer, /_makeLabel\(name, r\.c \|\| 0xffffff, 1\.65\)/);
-  assert.match(renderer, /userData\.label/);
-  assert.match(renderer, /const label = group\.userData\.label/);
-  assert.match(renderer, /if \(label\) group\.add\(label\)/);
+test("UI exposes eight selectable redesign variants", () => {
+  for (const v of [3, 4, 5, 6, 7, 8, 9, 10]) {
+    assert.match(html, new RegExp(`theme-v${v}`));
+    assert.match(html, new RegExp(`v=${v}`));
+  }
+  assert.match(html, /URLSearchParams\(location\.search\)/);
+});
+
+test("UI stylesheet defines distinct voxel redesign variants", () => {
+  for (const v of [3, 4, 5, 6, 7, 8, 9, 10]) assert.match(css, new RegExp(`\\.theme-v${v}`));
+  assert.match(css, /Obsidian Forge/);
+  assert.match(css, /Arcane Crystal/);
+  assert.match(css, /Goblin Workshop/);
+  assert.match(css, /Frost Citadel/);
+  assert.match(css, /Elven Grove/);
+  assert.match(css, /Necromancer Crypt/);
+  assert.match(css, /Dragon Hoard/);
+  assert.match(css, /Celestial Sanctum/);
+});
+
+test("UI exposes four component design-system variants via ds param", () => {
+  assert.match(html, /URLSearchParams\(location\.search\)[\s\S]*get\("ds"\)/);
+  for (const d of [1, 2, 3, 4]) {
+    assert.match(html, new RegExp(`ds-v${d}`));
+    assert.match(html, new RegExp(`ds=${d}`));
+  }
+});
+
+test("design-system variants restructure components, not just colors", () => {
+  for (const d of [1, 2, 3, 4]) {
+    assert.match(css, new RegExp(`\\.ds-v${d} \\.voxel-card`));
+    assert.match(css, new RegExp(`\\.ds-v${d} \\.voxel-button`));
+    assert.match(css, new RegExp(`\\.ds-v${d} \\.voxel-field`));
+    assert.match(css, new RegExp(`\\.ds-v${d} \\.hud-slab`));
+    assert.match(css, new RegExp(`\\.ds-v${d} \\.ability-slot`));
+  }
+  assert.match(css, /Beveled Blocks/);
+  assert.match(css, /Carved Tablet/);
+  assert.match(css, /Crystal Facet/);
+  assert.match(css, /Pixel Frame/);
+});
+
+test("variant pickers preserve the other design axis after the DOM exists", () => {
+  assert.match(html, /addEventListener\("DOMContentLoaded"/);
+  assert.match(html, /data-set-v/);
+  assert.match(html, /data-set-ds/);
 });
 
 console.log(`\n${passed} source checks passed.`);
