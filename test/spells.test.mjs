@@ -465,6 +465,41 @@ test("cover: obstacle blocks bolt before it reaches the target behind it", () =>
   sim.arena.setLayout(null);
 });
 
+test("cover: the basic auto-attack (spawnBolt) honors obstacle cover", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; a.aim = 0; b.x = 6; b.z = 0; b.vx = 0;
+  sim.arena.setLayout({
+    plateaus: [],
+    obstacles: [{ id: 1, type: "wall", x: 3, z: 0, r: 0.4, height: 2.5, rot: 0 }],
+  });
+  sim.spawnBolt(a);
+  const bolt = sim.bolts[sim.bolts.length - 1];
+  assert.ok(bolt.coverEnabled, "auto-attack bolt must have cover checking enabled");
+  stepBolt(bolt, [a, b], sim.arena, 1.0);
+  assert.strictEqual(b.vx, 0, "auto-attack passed through cover and hit the target");
+  assert.ok(bolt.dead, "auto-attack was not stopped by the wall");
+  sim.arena.setLayout(null);
+});
+
+test("cover: a THIN obstacle still blocks a fast bolt (no tunneling)", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  b.x = 6; b.z = 0; b.vx = 0;
+  // A thin column (r = 0.3 → diameter 0.6) is smaller than the per-tick step
+  // (~0.87u at bolt speed). A point-at-new-position test would step over it;
+  // the swept-segment test must still catch it.
+  sim.arena.setLayout({
+    plateaus: [],
+    obstacles: [{ id: 1, type: "column", x: 3, z: 0, r: 0.3, height: 2.5, rot: 0 }],
+  });
+  const bolt = new Bolt("a", 1.2, 0, 0, 0xffffff, { groundY: CFG.PLATFORM_TOP });
+  stepBolt(bolt, [a, b], sim.arena, 1.0);
+  assert.strictEqual(b.vx, 0, "fast bolt tunneled through a thin obstacle and hit the target");
+  assert.ok(bolt.dead, "bolt was not stopped by the thin obstacle");
+  sim.arena.setLayout(null);
+});
+
 test("height gate: bolt from ground does not hit a player standing on a tall plateau", () => {
   const sim = playingSim();
   const a = sim.players.get("a"), b = sim.players.get("b");

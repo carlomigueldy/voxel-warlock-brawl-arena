@@ -331,7 +331,9 @@ export class Simulation {
   spawnBolt(owner) {
     const ox = owner.x + Math.cos(owner.aim) * (CFG.PLAYER_RADIUS + 0.6);
     const oz = owner.z + Math.sin(owner.aim) * (CFG.PLAYER_RADIUS + 0.6);
-    this.bolts.push(new Bolt(owner.id, ox, oz, owner.aim, owner.color));
+    // Pass groundY so the auto-attack spawns at the shooter's elevation and
+    // honors terrain/obstacle cover (coverEnabled), same as cast projectiles.
+    this.bolts.push(new Bolt(owner.id, ox, oz, owner.aim, owner.color, { groundY: owner.groundY }));
     this.events.push({ type: "cast", spell: "fireball", id: owner.id, x: owner.x, z: owner.z });
     owner.cooldown = owner.isBot && Number.isFinite(owner._botFireCooldown)
       ? owner._botFireCooldown

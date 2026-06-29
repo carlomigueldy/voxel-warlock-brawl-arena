@@ -110,18 +110,18 @@ export class Bolt {
       this.bounces--;
     }
 
-    // Cover / obstacle blocking: fizzle when the bolt MOVES INTO a map feature
-    // (plateau wall or obstacle) whose top exceeds the bolt's Y.  Uses a point
-    // test so the check is independent of timestep size.
+    // Cover / obstacle blocking: fizzle when the bolt's travel this tick crosses
+    // a map feature (plateau wall or obstacle) taller than the bolt's Y.  A SWEPT
+    // segment test (prev → new) is used rather than a point test at the new
+    // position: at bolt speed the per-tick step (~0.87u) exceeds the diameter of
+    // thin obstacles (columns/walls/trees), so a point test would tunnel straight
+    // through them.  obstaclesBlockingRay height-gates each feature, so shots
+    // from high ground still clear low cover.
     // Only applies to bolts spawned through the normal spell pipeline
     // (this.coverEnabled); test bolts placed directly are unaffected.
-    // "prevX was clear, newX blocked" guards against bolts that start inside a
-    // feature footprint (e.g. a player who fired while overlapping geometry).
-    // fromY = this.y - 0.3 → blocks when featureHeight > this.y.
     if (!skipMove && this.coverEnabled &&
-        arena && typeof arena.blocksMovement === "function") {
-      if (arena.blocksMovement(this.x, this.z, this.y - 0.3) &&
-          !arena.blocksMovement(this.prevX, this.prevZ, this.y - 0.3)) {
+        arena && typeof arena.obstaclesBlockingRay === "function") {
+      if (arena.obstaclesBlockingRay(this.prevX, this.prevZ, this.y, this.x, this.z, this.y)) {
         this.dead = true;
         return { hit: null };
       }
