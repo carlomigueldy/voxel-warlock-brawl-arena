@@ -4,21 +4,17 @@ import { CFG, SPELLS, SPELL_ORDER, getArenaLandSize, getArenaWorld, isOnArenaWor
 import { Player } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
+import { BotBrain, BOT_PROFILES, closestApproach as _closestApproach } from "./bot.js";
 
-// Minimum distance between two points moving linearly from (a0->a1) and
-// (b0->b1) over a unit time step, plus the midpoint at closest approach. Used
-// for swept projectile-vs-projectile collision so fast bolts that cross between
-// ticks still register a clash instead of tunneling.
+// Re-wrap so the local call sites keep their original shape (returns .x/.z midpoint too).
 function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
-  const rx = a0x - b0x, rz = a0z - b0z;          // initial relative position
-  const vx = (a1x - a0x) - (b1x - b0x);          // relative velocity over step
-  const vz = (a1z - a0z) - (b1z - b0z);
-  const vv = vx * vx + vz * vz;
-  let t = vv > 1e-12 ? -(rx * vx + rz * vz) / vv : 0;
-  if (t < 0) t = 0; else if (t > 1) t = 1;
-  const ax = a0x + (a1x - a0x) * t, az = a0z + (a1z - a0z) * t;
+  const r = _closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z);
+  // Compute midpoint at closest-approach time for the clash-event position.
+  const vv0 = (a1x - a0x), vv1 = (a1z - a0z);
+  const t = r.t ?? 0;
+  const ax = a0x + vv0 * t, az = a0z + vv1 * t;
   const bx = b0x + (b1x - b0x) * t, bz = b0z + (b1z - b0z) * t;
-  return { dist: Math.hypot(ax - bx, az - bz), x: (ax + bx) * 0.5, z: (az + bz) * 0.5 };
+  return { dist: r.dist, x: (ax + bx) * 0.5, z: (az + bz) * 0.5 };
 }
 
 // A lightweight logical arena (no rendering) used by the sim.
@@ -41,12 +37,6 @@ export const PHASE = {
 };
 
 const BOT_PREFIX = "bot:";
-const BOT_DEFAULT_CAST_RANGE = 16; // fallback for spells without an explicit handbook range
-const BOT_SETTINGS = {
-  smart: { preferredRange: 10, retreatRange: 3.2, fireRange: 14, accuracy: 0.22, fireEvery: 0.75, strafe: 0.35, abilityEvery: 4.5 },
-  brilliant: { preferredRange: 9, retreatRange: 4, fireRange: 16, accuracy: 0.1, fireEvery: 0.48, strafe: 0.55, abilityEvery: 3.0 },
-  expert: { preferredRange: 8, retreatRange: 4.8, fireRange: 30, accuracy: 0.02, fireEvery: 0.28, strafe: 0.75, abilityEvery: 1.7 },
-};
 
 function normalizeBotSkill(skill) {
   return CFG.BOT_SKILLS.includes(skill) ? skill : "smart";
@@ -100,9 +90,14 @@ export class Simulation {
     for (const id of [...this.players.keys()]) {
       if (this.players.get(id).isBot) this.players.delete(id);
     }
+    const profile = BOT_PROFILES[botSkill] || BOT_PROFILES.smart;
     const bots = [];
     for (let i = 0; i < wanted; i++) {
-      bots.push(this.addPlayer(`${BOT_PREFIX}${i + 1}`, botDisplayName(botSkill, i), { isBot: true, botSkill }));
+      const botId = `${BOT_PREFIX}${i + 1}`;
+      const bot = this.addPlayer(botId, botDisplayName(botSkill, i), { isBot: true, botSkill });
+      bot._brain = new BotBrain(botId, botSkill);
+      bot.applyItems(profile.loadout);
+      bots.push(bot);
     }
     if (this.phase !== PHASE.LOBBY) this.resolveRoundIfNeeded();
     return bots;
@@ -518,79 +513,16 @@ export class Simulation {
   }
 
   updateBotInputs() {
-    const living = this.alivePlayers();
-    for (const bot of living.filter((p) => p.isBot)) {
-      const target = living
-        .filter((p) => p.id !== bot.id)
-        .sort((a, b) => Math.hypot(a.x - bot.x, a.z - bot.z) - Math.hypot(b.x - bot.x, b.z - bot.z))[0];
-      if (!target) continue;
-      bot.input = this.planBotInput(bot, target);
+    for (const bot of this.alivePlayers().filter((p) => p.isBot)) {
+      if (bot._brain) {
+        bot.input = bot._brain.think(this, bot);
+        // Ability casts from think() arrive as bot.input.casts; move them to
+        // pendingCasts so the sim's spell-resolution loop picks them up.
+        if (bot.input.casts?.length) {
+          for (const c of bot.input.casts) bot.pendingCasts.push(c);
+        }
+      }
     }
-  }
-
-  planBotInput(bot, target) {
-    const settings = BOT_SETTINGS[normalizeBotSkill(bot.botSkill)];
-    const dx = target.x - bot.x;
-    const dz = target.z - bot.z;
-    const dist = Math.hypot(dx, dz) || 1;
-    const towardX = dx / dist;
-    const towardZ = dz / dist;
-    const centerDist = Math.hypot(bot.x, bot.z) || 1;
-    const centerX = -bot.x / centerDist;
-    const centerZ = -bot.z / centerDist;
-    const edgeDanger = this.arena.radius - centerDist < 4;
-    let moveX = 0;
-    let moveZ = 0;
-    if (edgeDanger) {
-      moveX += centerX * 1.4;
-      moveZ += centerZ * 1.4;
-    } else if (dist > settings.preferredRange) {
-      moveX += towardX;
-      moveZ += towardZ;
-    } else if (dist < settings.retreatRange) {
-      moveX -= towardX;
-      moveZ -= towardZ;
-    }
-    const side = bot.id.charCodeAt(bot.id.length - 1) % 2 === 0 ? 1 : -1;
-    moveX += -towardZ * settings.strafe * side;
-    moveZ += towardX * settings.strafe * side;
-    const aim = Math.atan2(dz, dx) + settings.accuracy * Math.sin(this.playTime * 3 + bot.colorIndex);
-    bot._botFireCooldown = settings.fireEvery;
-    const fire = dist <= settings.fireRange && bot.canFire() && (bot._nextBotFireAt ?? 0) <= this.playTime;
-    if (fire) bot._nextBotFireAt = this.playTime + settings.fireEvery;
-    this.queueBotAbility(bot, target, dist, settings);
-    return { move: [moveX, moveZ], aim, fire, seq: bot.input.seq + 1, casts: [] };
-  }
-
-  queueBotAbility(bot, target, dist, settings) {
-    if ((bot._nextBotAbilityAt ?? 0) > this.playTime || bot.status.disabled > 0) return;
-    const skill = normalizeBotSkill(bot.botSkill);
-    const edgeDanger = this.arena.radius - Math.hypot(bot.x, bot.z) < 4;
-    // Some spells (fireball, homing) have no explicit `range` in the handbook;
-    // fall back to a generous default so the comparison is never `dist <= undefined`
-    // (which is always false and would silently disable those branches).
-    const reach = (id) => (Number.isFinite(SPELLS[id].range) ? SPELLS[id].range : BOT_DEFAULT_CAST_RANGE);
-    let spell = null;
-    let tx = target.x;
-    let tz = target.z;
-    if (edgeDanger && bot.canCast("thrust")) {
-      spell = "thrust"; tx = 0; tz = 0;
-    } else if (bot.charge > 1.6 && bot.canCast("shield")) {
-      spell = "shield";
-    } else if (skill === "expert" && dist <= reach("meteor") && bot.canCast("meteor")) {
-      spell = "meteor";
-    } else if (skill !== "smart" && dist <= reach("lightning") && bot.canCast("lightning")) {
-      spell = "lightning";
-    } else if (skill === "expert" && dist <= reach("gravity") && bot.canCast("gravity")) {
-      spell = "gravity";
-    } else if (dist <= reach("homing") && bot.canCast("homing")) {
-      spell = "homing";
-    } else if (dist <= reach("fireball") && bot.canCast("fireball")) {
-      spell = "fireball";
-    }
-    if (!spell) return;
-    bot.pendingCasts.push({ id: ++bot._botCastId, spell, tx, tz });
-    bot._nextBotAbilityAt = this.playTime + settings.abilityEvery;
   }
 
   endRound(winner) {
