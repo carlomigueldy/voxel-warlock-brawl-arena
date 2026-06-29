@@ -2,7 +2,8 @@
 // the host or received from the network) and draws the world. Also owns the
 // camera that follows the local warlock.
 import * as THREE from "three";
-import { CFG } from "./config.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { CFG, SPELLS } from "./config.js";
 import { Arena } from "./arena.js";
 import {
   buildWarlock, buildBolt, animateWarlock,
@@ -13,6 +14,30 @@ import {
   characterReady,
   buildCharacterInstance,
 } from "./character.js";
+import { archetypeForEvent } from "./animations.js";
+
+const MESHY_ASSETS = {
+  rune: "assets/meshy/ability-rune.glb",
+  projectiles: {
+    fireball: "assets/meshy/projectile-fireball.glb",
+    boomerang: "assets/meshy/projectile-boomerang.glb",
+    homing: "assets/meshy/projectile-homing.glb",
+    bouncer: "assets/meshy/projectile-bouncer.glb",
+    splitter: "assets/meshy/projectile-splitter.glb",
+    disable: "assets/meshy/projectile-disable.glb",
+    meteor: "assets/meshy/projectile-meteor.glb",
+  },
+};
+
+const MESHY_ASSET_OPTIONS = {
+  projectile: { size: 1.15, lightY: 0, lightDistance: 7 },
+  rune: { size: 1.25, lightY: 0.55, lightDistance: 5, core: true },
+  meteor: { size: 2.2 },
+};
+
+function projectileAssetPath(kind) {
+  return MESHY_ASSETS.projectiles[kind] || MESHY_ASSETS.projectiles.fireball;
+}
 
 export class GameRenderer {
   constructor(canvas) {
@@ -35,6 +60,8 @@ export class GameRenderer {
 
     this._initLights();
     this.arena = new Arena(this.scene);
+    this.gltfLoader = new GLTFLoader();
+    this.meshyAssetCache = new Map();
 
     this.playerMeshes = new Map(); // id -> {group, label}
     this.boltMeshes = new Map();   // id -> group
@@ -51,9 +78,13 @@ export class GameRenderer {
     // Smoothed camera target.
     this._camTarget = new THREE.Vector3(0, 0, 0);
 
-    loadCharacterTemplate()
-      .then(() => this._upgradePlayersToGLB())
-      .catch((err) => console.warn("Character GLB unavailable, using voxel fallback:", err));
+    // Preload every selectable character so any player's pick renders as a GLB
+    // (falling back to the voxel warlock per-player only if its load fails).
+    for (const ch of CFG.CHARACTERS) {
+      loadCharacterTemplate(ch.id)
+        .then(() => this._upgradePlayersToGLB())
+        .catch((err) => console.warn(`Character GLB '${ch.id}' unavailable, using voxel fallback:`, err));
+    }
 
     window.addEventListener("resize", () => this._onResize());
   }
@@ -65,6 +96,86 @@ export class GameRenderer {
   _addEffect(group) {
     this.scene.add(group);
     this.effects.push(group);
+  }
+
+  _loadMeshyAsset(path, opts) {
+    if (!path) return Promise.resolve(null);
+    if (!this.meshyAssetCache.has(path)) {
+      const promise = this.gltfLoader.loadAsync(path)
+        .then((gltf) => this._prepareMeshyAsset(gltf.scene, opts))
+        .catch((err) => {
+          console.warn(`Could not load Meshy asset ${path}`, err);
+          return null;
+        });
+      this.meshyAssetCache.set(path, promise);
+    }
+    return this.meshyAssetCache.get(path).then((template) => template?.clone(true) || null);
+  }
+
+  _prepareMeshyAsset(source, opts = {}) {
+    const model = source.clone(true);
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      const materials = Array.isArray(o.material) ? o.material : [o.material];
+      for (const mat of materials) {
+        if (mat && "flatShading" in mat) {
+          mat.flatShading = true;
+          mat.needsUpdate = true;
+        }
+      }
+    });
+
+    const box = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+    model.position.sub(center);
+
+    const root = new THREE.Group();
+    root.add(model);
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    root.scale.setScalar((opts.size || 1) / maxDim);
+    root.position.y = opts.y || 0;
+    return root;
+  }
+
+  _installMeshyAsset(group, path, opts = {}, color = 0xffffff) {
+    group.userData.meshyPath = path;
+    this._loadMeshyAsset(path, opts).then((asset) => {
+      if (!asset || group.userData.meshyPath !== path || !group.parent) return;
+      const label = group.userData.label;
+      group.clear();
+      group.add(asset);
+      if (label) group.add(label);
+      const light = new THREE.PointLight(color, 1.2, opts.lightDistance || 6);
+      light.position.y = opts.lightY || 0;
+      group.add(light);
+      if (opts.core) group.userData.core = asset;
+    });
+  }
+
+  _installMeshyMeteor(group) {
+    this._loadMeshyAsset(MESHY_ASSETS.projectiles.meteor, MESHY_ASSET_OPTIONS.meteor)
+      .then((asset) => {
+        if (!asset || !group.parent) return;
+        const rock = group.userData.rock;
+        if (rock) rock.visible = false;
+        if (rock) {
+          asset.position.copy(rock.position);
+          asset.rotation.copy(rock.rotation);
+        }
+        group.add(asset);
+        const baseUpdate = group.userData.update;
+        group.userData.update = (dt, tLeft) => {
+          baseUpdate(dt, tLeft);
+          if (!rock) return;
+          asset.position.copy(rock.position);
+          asset.rotation.copy(rock.rotation);
+        };
+      });
   }
 
   _initLights() {
@@ -129,7 +240,8 @@ export class GameRenderer {
     let entry = this.playerMeshes.get(snap.id);
     if (!entry) {
       const color = CFG.COLORS[(meta?.colorIndex ?? 0) % CFG.COLORS.length];
-      let group = characterReady() ? buildCharacterInstance(color) : null;
+      const character = meta?.character || undefined;
+      let group = characterReady(character) ? buildCharacterInstance(color, character) : null;
       const usingGLB = !!group;
       if (!group) group = buildWarlock(color);
       const labelY = usingGLB ? CFG.PLAYER_HEIGHT + 0.55 : 3.4;
@@ -137,7 +249,7 @@ export class GameRenderer {
       group.add(label);
       this.scene.add(group);
       entry = {
-        group, label, color, usingGLB,
+        group, label, color, usingGLB, character,
         rx: snap.x, rz: snap.z, ry: snap.y, ra: snap.a,
       };
       this.playerMeshes.set(snap.id, entry);
@@ -146,10 +258,10 @@ export class GameRenderer {
   }
 
   _upgradePlayersToGLB() {
-    if (!characterReady()) return;
     for (const [id, e] of this.playerMeshes) {
       if (e.usingGLB) continue;
-      const next = buildCharacterInstance(e.color);
+      if (!characterReady(e.character)) continue;
+      const next = buildCharacterInstance(e.color, e.character);
       if (!next) continue;
       next.position.copy(e.group.position);
       next.rotation.copy(e.group.rotation);
@@ -223,6 +335,12 @@ export class GameRenderer {
       let m = this.boltMeshes.get(b.id);
       if (!m) {
         m = buildBolt(b.c, b.k || "fireball");
+        this._installMeshyAsset(
+          m,
+          projectileAssetPath(b.k || "fireball"),
+          MESHY_ASSET_OPTIONS.projectile,
+          b.c || 0xffffff
+        );
         this.scene.add(m);
         this.boltMeshes.set(b.id, m);
       }
@@ -242,6 +360,7 @@ export class GameRenderer {
       let g = this.meteorMeshes.get(mt.id);
       if (!g) {
         g = buildMeteor(mt.x, mt.z, mt.fall, mt.r, 0xff3a1e);
+        this._installMeshyMeteor(g);
         this.scene.add(g);
         this.meteorMeshes.set(mt.id, g);
       }
@@ -260,6 +379,11 @@ export class GameRenderer {
       let g = this.runeMeshes.get(r.id);
       if (!g) {
         g = buildRune(r.c || 0xffffff);
+        const name = SPELLS[r.spell]?.name || r.spell || "Rune";
+        const label = this._makeLabel(name, r.c || 0xffffff, 1.65);
+        g.add(label);
+        g.userData.label = label;
+        this._installMeshyAsset(g, MESHY_ASSETS.rune, MESHY_ASSET_OPTIONS.rune, r.c || 0xffffff);
         this.scene.add(g);
         this.runeMeshes.set(r.id, g);
       }
@@ -328,13 +452,33 @@ export class GameRenderer {
     }
   }
 
+  // Drive a caster's body-cast animation from a simulation event. Works for
+  // both the GLB rig (character.triggerCast) and the voxel fallback
+  // (group.userData.triggerCast).
+  _triggerCast(ev) {
+    const resolved = archetypeForEvent(ev);
+    if (!resolved) return;
+    const e = this.playerMeshes.get(resolved.id);
+    if (!e) return;
+    const char = e.group.userData.character;
+    if (char && char.triggerCast) char.triggerCast(resolved.archetype);
+    else if (e.group.userData.triggerCast) e.group.userData.triggerCast(resolved.archetype);
+  }
+
   _processEvents(events) {
     for (const ev of events) {
+      this._triggerCast(ev);
       switch (ev.type) {
         case "hit":
           this._addEffect(this._burstAt(ev.x, ev.z, 0xffcc44, { count: 16, speed: 7 }));
           this.audio?.play("hit", this._panFor(ev.x));
           this._shake = Math.min(0.6, this._shake + 0.15);
+          break;
+        case "projectileClash":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0x9fe6ff, { count: 26, speed: 10, life: 0.45 }));
+          this._addEffect(this._ringPulse(ev.x, ev.z, 2.2, 0xffffff));
+          this.audio?.play("projectileClash", this._panFor(ev.x));
+          this._shake = Math.min(0.7, this._shake + 0.2);
           break;
         case "death":
           this.audio?.play("death");
@@ -460,6 +604,8 @@ export class GameRenderer {
           speed: e.spd,
           maxSpeed: CFG.MOVE_SPEED,
           charge: c,
+          falling: !!e.target.f,
+          time: t,
           dt,
         });
       } else {
@@ -562,6 +708,8 @@ export class GameRenderer {
     this.boltMeshes.clear();
     for (const g of this.meteorMeshes.values()) this.scene.remove(g);
     this.meteorMeshes.clear();
+    for (const g of this.runeMeshes.values()) this.scene.remove(g);
+    this.runeMeshes.clear();
     for (const g of this.effects) this.scene.remove(g);
     this.effects = [];
     for (const l of this.linkLines.values()) this.scene.remove(l);

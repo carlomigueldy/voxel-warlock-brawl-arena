@@ -71,6 +71,8 @@ export const CFG = {
   RUNE_SPAWN_RADIUS: 13,
   RUNE_MAX_ACTIVE: 2,         // how many runes may exist on the field at once
   RUNE_SPAWN_INTERVAL: 8,     // seconds between timed rune spawns
+  SPELL_SLOT_COUNT: 6,
+  DEFAULT_SPELL_SLOT_HOTKEYS: ["1", "2", "3", "4", "5", "6"],
 
   // --- Rounds ---
   ROUND: {
@@ -92,7 +94,23 @@ export const CFG = {
 
   // Player colors (low-poly palette) assigned by join order.
   COLORS: [0xff5a3c, 0x4cc9ff, 0x7cff5a, 0xffd23c, 0xc04cff, 0xff4ca8],
+
+  // Selectable voxel-art characters (rigged GLBs live in assets/characters/,
+  // keyed by id in character.js → CHARACTER_ASSETS). `color` is the signature
+  // accent used for the menu preview tint and the card highlight.
+  CHARACTERS: [
+    { id: "ember", name: "Ember Warlock",    color: 0xff5a3c, blurb: "Fiery hood & ember staff" },
+    { id: "frost", name: "Frost Mage",       color: 0x4cc9ff, blurb: "Icy cloak & crystal wand" },
+    { id: "storm", name: "Storm Shaman",     color: 0xc04cff, blurb: "Crackling lightning robes" },
+    { id: "moss",  name: "Moss Necromancer", color: 0x7cff5a, blurb: "Bone mask & cube staff" },
+  ],
+  DEFAULT_CHARACTER: "ember",
 };
+
+// Resolve a selectable character by id, falling back to the default.
+export function getCharacter(id) {
+  return CFG.CHARACTERS.find((c) => c.id === id) || CFG.CHARACTERS.find((c) => c.id === CFG.DEFAULT_CHARACTER);
+}
 
 export function getArenaWorld(id) {
   return CFG.ARENA_WORLDS.find((world) => world.id === id) || CFG.ARENA_WORLDS.find((world) => world.id === CFG.DEFAULT_ARENA_WORLD);
@@ -191,7 +209,7 @@ export const ITEMS = {
 // Message types exchanged over PeerJS data channels.
 export const MSG = {
   // client -> host
-  JOIN: "join",          // {name}
+  JOIN: "join",          // {name, character}
   INPUT: "input",        // {seq, move:[x,z], aim, fire, casts:[{id,spell,tx,tz}]}
   // host -> client
   WELCOME: "welcome",    // {id, players, hostName}

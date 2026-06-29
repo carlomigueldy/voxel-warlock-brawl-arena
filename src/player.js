@@ -26,6 +26,7 @@ export class Player {
     // Per-spell cooldown timers (id -> seconds remaining).
     this.cooldowns = {};
     this.spells = new Set(["fireball"]);
+    this.spellSlots = Array(CFG.SPELL_SLOT_COUNT).fill(null);
 
     // Active status effects with remaining durations.
     this.status = {
@@ -94,22 +95,31 @@ export class Player {
   }
 
   acquireSpell(spellId) {
-    if (SPELLS[spellId]) {
-      this.spells.add(spellId);
-      this.cooldowns[spellId] = 0;
-    }
+    if (!SPELLS[spellId]) return false;
+    if (this.spells.has(spellId)) return true;
+    const slot = this.spellSlots.indexOf(null);
+    if (slot < 0) return false;
+    this.spellSlots[slot] = spellId;
+    this.spells.add(spellId);
+    this.cooldowns[spellId] = 0;
+    return true;
   }
 
   removeSpell(spellId) {
-    if (spellId !== "fireball") this.spells.delete(spellId);
+    if (spellId === "fireball") return;
+    this.spells.delete(spellId);
+    const slot = this.spellSlots.indexOf(spellId);
+    if (slot >= 0) this.spellSlots[slot] = null;
   }
 
   setAllSpells() {
     this.spells = new Set(Object.keys(SPELLS));
+    this.spellSlots = [];
   }
 
   setStarterSpells() {
     this.spells = new Set(["fireball"]);
+    this.spellSlots = Array(CFG.SPELL_SLOT_COUNT).fill(null);
   }
 
   canCast(spellId) {
@@ -296,6 +306,7 @@ export class Player {
       // per-spell cooldowns for the local HUD bar
       cds: this._cdSnapshot(),
       spells: [...this.spells],
+      spellSlots: [...this.spellSlots],
     };
   }
 

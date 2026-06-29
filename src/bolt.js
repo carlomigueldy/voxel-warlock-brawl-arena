@@ -14,6 +14,8 @@ export class Bolt {
     this.ownerId = ownerId;
     this.x = x;
     this.z = z;
+    this.prevX = x;
+    this.prevZ = z;
     this.y = CFG.PLATFORM_TOP + 1.1;
     this.dir = dir; // radians
     this.proj = opts.proj || "fireball";
@@ -41,9 +43,10 @@ export class Bolt {
   }
 
   // Returns: { hit: victimId|null, split: bool } and queues children in _spawn.
-  step(dt, players, arena) {
+  step(dt, players, arena, options = {}) {
     this._spawn = [];
-    const prevLife = this.life;
+    const movementOnly = !!options.movementOnly;
+    const skipMove = !!options.skipMove;
     this.life -= dt;
 
     // Homing: steer toward nearest non-owner alive target.
@@ -77,8 +80,12 @@ export class Bolt {
       }
     }
 
-    this.x += this.vx * dt;
-    this.z += this.vz * dt;
+    if (!skipMove) {
+      this.prevX = this.x;
+      this.prevZ = this.z;
+      this.x += this.vx * dt;
+      this.z += this.vz * dt;
+    }
 
     // Bouncer: reflect off the circular arena rim instead of dying.
     if (this.proj === "bouncer" && !arena.isOnPlatform(this.x, this.z) && this.bounces > 0) {
@@ -114,6 +121,7 @@ export class Bolt {
     }
 
     if (this.life <= 0) { this.dead = true; return { hit: null }; }
+    if (movementOnly) return { hit: null };
 
     // Collision with players (skip owner).
     for (const p of players) {
@@ -149,7 +157,7 @@ export class Bolt {
       z: +this.z.toFixed(2),
       y: +this.y.toFixed(2),
       c: this.color,
-      k: this.proj, // kind, so renderer can pick a mesh/VFX
+      k: this.disable ? "disable" : this.proj, // kind, so renderer can pick a mesh/VFX
     };
   }
 }

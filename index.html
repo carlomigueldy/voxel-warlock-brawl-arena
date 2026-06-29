@@ -4,6 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 <title>Voxel Warlock Brawl</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="./src/style.css" />
 <!-- Three.js + addons via import map (no build step required) -->
 <script type="importmap">
@@ -20,49 +23,100 @@
 
   <!-- ===== Main Menu ===== -->
   <div id="menu" class="overlay">
-    <div class="panel">
-      <h1>VOXEL<span>WARLOCK</span>BRAWL</h1>
-      <p class="tag">Blast rivals off the platform into the lava. Last warlock standing wins.</p>
+    <div class="ember-field" aria-hidden="true"></div>
+    <div class="panel menu-panel">
+      <header class="brand">
+        <span class="eyebrow">Arena Brawler · P2P</span>
+        <h1 class="title">
+          <span class="title-line line-voxel">VOXEL</span>
+          <span class="title-line line-warlock">WARLOCK</span>
+          <span class="title-line line-brawl">BRAWL</span>
+        </h1>
+        <p class="tag">Blast rivals off the platform into the lava. Last warlock standing wins.</p>
+      </header>
 
-      <div class="menu-row">
-        <input id="name-input" maxlength="14" placeholder="Your warlock name" />
-      </div>
+      <div class="menu-body">
+        <section class="config-col">
+          <div class="field">
+            <label class="field-label" for="name-input">Warlock name</label>
+            <div class="rune-field">
+              <input id="name-input" maxlength="14" placeholder="Name your warlock" autocomplete="off" spellcheck="false" />
+              <span class="rune-field-line"></span>
+            </div>
+          </div>
 
-      <label class="menu-toggle">
-        <input id="all-abilities-toggle" type="checkbox" checked />
-        <span>All abilities at start</span>
-      </label>
+          <div class="field field-inline">
+            <div class="field-copy">
+              <span class="field-label" id="abilities-label">All abilities at start</span>
+              <span class="field-hint">Off — hunt spell runes mid-brawl</span>
+            </div>
+            <button type="button" id="abilities-toggle-ui" class="rune-toggle is-on" role="switch" aria-checked="true" aria-labelledby="abilities-label">
+              <span class="rune-toggle-track"><span class="rune-toggle-knob"></span></span>
+              <span class="rune-toggle-state">ON</span>
+            </button>
+            <input id="all-abilities-toggle" type="checkbox" checked hidden />
+          </div>
 
-      <div class="arena-controls">
-        <label>Arena World <select id="arena-world"></select></label>
-        <label>Land Size <select id="land-size"></select></label>
+          <div class="field">
+            <span class="field-label">Land size</span>
+            <div id="land-size-ui" class="segmented" role="radiogroup" aria-label="Land size"></div>
+            <select id="land-size" hidden></select>
+          </div>
+        </section>
+
+        <section class="character-col">
+          <span class="field-label">Choose your warlock</span>
+          <div class="char-stage">
+            <canvas id="char-preview"></canvas>
+            <p id="char-preview-name" class="char-preview-name"></p>
+          </div>
+          <div id="char-cards" class="char-cards" role="radiogroup" aria-label="Choose your warlock"></div>
+        </section>
+
+        <section class="arena-col">
+          <span class="field-label">Arena world</span>
+          <div id="arena-world-ui" class="arena-cards" role="radiogroup" aria-label="Arena world"></div>
+          <select id="arena-world" hidden></select>
+        </section>
       </div>
 
       <div class="menu-actions">
-        <button id="btn-host" class="primary">Host Game</button>
+        <button id="btn-host" class="btn btn-forge">
+          <span class="btn-label">Host Game</span>
+          <span class="btn-spark" aria-hidden="true"></span>
+        </button>
         <div class="join-box">
-          <input id="join-code" maxlength="6" placeholder="ROOM CODE" />
-          <button id="btn-join">Join</button>
+          <div class="rune-code">
+            <input id="join-code" maxlength="6" placeholder="ROOM CODE" autocomplete="off" spellcheck="false" />
+            <span class="rune-code-cells" aria-hidden="true"></span>
+          </div>
+          <button id="btn-join" class="btn btn-ghost">Join</button>
         </div>
       </div>
 
       <p id="menu-status" class="status"></p>
-      <p class="hint">Move: <b>WASD</b> &nbsp;•&nbsp; Aim: <b>Mouse</b> &nbsp;•&nbsp; Fire: <b>Click / Space</b></p>
-      <p class="hint">Cast spells with <b>1-8 / Q E R F C V X Z T G B H</b> &nbsp;•&nbsp; Right-click casts selected spell at cursor</p>
+      <footer class="controls-hint">
+        <p class="hint">Move <b>WASD</b> · Aim <b>Mouse</b> · Fire <b>Click / Space</b></p>
+        <p class="hint">Cast <b>1-8 / Q E R F C V X Z T G B H</b> · Right-click casts selected spell at cursor</p>
+      </footer>
     </div>
   </div>
 
   <!-- ===== Lobby ===== -->
   <div id="lobby" class="overlay hidden">
-    <div class="panel">
-      <h2>Lobby</h2>
+    <div class="ember-field" aria-hidden="true"></div>
+    <div class="panel lobby-panel">
+      <header class="brand brand-compact">
+        <span class="eyebrow">Staging Grounds</span>
+        <h2 class="title title-lobby">LOBBY</h2>
+      </header>
       <div class="lobby-grid">
         <div class="lobby-left">
           <p class="label">Room Code</p>
           <div id="room-code" class="room-code">------</div>
           <div class="share-row">
-            <button id="btn-copy-code">Copy Code</button>
-            <button id="btn-copy-link">Copy Invite Link</button>
+            <button id="btn-copy-code" class="btn btn-ghost">Copy Code</button>
+            <button id="btn-copy-link" class="btn btn-ghost">Copy Invite Link</button>
           </div>
           <div id="qr" class="qr"></div>
           <p class="hint">Scan the QR code or share the link to invite players.</p>
@@ -71,16 +125,29 @@
           <p class="label">Warlocks</p>
           <ul id="player-list" class="player-list"></ul>
           <div id="bot-controls" class="bot-controls hidden">
-            <label>Bot Count <input id="bot-count" type="number" min="0" max="5" value="0" /></label>
-            <label>Bot Skill
-              <select id="bot-skill">
+            <div class="bot-field">
+              <span class="field-label">Bot count</span>
+              <div id="bot-count-ui" class="stepper">
+                <button type="button" class="stepper-btn" data-step="-1" aria-label="Fewer bots">−</button>
+                <span class="stepper-value" id="bot-count-value">0</span>
+                <button type="button" class="stepper-btn" data-step="1" aria-label="More bots">+</button>
+              </div>
+              <input id="bot-count" type="number" min="0" max="5" value="0" hidden />
+            </div>
+            <div class="bot-field">
+              <span class="field-label">Bot skill</span>
+              <div id="bot-skill-ui" class="segmented segmented-sm" role="radiogroup" aria-label="Bot skill"></div>
+              <select id="bot-skill" hidden>
                 <option value="smart">Smart</option>
                 <option value="brilliant">Brilliant</option>
                 <option value="expert">Expert</option>
               </select>
-            </label>
+            </div>
           </div>
-          <button id="btn-start" class="primary hidden">Start Brawl</button>
+          <button id="btn-start" class="btn btn-forge hidden">
+            <span class="btn-label">Start Brawl</span>
+            <span class="btn-spark" aria-hidden="true"></span>
+          </button>
           <p id="lobby-status" class="status"></p>
         </div>
       </div>
