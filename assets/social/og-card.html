@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1200">
+<title>OG Card — Voxel Warlock Brawl Arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    width: 1200px;
+    height: 630px;
+    overflow: hidden;
+    background: #0a0814;
+  }
+
+  .root {
+    position: relative;
+    width: 1200px;
+    height: 630px;
+    overflow: hidden;
+    background: #0a0814;
+    font-family: 'Chakra Petch', sans-serif;
+  }
+
+  /* ── Deep space radial backdrop ── */
+  .bg-radial {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 900px 500px at 50% 40%, #16112e 0%, #0a0814 70%);
+  }
+
+  /* ── Isometric voxel grid floor ── */
+  .iso-grid {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 1200px;
+    height: 320px;
+    opacity: 0.18;
+  }
+
+  /* ── Lava crack glow layers ── */
+  .lava-crack-1 {
+    position: absolute;
+    bottom: 60px;
+    left: 80px;
+    width: 420px;
+    height: 6px;
+    background: linear-gradient(90deg, transparent, #ff5a3c, #ffd23c, #ff5a3c, transparent);
+    border-radius: 3px;
+    filter: blur(3px);
+    box-shadow: 0 0 18px 4px #ff5a3caa, 0 0 40px 10px #ff5a3c44;
+  }
+  .lava-crack-2 {
+    position: absolute;
+    bottom: 110px;
+    right: 100px;
+    width: 280px;
+    height: 4px;
+    background: linear-gradient(90deg, transparent, #ffd23c, #ff5a3c, transparent);
+    border-radius: 2px;
+    filter: blur(2px);
+    box-shadow: 0 0 14px 4px #ffd23c88, 0 0 30px 8px #ff5a3c33;
+    transform: rotate(-8deg);
+  }
+  .lava-crack-3 {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    width: 180px;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #ff5a3c88, transparent);
+    filter: blur(2px);
+    box-shadow: 0 0 12px 3px #ff5a3c66;
+    transform: rotate(12deg);
+  }
+
+  /* ── Arcane glow orbs ── */
+  .orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(1px);
+  }
+  .orb-arcane-lg {
+    width: 120px; height: 120px;
+    top: 60px; right: 140px;
+    background: radial-gradient(circle, #a078ff 0%, #6c4cff 40%, transparent 70%);
+    box-shadow: 0 0 40px 20px #6c4cff66, 0 0 80px 30px #6c4cff22;
+    opacity: 0.85;
+  }
+  .orb-rune-md {
+    width: 70px; height: 70px;
+    top: 200px; right: 80px;
+    background: radial-gradient(circle, #b0ff80 0%, #7cff5a 40%, transparent 70%);
+    box-shadow: 0 0 28px 12px #7cff5a55, 0 0 60px 20px #7cff5a22;
+    opacity: 0.75;
+  }
+  .orb-ember-sm {
+    width: 44px; height: 44px;
+    top: 140px; left: 70px;
+    background: radial-gradient(circle, #ffaa70 0%, #ff5a3c 45%, transparent 70%);
+    box-shadow: 0 0 20px 8px #ff5a3c55;
+    opacity: 0.8;
+  }
+  .orb-pink-sm {
+    width: 36px; height: 36px;
+    bottom: 170px; left: 160px;
+    background: radial-gradient(circle, #ff80cc 0%, #ff4ca8 45%, transparent 70%);
+    box-shadow: 0 0 18px 7px #ff4ca844;
+    opacity: 0.7;
+  }
+  .orb-cyan-xs {
+    width: 28px; height: 28px;
+    top: 80px; left: 260px;
+    background: radial-gradient(circle, #a8eeff 0%, #4cc9ff 45%, transparent 70%);
+    box-shadow: 0 0 14px 5px #4cc9ff44;
+    opacity: 0.65;
+  }
+
+  /* ── Floating voxel cubes ── */
+  .voxel-group {
+    position: absolute;
+    top: 0; left: 0;
+    width: 1200px; height: 630px;
+    pointer-events: none;
+  }
+
+  /* ── Particle sparks ── */
+  .spark {
+    position: absolute;
+    width: 3px; height: 3px;
+    border-radius: 50%;
+    background: #ffd23c;
+    box-shadow: 0 0 6px 2px #ffd23c99;
+  }
+  .spark-2 { width: 2px; height: 2px; background: #7cff5a; box-shadow: 0 0 5px 2px #7cff5a88; }
+  .spark-3 { width: 2px; height: 2px; background: #4cc9ff; box-shadow: 0 0 5px 2px #4cc9ff88; }
+
+  /* ── Left accent bar ── */
+  .accent-bar {
+    position: absolute;
+    left: 60px;
+    top: 80px;
+    width: 4px;
+    height: 340px;
+    background: linear-gradient(180deg, transparent, #6c4cff, #ff5a3c, #ffd23c, transparent);
+    border-radius: 2px;
+    box-shadow: 0 0 12px 4px #6c4cff55;
+  }
+
+  /* ── Main content ── */
+  .content {
+    position: absolute;
+    left: 88px;
+    top: 0;
+    right: 60px;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0;
+    padding-top: 0;
+  }
+
+  /* Pre-title eyebrow */
+  .eyebrow {
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: #9a93c7;
+    margin-bottom: 14px;
+  }
+  .eyebrow span {
+    color: #7cff5a;
+  }
+
+  /* Main title */
+  .title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 52px;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    background: linear-gradient(135deg, #ff5a3c 0%, #ffd23c 35%, #ece9ff 65%, #6c4cff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 20px #6c4cff88) drop-shadow(0 0 40px #ff5a3c44);
+    margin-bottom: 22px;
+  }
+
+  /* Tagline */
+  .tagline {
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #4cc9ff;
+    margin-bottom: 30px;
+    text-shadow: 0 0 12px #4cc9ff66;
+  }
+
+  /* Description */
+  .description {
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 14.5px;
+    font-weight: 400;
+    line-height: 1.65;
+    color: #ece9ffcc;
+    max-width: 640px;
+    margin-bottom: 32px;
+  }
+
+  /* Bottom pill row */
+  .pill-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: nowrap;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 16px;
+    border-radius: 999px;
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .pill-url {
+    background: linear-gradient(135deg, #16112e, #1e184a);
+    border: 1.5px solid #6c4cff66;
+    color: #ece9ff;
+    box-shadow: 0 0 12px #6c4cff33;
+  }
+  .pill-url .dot {
+    width: 7px; height: 7px;
+    background: #7cff5a;
+    border-radius: 50%;
+    box-shadow: 0 0 6px #7cff5a;
+    flex-shrink: 0;
+  }
+
+  .pill-free {
+    background: linear-gradient(135deg, #ff5a3c22, #ffd23c22);
+    border: 1.5px solid #ffd23c66;
+    color: #ffd23c;
+    box-shadow: 0 0 10px #ffd23c22;
+  }
+
+  .pill-tech {
+    background: linear-gradient(135deg, #4cc9ff11, #6c4cff11);
+    border: 1.5px solid #4cc9ff44;
+    color: #4cc9ff;
+    box-shadow: 0 0 8px #4cc9ff11;
+  }
+
+  /* Right side logo/icon area */
+  .right-deco {
+    position: absolute;
+    right: 60px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 220px;
+    height: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .right-deco-ring {
+    position: absolute;
+    width: 220px; height: 220px;
+    border-radius: 50%;
+    border: 2px solid #6c4cff44;
+    box-shadow: inset 0 0 40px #6c4cff22, 0 0 40px #6c4cff33;
+  }
+  .right-deco-ring-2 {
+    position: absolute;
+    width: 170px; height: 170px;
+    border-radius: 50%;
+    border: 1.5px solid #ff5a3c33;
+    box-shadow: inset 0 0 30px #ff5a3c11;
+  }
+</style>
+</head>
+<body>
+<div class="root">
+
+  <!-- Backdrop -->
+  <div class="bg-radial"></div>
+
+  <!-- Isometric voxel grid SVG floor -->
+  <svg class="iso-grid" viewBox="0 0 1200 320" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMax meet">
+    <defs>
+      <pattern id="isoHex" x="0" y="0" width="80" height="46" patternUnits="userSpaceOnUse">
+        <!-- Isometric rhombus tile -->
+        <polygon points="40,0 80,23 40,46 0,23" fill="none" stroke="#6c4cff" stroke-width="0.6"/>
+        <!-- Inner highlight edge -->
+        <line x1="40" y1="0" x2="40" y2="46" stroke="#4cc9ff" stroke-width="0.3" opacity="0.5"/>
+      </pattern>
+      <linearGradient id="gridFade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#0a0814" stop-opacity="1"/>
+        <stop offset="40%" stop-color="#0a0814" stop-opacity="0"/>
+        <stop offset="100%" stop-color="#0a0814" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <rect width="1200" height="320" fill="url(#isoHex)"/>
+    <!-- Perspective fade top -->
+    <rect width="1200" height="320" fill="url(#gridFade)"/>
+  </svg>
+
+  <!-- Lava cracks -->
+  <div class="lava-crack-1"></div>
+  <div class="lava-crack-2"></div>
+  <div class="lava-crack-3"></div>
+
+  <!-- Glow orbs -->
+  <div class="orb orb-arcane-lg"></div>
+  <div class="orb orb-rune-md"></div>
+  <div class="orb orb-ember-sm"></div>
+  <div class="orb orb-pink-sm"></div>
+  <div class="orb orb-cyan-xs"></div>
+
+  <!-- Voxel cubes SVG layer -->
+  <svg class="voxel-group" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="glow-arcane">
+        <feGaussianBlur stdDeviation="3" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="glow-ember">
+        <feGaussianBlur stdDeviation="2.5" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+
+    <!-- Large floating voxel cube — top right area -->
+    <g transform="translate(980, 120)" filter="url(#glow-arcane)" opacity="0.9">
+      <!-- top face -->
+      <polygon points="40,0 80,20 40,40 0,20" fill="#1e1848" stroke="#6c4cff" stroke-width="1"/>
+      <!-- left face -->
+      <polygon points="0,20 40,40 40,80 0,60" fill="#16112e" stroke="#4a3ab8" stroke-width="1"/>
+      <!-- right face -->
+      <polygon points="80,20 40,40 40,80 80,60" fill="#13102a" stroke="#3a2a9a" stroke-width="1"/>
+      <!-- top face subtle fill -->
+      <polygon points="40,0 80,20 40,40 0,20" fill="none" stroke="#a078ff" stroke-width="0.5" opacity="0.6"/>
+    </g>
+
+    <!-- Medium cube — bottom left -->
+    <g transform="translate(120, 420)" filter="url(#glow-ember)" opacity="0.75">
+      <polygon points="28,0 56,14 28,28 0,14" fill="#2a1208" stroke="#ff5a3c" stroke-width="0.8"/>
+      <polygon points="0,14 28,28 28,56 0,42" fill="#1a0a04" stroke="#cc4020" stroke-width="0.8"/>
+      <polygon points="56,14 28,28 28,56 56,42" fill="#160804" stroke="#aa3010" stroke-width="0.8"/>
+    </g>
+
+    <!-- Small cube — upper left -->
+    <g transform="translate(220, 180)" opacity="0.6">
+      <polygon points="18,0 36,9 18,18 0,9" fill="#1a1640" stroke="#7cff5a" stroke-width="0.7"/>
+      <polygon points="0,9 18,18 18,36 0,27" fill="#12102a" stroke="#5acc30" stroke-width="0.7"/>
+      <polygon points="36,9 18,18 18,36 36,27" fill="#0e0e22" stroke="#48b828" stroke-width="0.7"/>
+    </g>
+
+    <!-- Tiny cube — mid right -->
+    <g transform="translate(1080, 340)" opacity="0.55">
+      <polygon points="14,0 28,7 14,14 0,7" fill="#1e1040" stroke="#4cc9ff" stroke-width="0.6"/>
+      <polygon points="0,7 14,14 14,28 0,21" fill="#14102a" stroke="#30a0cc" stroke-width="0.6"/>
+      <polygon points="28,7 14,14 14,28 28,21" fill="#100e22" stroke="#2088aa" stroke-width="0.6"/>
+    </g>
+
+    <!-- Spark particles -->
+    <circle cx="820" cy="95" r="2" fill="#ffd23c" opacity="0.9" filter="url(#glow-ember)"/>
+    <circle cx="840" cy="75" r="1.5" fill="#ff5a3c" opacity="0.8"/>
+    <circle cx="800" cy="110" r="1" fill="#ffd23c" opacity="0.7"/>
+    <circle cx="350" cy="60" r="2" fill="#7cff5a" opacity="0.8" filter="url(#glow-arcane)"/>
+    <circle cx="370" cy="80" r="1" fill="#4cc9ff" opacity="0.7"/>
+    <circle cx="160" cy="300" r="1.5" fill="#ff4ca8" opacity="0.75"/>
+    <circle cx="1100" cy="200" r="2" fill="#6c4cff" opacity="0.8"/>
+    <circle cx="1120" cy="220" r="1" fill="#a078ff" opacity="0.6"/>
+    <circle cx="500" cy="530" r="1.5" fill="#ffd23c" opacity="0.7"/>
+    <circle cx="700" cy="510" r="2" fill="#ff5a3c" opacity="0.6"/>
+    <circle cx="650" cy="560" r="1" fill="#7cff5a" opacity="0.65"/>
+
+    <!-- Rune circle decoration behind right orbs -->
+    <circle cx="1060" cy="160" r="95" fill="none" stroke="#6c4cff" stroke-width="0.8" opacity="0.35" stroke-dasharray="6 4"/>
+    <circle cx="1060" cy="160" r="72" fill="none" stroke="#ff5a3c" stroke-width="0.5" opacity="0.2" stroke-dasharray="3 6"/>
+
+    <!-- Cross/rune marks -->
+    <line x1="1060" y1="75" x2="1060" y2="95" stroke="#6c4cff" stroke-width="1" opacity="0.5"/>
+    <line x1="1060" y1="225" x2="1060" y2="245" stroke="#6c4cff" stroke-width="1" opacity="0.5"/>
+    <line x1="970" y1="160" x2="990" y2="160" stroke="#6c4cff" stroke-width="1" opacity="0.5"/>
+    <line x1="1130" y1="160" x2="1150" y2="160" stroke="#6c4cff" stroke-width="1" opacity="0.5"/>
+  </svg>
+
+  <!-- Left accent bar -->
+  <div class="accent-bar"></div>
+
+  <!-- Main content -->
+  <div class="content">
+    <div class="eyebrow">HTML5 · WebGL · Three.js · <span>PeerJS WebRTC</span></div>
+    <div class="title">VOXEL<br>WARLOCK<br>BRAWL</div>
+    <div class="tagline">LOW-POLY SPELL SLINGING · KNOCKBACK · LAVA · CHAOS</div>
+    <div class="description">
+      Spell-sling in a low-poly voxel arena. Knock rivals into the lava,
+      outlast the shrinking platform, and be the last warlock standing.
+      Free browser P2P multiplayer — no download.
+    </div>
+    <div class="pill-row">
+      <div class="pill pill-url">
+        <span class="dot"></span>
+        voxel-warlock-brawl-arena.vercel.app
+      </div>
+      <div class="pill pill-free">FREE · BROWSER · P2P</div>
+      <div class="pill pill-tech">UP TO 6 PLAYERS</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

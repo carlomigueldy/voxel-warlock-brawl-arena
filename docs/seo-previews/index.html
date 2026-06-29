@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEO Preview Gallery — Voxel Warlock Brawl Arena</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --void:    #0a0814;
+      --obsidian:#16112e;
+      --panel:   #181433;
+      --ember:   #ff5a3c;
+      --arcane:  #6c4cff;
+      --rune:    #7cff5a;
+      --gold:    #ffd23c;
+      --pink:    #ff4ca8;
+      --cyan:    #4cc9ff;
+      --text:    #ece9ff;
+      --muted:   #9a93c7;
+    }
+
+    body {
+      background: var(--void);
+      color: var(--text);
+      font-family: 'Chakra Petch', sans-serif;
+      min-height: 100vh;
+      padding: 2rem 1rem 4rem;
+    }
+
+    /* ── Header ── */
+    .site-header {
+      max-width: 1200px;
+      margin: 0 auto 3rem;
+      text-align: center;
+    }
+    .site-header .badge {
+      display: inline-block;
+      background: var(--ember);
+      color: #fff;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.55rem;
+      letter-spacing: .08em;
+      padding: .35rem .75rem;
+      border-radius: 4px;
+      margin-bottom: 1.25rem;
+    }
+    .site-header h1 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(1rem, 2.5vw, 1.6rem);
+      line-height: 1.5;
+      color: var(--text);
+      margin-bottom: .75rem;
+    }
+    .site-header p {
+      color: var(--muted);
+      font-size: .95rem;
+      max-width: 640px;
+      margin: 0 auto .5rem;
+    }
+    .site-header .url-chip {
+      display: inline-block;
+      background: var(--obsidian);
+      border: 1px solid var(--arcane);
+      color: var(--cyan);
+      font-size: .8rem;
+      padding: .3rem .8rem;
+      border-radius: 999px;
+      margin-top: .5rem;
+      font-family: monospace;
+    }
+
+    /* ── Legend ── */
+    .legend {
+      max-width: 1200px;
+      margin: 0 auto 2.5rem;
+      background: var(--panel);
+      border: 1px solid #2a244a;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .75rem 2rem;
+      font-size: .8rem;
+      color: var(--muted);
+    }
+    .legend strong { color: var(--text); }
+    .legend-item { display: flex; align-items: center; gap: .5rem; }
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Grid ── */
+    .grid {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 2rem;
+    }
+
+    /* ── Card wrapper ── */
+    .card-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+    }
+    .card-label {
+      font-size: .75rem;
+      font-family: 'Press Start 2P', monospace;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .card-label span {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+      position: relative;
+      top: -1px;
+    }
+    .platform-note {
+      font-size: .72rem;
+      color: #5a5480;
+    }
+    .card-meta { font-size: .72rem; color: var(--muted); margin-top: .25rem; }
+
+    /* ── OG image helper ── */
+    .og-img {
+      width: 100%;
+      aspect-ratio: 1200 / 630;
+      object-fit: cover;
+      background: var(--obsidian);
+      display: block;
+    }
+    .og-img-sq {
+      width: 80px; height: 80px;
+      object-fit: cover;
+      background: var(--obsidian);
+      flex-shrink: 0;
+      border-radius: 6px;
+    }
+
+    /* ─────────────────────────────────────────
+       PLATFORM MOCKS
+    ───────────────────────────────────────── */
+
+    /* Facebook */
+    .fb-card {
+      background: #fff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0,0,0,.25);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .fb-card .fb-body {
+      padding: 12px 14px 14px;
+      border-top: 1px solid #dadde1;
+    }
+    .fb-card .fb-domain {
+      font-size: 11px;
+      color: #65676b;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 4px;
+    }
+    .fb-card .fb-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #050505;
+      line-height: 1.35;
+      margin-bottom: 4px;
+    }
+    .fb-card .fb-desc {
+      font-size: 13px;
+      color: #65676b;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* Twitter / X */
+    .x-card {
+      background: #000;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid #2f3336;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .x-card .x-body {
+      padding: 12px 14px;
+    }
+    .x-card .x-domain {
+      font-size: 12px;
+      color: #71767b;
+    }
+    .x-card .x-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #e7e9ea;
+      line-height: 1.35;
+      margin-top: 2px;
+    }
+
+    /* Discord */
+    .dc-card {
+      background: #313338;
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+      border-left: 4px solid var(--ember);
+      font-family: 'gg sans', 'Noto Sans', Whitney, 'Helvetica Neue', sans-serif;
+    }
+    .dc-card .dc-inner {
+      padding: 12px 14px;
+      flex: 1;
+      min-width: 0;
+    }
+    .dc-card .dc-site {
+      font-size: 12px;
+      color: #fff;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .dc-card .dc-title {
+      font-size: 14px;
+      color: #00aff4;
+      font-weight: 600;
+      line-height: 1.35;
+      margin-bottom: 6px;
+      cursor: pointer;
+    }
+    .dc-card .dc-desc {
+      font-size: 13px;
+      color: #dbdee1;
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .dc-card .dc-img-wrap {
+      padding: 10px 12px 10px 0;
+      flex-shrink: 0;
+      width: 120px;
+    }
+    .dc-card .dc-img-wrap img {
+      width: 100%;
+      aspect-ratio: 16/9;
+      object-fit: cover;
+      border-radius: 4px;
+      background: var(--obsidian);
+      display: block;
+    }
+
+    /* Slack */
+    .sl-card {
+      background: #1a1d21;
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      gap: 12px;
+      border-left: 4px solid #4a4a4a;
+      padding: 12px 14px;
+      font-family: Slack-Lato, appleLogo, sans-serif;
+    }
+    .sl-card .sl-content { flex: 1; min-width: 0; }
+    .sl-card .sl-site {
+      font-size: 12px;
+      font-weight: 700;
+      color: #d1d2d3;
+      margin-bottom: 3px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sl-card .sl-favicon {
+      width: 16px; height: 16px;
+      background: var(--ember);
+      border-radius: 2px;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .sl-card .sl-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1264a3;
+      line-height: 1.35;
+      margin-bottom: 4px;
+    }
+    .sl-card .sl-desc {
+      font-size: 13px;
+      color: #9b9b9b;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .sl-card .sl-thumb {
+      width: 72px; height: 72px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: var(--obsidian);
+      flex-shrink: 0;
+      align-self: center;
+    }
+
+    /* iMessage */
+    .im-card {
+      background: #e9e9eb;
+      border-radius: 18px;
+      overflow: hidden;
+      max-width: 300px;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+      box-shadow: 0 2px 10px rgba(0,0,0,.2);
+    }
+    .im-card .im-footer {
+      padding: 10px 14px 12px;
+    }
+    .im-card .im-domain {
+      font-size: 11px;
+      color: #8e8e93;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 2px;
+    }
+    .im-card .im-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #000;
+      line-height: 1.3;
+    }
+
+    /* LinkedIn */
+    .li-card {
+      background: #fff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 8px rgba(0,0,0,.2);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .li-card .li-body {
+      padding: 12px 14px 14px;
+      background: #f3f2ef;
+      border-top: 1px solid #e0dfdc;
+    }
+    .li-card .li-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: rgba(0,0,0,.9);
+      line-height: 1.35;
+      margin-bottom: 3px;
+    }
+    .li-card .li-domain {
+      font-size: 12px;
+      color: rgba(0,0,0,.6);
+    }
+
+    /* WhatsApp */
+    .wa-card {
+      background: #005c4b;
+      border-radius: 12px;
+      overflow: hidden;
+      max-width: 340px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 4px 4px 8px;
+    }
+    .wa-card .wa-preview {
+      background: #1f2c34;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .wa-card .wa-preview img {
+      width: 100%;
+      aspect-ratio: 1200/630;
+      object-fit: cover;
+      display: block;
+      background: var(--obsidian);
+    }
+    .wa-card .wa-meta {
+      padding: 6px 10px 2px;
+    }
+    .wa-card .wa-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #e9edef;
+      line-height: 1.3;
+      margin-bottom: 2px;
+    }
+    .wa-card .wa-desc {
+      font-size: 12px;
+      color: #8696a0;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 3px;
+    }
+    .wa-card .wa-domain {
+      font-size: 11px;
+      color: #8696a0;
+    }
+    .wa-card .wa-time {
+      text-align: right;
+      font-size: 11px;
+      color: #8696a0;
+      padding: 0 8px 2px;
+    }
+
+    /* Google SERP */
+    .serp-card {
+      background: #202124;
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+    }
+    .serp-card .serp-breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    .serp-card .serp-fav {
+      width: 18px; height: 18px;
+      background: var(--ember);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .serp-card .serp-site {
+      font-size: 13px;
+      color: #bdc1c6;
+    }
+    .serp-card .serp-url {
+      font-size: 12px;
+      color: #bdc1c6;
+    }
+    .serp-card .serp-title {
+      font-size: 20px;
+      color: #8ab4f8;
+      line-height: 1.3;
+      margin-bottom: 6px;
+      cursor: pointer;
+    }
+    .serp-card .serp-title:hover { text-decoration: underline; }
+    .serp-card .serp-desc {
+      font-size: 14px;
+      color: #bdc1c6;
+      line-height: 1.58;
+    }
+    .serp-card .serp-date {
+      color: #9aa0a6;
+      font-size: 14px;
+    }
+
+    /* Browser tab */
+    .tab-card {
+      background: #35363a;
+      border-radius: 10px;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      box-shadow: 0 4px 18px rgba(0,0,0,.4);
+    }
+    .tab-card .tab-bar {
+      background: #202124;
+      padding: 10px 14px 0;
+      display: flex;
+      gap: 0;
+    }
+    .tab-card .tab-pill {
+      background: #35363a;
+      border-radius: 8px 8px 0 0;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      max-width: 240px;
+    }
+    .tab-card .tab-fav {
+      width: 16px; height: 16px;
+      background: var(--ember);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .tab-card .tab-title {
+      font-size: 12px;
+      color: #e8eaed;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tab-card .tab-close {
+      font-size: 11px;
+      color: #9aa0a6;
+      margin-left: auto;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .tab-card .addr-bar {
+      background: #35363a;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tab-card .addr-pill {
+      background: #303134;
+      border-radius: 20px;
+      flex: 1;
+      padding: 5px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tab-card .addr-lock {
+      font-size: 11px;
+      color: #9aa0a6;
+    }
+    .tab-card .addr-url {
+      font-size: 13px;
+      color: #e8eaed;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tab-card .addr-url em { color: #9aa0a6; font-style: normal; }
+    .tab-card .tab-content {
+      background: var(--void);
+      aspect-ratio: 16/9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tab-card .tab-content img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      background: var(--obsidian);
+    }
+
+    /* ── Divider ── */
+    .section-divider {
+      max-width: 1200px;
+      margin: 3rem auto 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .section-divider .sd-line {
+      flex: 1;
+      height: 1px;
+      background: #2a244a;
+    }
+    .section-divider .sd-label {
+      font-size: .7rem;
+      font-family: 'Press Start 2P', monospace;
+      color: var(--muted);
+      letter-spacing: .08em;
+    }
+
+    /* ── Footer ── */
+    footer {
+      max-width: 1200px;
+      margin: 3rem auto 0;
+      text-align: center;
+      font-size: .75rem;
+      color: #3d3665;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 520px) {
+      .grid { grid-template-columns: 1fr; }
+      .dc-card .dc-img-wrap { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════ HEADER ═══ -->
+<header class="site-header">
+  <div class="badge">DESIGN QA · SEO PREVIEW GALLERY</div>
+  <h1>Social Share & Search Preview</h1>
+  <p>Pixel-accurate mockups of how the share link renders across major platforms. Use these to QA meta tags, OG images, and copy before launch.</p>
+  <code class="url-chip">https://voxel-warlock-brawl-arena.vercel.app</code>
+</header>
+
+<!-- ═══════════════════════════════════════ LEGEND ═══ -->
+<div class="legend">
+  <div class="legend-item"><span class="legend-dot" style="background:#4267b2"></span><strong>og:*</strong> — Open Graph meta tags (Facebook, Discord, Slack, LinkedIn, WhatsApp, iMessage)</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#1da1f2"></span><strong>twitter:card</strong> — Twitter Card meta tags (X / Twitter)</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#fbbc04"></span><strong>title + description</strong> — Plain HTML meta (Google SERP, browser tab)</div>
+  <div class="legend-item"><span class="legend-dot" style="background:var(--ember)"></span><strong>OG image</strong> — 1200×630 at <code>/assets/social/og-image.png</code></div>
+  <div class="legend-item"><span class="legend-dot" style="background:var(--arcane)"></span><strong>OG image square</strong> — 1:1 version at <code>/assets/social/og-image-square.png</code></div>
+</div>
+
+<!-- ═══════════════════════════════════════ GRID ═══ -->
+<div class="grid">
+
+  <!-- ── Facebook ── -->
+  <div class="card-wrap">
+    <div class="card-label"><span style="background:#4267b2"></span>Facebook Feed Card</div>
+    <div class="fb-card">
+      <img class="og-img" src="../../assets/social/og-image.png" alt="OG Image" />
+      <div class="fb-body">
+        <div class="fb-domain">VOXEL-WARLOCK-BRAWL-ARENA.VERCEL.APP</div>
+        <div class="fb-title">Voxel Warlock Brawl Arena</div>
+        <div class="fb-desc">Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing. Free browser P2P multiplayer — no download.</div>
+      </div>
+    </div>
+    <div class="platform-note">Driven by: <code>og:image</code>, <code>og:title</code>, <code>og:description</code>, <code>og:url</code></div>
+  </div>
+
+  <!-- ── X / Twitter ── -->
+  <div class="card-wrap">
+    <div class="card-label"><span style="background:#1da1f2"></span>X (Twitter) summary_large_image</div>
+    <div class="x-card">
+      <img class="og-img" src="../../assets/social/og-image.png" alt="OG Image" style="border-radius:16px 16px 0 0;" />
+      <div class="x-body">
+        <div class="x-title">Voxel Warlock Brawl Arena</div>
+        <div class="x-domain">voxel-warlock-brawl-arena.vercel.app</div>
+      </div>
+    </div>
+    <div class="platform-note">Driven by: <code>twitter:card=summary_large_image</code>, <code>twitter:title</code>, <code>twitter:image</code></div>
+  </div>
+
+  <!-- ── Discord ── -->
+  <div class="card-wrap">
+    <div class="card-label"><span style="background:#5865f2"></span>Discord Embed</div>
+    <div class="dc-card">
+      <div class="dc-inner">
+        <div class="dc-site">Voxel Warlock Brawl Arena</div>
+        <div class="dc-title">Voxel Warlock Brawl Arena</div>
+        <div class="dc-desc">Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing. Free browser P2P multiplayer — no download.</div>
+      </div>
+      <div class="dc-img-wrap">
+        <img src="../../assets/social/og-image.png" alt="OG Image" />
+      </div>
+    </div>
+    <div class="platform-note">Driven by: <code>og:image</code>, <code>og:title</code>, <code>og:description</code>, <code>og:site_name</code>, <code>theme-color</code></div>
+  </div>
+
+  <!-- ── Slack ── -->
+  <div class="card-wrap">
+    <div class="card-label"><span style="background:#4a154b"></span>Slack Unfurl</div>
+    <div class="sl-card">
+      <div class="sl-content">
+        <div class="sl-site">
+          <span class="sl-favicon"></span>
+          Voxel Warlock Brawl Arena
+        </div>
+        <div class="sl-title">Voxel Warlock Brawl Arena</div>
+        <div class="sl-desc">Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing.</div>
+      </div>
+      <img class="sl-thumb" src="../../assets/social/og-image-square.png" alt="Thumbnail" />
+    </div>
+    <div class="platform-note">Driven by: <code>og:image</code>, <code>og:title</code>, <code>og:description</code>, <code>og:site_name</code></div>
+  </div>
+
+  <!-- ── iMessage ── -->
+  <div class="card-wrap">
+    <div class="card-label"><span style="background:#34c759"></span>iMessage Rich Link</div>
+    <div class="im-card">
+      <img class="og-img" src="../../assets/social/og-image.png" alt="OG Image" />
+      <div class="im-footer">
+        <div class="im-domain">VOXEL-WARLOCK-BRAWL-ARENA.VERCEL.APP</div>
+        <div class="im-title">Voxel Warlock Brawl Arena</div>
+      </div>
+    </div>
+    <div class="platform-note">Driven by: <code>og:image</code>, <code>og:title</code>, <code>og:url</code></div>
+  </div>
+
+  <!-- ── LinkedIn ── -->
+  <div class="card-wrap">
+    <div class="card-label"><span style="background:#0a66c2"></span>LinkedIn Feed Card</div>
+    <div class="li-card">
+      <img class="og-img" src="../../assets/social/og-image.png" alt="OG Image" />
+      <div class="li-body">
+        <div class="li-title">Voxel Warlock Brawl Arena</div>
+        <div class="li-domain">voxel-warlock-brawl-arena.vercel.app</div>
+      </div>
+    </div>
+    <div class="platform-note">Driven by: <code>og:image</code>, <code>og:title</code>, <code>og:url</code></div>
+  </div>
+
+  <!-- ── WhatsApp ── -->
+  <div class="card-wrap">
+    <div class="card-label"><span style="background:#25d366"></span>WhatsApp Chat Bubble</div>
+    <div class="wa-card">
+      <div class="wa-preview">
+        <img src="../../assets/social/og-image.png" alt="OG Image" />
+        <div class="wa-meta">
+          <div class="wa-title">Voxel Warlock Brawl Arena</div>
+          <div class="wa-desc">Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing.</div>
+          <div class="wa-domain">voxel-warlock-brawl-arena.vercel.app</div>
+        </div>
+      </div>
+      <div class="wa-time">2:41 PM ✓✓</div>
+    </div>
+    <div class="platform-note">Driven by: <code>og:image</code>, <code>og:title</code>, <code>og:description</code>, <code>og:url</code></div>
+  </div>
+
+  <!-- ── Google SERP ── -->
+  <div class="card-wrap">
+    <div class="card-label"><span style="background:#fbbc04"></span>Google SERP Snippet</div>
+    <div class="serp-card">
+      <div class="serp-breadcrumb">
+        <div class="serp-fav"></div>
+        <div>
+          <div class="serp-site">Voxel Warlock Brawl Arena</div>
+          <div class="serp-url">https://voxel-warlock-brawl-arena.vercel.app</div>
+        </div>
+      </div>
+      <div class="serp-title">Voxel Warlock Brawl — Low-Poly Spell-Slinging Arena Brawler</div>
+      <div class="serp-desc"><span class="serp-date">Jun 30, 2026 — </span>Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing. Free browser P2P multiplayer — no download.</div>
+    </div>
+    <div class="platform-note">Driven by: <code>&lt;title&gt;</code>, <code>meta name="description"</code>, <code>canonical</code></div>
+  </div>
+
+  <!-- ── Browser Tab ── -->
+  <div class="card-wrap">
+    <div class="card-label"><span style="background:#35363a"></span>Browser Tab + Address Bar</div>
+    <div class="tab-card">
+      <div class="tab-bar">
+        <div class="tab-pill">
+          <div class="tab-fav"></div>
+          <div class="tab-title">Voxel Warlock Brawl — Low-Poly Spell-Slinging Arena Brawler</div>
+          <div class="tab-close">✕</div>
+        </div>
+      </div>
+      <div class="addr-bar">
+        <div class="addr-pill">
+          <span class="addr-lock">🔒</span>
+          <span class="addr-url"><em>https://</em>voxel-warlock-brawl-arena.vercel.app</span>
+        </div>
+      </div>
+      <div class="tab-content">
+        <img src="../../assets/social/og-image.png" alt="Game preview" />
+      </div>
+    </div>
+    <div class="platform-note">Driven by: <code>&lt;title&gt;</code>, <code>link rel="icon"</code>, <code>theme-color</code></div>
+  </div>
+
+</div><!-- /grid -->
+
+<!-- ═══════════════════════════════════════ FOOTER ═══ -->
+<footer>
+  <p>SEO Preview Gallery · Voxel Warlock Brawl Arena · Carlo Miguel Dy</p>
+  <p>OG image source: <code>assets/social/og-card.html</code> · Rasterized to <code>assets/social/og-image.png</code> (1200×630) and <code>og-image-square.png</code> (630×630)</p>
+  <p style="margin-top:.5rem;color:#2a2450">Card proportions and chrome colors accurate as of 2026-06-30. Platform UIs change; verify with native share tools before shipping.</p>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,56 @@
+# Voxel Warlock Brawl Arena
+
+> A free, browser-based 3D low-poly arena brawler where warlocks spell-sling, knock rivals into the lava, and fight to be the last one standing — no download required.
+
+## What It Is
+
+Voxel Warlock Brawl Arena is an HTML5 + WebGL browser game built with Three.js. Players control low-poly voxel warlocks on a shrinking platform suspended over lava. The goal is to knock all opponents off the platform using spells with knockback. The last warlock standing wins. It is free to play in any modern browser with no installation.
+
+The game is authored by Carlo Miguel Dy and hosted at https://voxel-warlock-brawl-arena.vercel.app/
+
+## How to Play
+
+- **Move**: WASD or arrow keys
+- **Aim**: Mouse cursor
+- **Fire fireball**: Left mouse button or Spacebar
+- **Cast a spell**: Press the spell's hotkey while aiming at the cursor, or select it on the on-screen ability bar and right-click to place it
+- **Switch / select spells**: Per-slot hotkeys (digit and letter keys), or click a slot on the ability bar
+- **Survive**: Stay on the platform as it shrinks; fall into the lava and you are eliminated
+
+Knockback is not direct lethal damage — it pushes rivals across the arena. Each warlock accumulates a "charge" (a Smash-style knockback vulnerability) as it takes hits, so the more a target has been hit, the farther the next hit sends them flying. Blast rivals off the shrinking platform into the lava to eliminate them.
+
+## Multiplayer
+
+- Up to 6 players per session
+- Host-authoritative peer-to-peer networking via PeerJS / WebRTC (no dedicated server)
+- Start a game and share the invite link, room code, or QR code with friends
+- Guests join by entering the room code or scanning the QR code
+- Works entirely in the browser; no account or download needed
+
+## Spells
+
+The game implements 20+ spells and abilities from the Warlock Brawl handbook. Examples:
+
+- **Fireball** — core knockback projectile
+- **Lightning** — chain-lightning to nearby foes
+- **Boomerang** — projectile that flies out and curves back
+- **Homing** — projectile that steers toward enemies
+- **Meteor** — telegraphed AoE slam at a target point
+- **Teleport** — blink toward the cursor
+- **Swap** — trade places with the nearest enemy
+- **Gravity** — pull field at a target point
+- **Drain** — pull a foe and steal their charge
+- **Shield** — block the next incoming hit
+
+## Tech Stack
+
+- **Renderer**: Three.js (WebGL)
+- **Networking**: PeerJS (WebRTC), host-authoritative model
+- **Language**: Vanilla JavaScript, ES modules
+- **Build**: None — static HTML/CSS/JS, runs directly in the browser
+- **Platform**: Any modern desktop or mobile browser
+- **Cost**: Free, no login, no install
+
+## Links
+
+- Canonical URL: https://voxel-warlock-brawl-arena.vercel.app/
