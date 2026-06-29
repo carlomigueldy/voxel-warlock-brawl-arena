@@ -34,6 +34,7 @@ export class UI {
       arenaWorldUi: $("arena-world-ui"),
       botCountUi: $("bot-count-ui"), botCountValue: $("bot-count-value"),
       botSkillUi: $("bot-skill-ui"),
+      mapObjectsUi: $("map-objects-ui"),
       // Tutorial
       tutSpellbookList: $("tut-spellbook-list"),
       btnPractice: $("btn-practice"),
@@ -67,6 +68,7 @@ export class UI {
     this._buildArenaCards();
     this._buildLandSizeSegmented();
     this._buildBotControls();
+    this._buildMapObjectsToggles();
   }
 
   _buildAbilitiesToggle() {
@@ -190,6 +192,64 @@ export class UI {
       });
       this._selectSegment(skillWrap, skillNative, skillNative.value || "smart");
     }
+  }
+
+  _buildMapObjectsToggles() {
+    const wrap = this.el.mapObjectsUi;
+    if (!wrap || !CFG.OBSTACLE_TYPES) return;
+    // Load saved state from localStorage, merge over defaults so new types start enabled.
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem("vwb-map-objects") || "{}"); } catch {}
+    const state = { ...CFG.DEFAULT_OBSTACLE_TOGGLES, ...saved };
+    wrap.replaceChildren();
+    CFG.OBSTACLE_TYPES.forEach(({ id, label }) => {
+      const lbl = document.createElement("label");
+      lbl.className = "obs-toggle";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.className = "obs-toggle-check";
+      input.dataset.id = id;
+      input.checked = state[id] !== false;
+      // Accessible label is provided by the sibling text node; redundant aria-label
+      // on the input prevents screen readers from reading it twice.
+      input.setAttribute("aria-label", label);
+      const track = document.createElement("span");
+      track.className = "obs-toggle-track";
+      const knob = document.createElement("span");
+      knob.className = "obs-toggle-knob";
+      track.appendChild(knob);
+      const text = document.createElement("span");
+      text.className = "obs-toggle-label";
+      text.textContent = label;
+      // Sync visual class with checkbox state.
+      const sync = () => lbl.classList.toggle("is-on", input.checked);
+      sync();
+      input.addEventListener("change", () => { sync(); this._saveMapObjects(); });
+      lbl.appendChild(input);
+      lbl.appendChild(track);
+      lbl.appendChild(text);
+      wrap.appendChild(lbl);
+    });
+  }
+
+  _saveMapObjects() {
+    const wrap = this.el.mapObjectsUi;
+    if (!wrap) return;
+    const state = {};
+    wrap.querySelectorAll(".obs-toggle-check").forEach((input) => {
+      if (input.dataset.id) state[input.dataset.id] = input.checked;
+    });
+    try { localStorage.setItem("vwb-map-objects", JSON.stringify(state)); } catch {}
+  }
+
+  _getEnabledObstacles() {
+    const result = { ...CFG.DEFAULT_OBSTACLE_TOGGLES };
+    const wrap = this.el.mapObjectsUi;
+    if (!wrap) return result;
+    wrap.querySelectorAll(".obs-toggle-check").forEach((input) => {
+      if (input.dataset.id) result[input.dataset.id] = input.checked;
+    });
+    return result;
   }
 
   // Floating ember particle bed — the menu/lobby signature ambience.
@@ -571,7 +631,8 @@ export class UI {
   getArenaSettings() {
     const arenaWorld = CFG.ARENA_WORLDS.some((world) => world.id === this.el.arenaWorld?.value) ? this.el.arenaWorld.value : CFG.DEFAULT_ARENA_WORLD;
     const landSize = CFG.ARENA_LAND_SIZES[this.el.landSize?.value] ? this.el.landSize.value : CFG.DEFAULT_ARENA_LAND_SIZE;
-    return { arenaWorld, landSize };
+    const enabledObstacles = this._getEnabledObstacles();
+    return { arenaWorld, landSize, enabledObstacles };
   }
 
   getBotSettings() {

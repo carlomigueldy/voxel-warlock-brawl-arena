@@ -349,6 +349,10 @@ html, body {
 .controls-hint { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
 .hint b { color: var(--text); background: rgba(108,76,255,0.18); padding: 1px 6px; border-radius: 5px; }
+.author-credit { margin-top: 10px; font-size: 12px; color: var(--muted); letter-spacing: 0.3px; }
+.author-credit a { color: var(--gold); text-decoration: none; transition: color 0.18s ease, opacity 0.18s ease; }
+.author-credit a:hover { text-decoration: underline; opacity: 0.85; }
+.author-credit a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 3px; text-decoration: underline; }
 .label { color: var(--muted); text-transform: uppercase; font-size: 12px; letter-spacing: 2px; margin-bottom: 8px; font-weight: 700; }
 
 /* ---------- Lobby ---------- */
@@ -849,6 +853,59 @@ html, body {
 .arena-cards-sm .arena-card-orb { width: 26px; height: 26px; border-radius: 7px; margin-bottom: 7px; }
 .arena-cards-sm .arena-card-name { font-size: 13px; }
 .settings-arena-field { gap: 10px; }
+
+/* ---------- Map-objects toggle group (host settings) ---------- */
+.map-toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+}
+.obs-toggle {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; border-radius: 8px; padding: 5px 4px;
+  transition: background 0.15s;
+}
+.obs-toggle:hover { background: rgba(108, 76, 255, 0.07); }
+/* Visually-hidden native checkbox — keyboard-accessible, screen-reader-visible. */
+.obs-toggle-check {
+  position: absolute; opacity: 0; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+/* Pill track */
+.obs-toggle-track {
+  flex-shrink: 0;
+  width: 34px; height: 18px; border-radius: 9px;
+  background: var(--slot); border: 1px solid var(--line);
+  position: relative;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+/* Sliding knob */
+.obs-toggle-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.2s var(--ease-spring), background 0.2s;
+}
+/* Enabled / "on" state (class set by JS) */
+.obs-toggle.is-on .obs-toggle-track {
+  background: linear-gradient(90deg, rgba(108, 76, 255, 0.35), rgba(124, 255, 90, 0.35));
+  border-color: var(--rune); box-shadow: 0 0 10px rgba(124, 255, 90, 0.25);
+}
+.obs-toggle.is-on .obs-toggle-knob {
+  transform: translateX(16px); background: var(--rune);
+  box-shadow: 0 0 8px rgba(124, 255, 90, 0.7);
+}
+/* Text label */
+.obs-toggle-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--muted); transition: color 0.2s;
+  line-height: 1;
+}
+.obs-toggle.is-on .obs-toggle-label { color: var(--text); }
+/* Keyboard focus ring — shown on the whole label when the hidden input is focused. */
+.obs-toggle:has(.obs-toggle-check:focus-visible) {
+  outline: 2px solid var(--arcane); outline-offset: 2px;
+}
 
 /* Join box in JOIN sub-screen — existing .join-box styles apply,
    just ensure it stretches to fill the sub-screen width. */

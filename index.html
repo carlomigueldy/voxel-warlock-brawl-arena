@@ -3,7 +3,101 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Voxel Warlock Brawl</title>
+<title>Voxel Warlock Brawl — Low-Poly Spell-Slinging Arena Brawler</title>
+
+<!-- ===== SEO / Social / PWA ===== -->
+<!-- Core meta -->
+<meta name="description" content="Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing. Free browser P2P multiplayer — no download." />
+<meta name="keywords" content="warlock brawl, voxel game, browser game, three.js game, webgl game, p2p multiplayer, arena brawler, spell slinging, knockback, free online game" />
+<meta name="author" content="Carlo Miguel Dy" />
+<meta name="theme-color" content="#0a0814" />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://voxel-warlock-brawl-arena.vercel.app/" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Voxel Warlock Brawl Arena" />
+<meta property="og:title" content="Voxel Warlock Brawl Arena" />
+<meta property="og:description" content="Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing. Free browser P2P multiplayer — no download." />
+<meta property="og:url" content="https://voxel-warlock-brawl-arena.vercel.app/" />
+<meta property="og:image" content="https://voxel-warlock-brawl-arena.vercel.app/assets/social/og-image.png" />
+<meta property="og:image:secure_url" content="https://voxel-warlock-brawl-arena.vercel.app/assets/social/og-image.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Voxel Warlock Brawl Arena — low-poly spell-slinging arena brawler with lava and knockback" />
+<meta property="og:locale" content="en_US" />
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Voxel Warlock Brawl Arena" />
+<meta name="twitter:description" content="Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing. Free browser P2P multiplayer — no download." />
+<meta name="twitter:image" content="https://voxel-warlock-brawl-arena.vercel.app/assets/social/og-image.png" />
+<meta name="twitter:image:alt" content="Voxel Warlock Brawl Arena — low-poly spell-slinging arena brawler with lava and knockback" />
+
+<!-- Favicons & PWA -->
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+<meta name="apple-mobile-web-app-title" content="Warlock Brawl" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+
+<!-- Structured Data (JSON-LD) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "VideoGame",
+      "name": "Voxel Warlock Brawl Arena",
+      "url": "https://voxel-warlock-brawl-arena.vercel.app/",
+      "description": "Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing. Free browser P2P multiplayer — no download.",
+      "genre": ["Arena Brawler", "Battle Royale"],
+      "gamePlatform": "Web Browser",
+      "applicationCategory": "Game",
+      "operatingSystem": "Any (Web Browser)",
+      "playMode": "MultiPlayer",
+      "numberOfPlayers": {
+        "@type": "QuantitativeValue",
+        "maxValue": 6
+      },
+      "image": "https://voxel-warlock-brawl-arena.vercel.app/assets/social/og-image.png",
+      "screenshot": "https://voxel-warlock-brawl-arena.vercel.app/assets/social/og-image.png",
+      "author": {
+        "@type": "Person",
+        "name": "Carlo Miguel Dy"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    },
+    {
+      "@type": "WebSite",
+      "name": "Voxel Warlock Brawl Arena",
+      "url": "https://voxel-warlock-brawl-arena.vercel.app/"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://voxel-warlock-brawl-arena.vercel.app/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<!-- ===== /SEO / Social / PWA ===== -->
+
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet" />
@@ -116,6 +210,7 @@
       <footer class="controls-hint">
         <p class="hint">Move <b>WASD</b> · Aim <b>Mouse</b> · Fire <b>Click / Space</b></p>
         <p class="hint">Cast <b>1-8 / Q E R F C V X Z T G B H</b></p>
+        <p class="author-credit">Crafted by <a href="https://carlomigueldy.dev" target="_blank" rel="noopener noreferrer">carlomigueldy.dev</a></p>
       </footer>
     </nav>
 
@@ -162,6 +257,10 @@
           <span class="field-label">Arena world</span>
           <div id="arena-world-ui" class="arena-cards arena-cards-sm" role="radiogroup" aria-label="Arena world"></div>
           <select id="arena-world" hidden></select>
+        </div>
+        <div class="field">
+          <span class="field-label">Map objects</span>
+          <div id="map-objects-ui" class="map-toggles" role="group" aria-label="Map object types"></div>
         </div>
       </div>
 
