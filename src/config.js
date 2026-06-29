@@ -51,7 +51,7 @@ export const CFG = {
   HAZARD_DEATH_DELAY: 3.5,
   PLAYER_RADIUS: 0.6,
   PLAYER_HEIGHT: 1.8,
-  FRICTION: 6.0,             // knockback velocity decay per sec (exponential-ish)
+  FRICTION: 5.5,             // knockback velocity decay per sec (exponential-ish)
   GRAVITY: 22,               // applied once off the platform edge
 
   // --- Bolt (the core weapon) ---
@@ -60,9 +60,9 @@ export const CFG = {
   BOLT_LIFETIME: 2.2,        // seconds before it fizzles
   BOLT_COOLDOWN: 0.55,       // seconds between shots
   // Knockback model (Smash-style): force scales with the victim's accumulated "charge".
-  BOLT_BASE_KNOCKBACK: 6,    // base impulse on hit
+  BOLT_BASE_KNOCKBACK: 8,    // base impulse on hit
   BOLT_CHARGE_GAIN: 0.14,    // how much a hit increases victim's charge multiplier
-  KNOCKBACK_CHARGE_SCALE: 9, // extra impulse per unit of charge
+  KNOCKBACK_CHARGE_SCALE: 11, // extra impulse per unit of charge
   CHARGE_MAX: 4.0,           // cap so it stays playable
   CHARGE_DECAY: 0.05,        // charge bleeds off slowly per sec while alive
 
@@ -155,27 +155,27 @@ export function isOnArenaWorld(worldId, radius, x, z) {
 // cast handlers (src/spells.js) read live alongside each entry.
 export const SPELLS = {
   // ---- Core projectiles ----
-  fireball:  { name: "Fireball",  key: "1", cd: 0.55, kind: "projectile", proj: "fireball",  kb: 7,  color: 0xff5a1e, sfx: "fireball" },
-  lightning: { name: "Lightning", key: "2", cd: 4.0,  kind: "lightning",  range: 16, kb: 9, chains: 2, chainRange: 7, color: 0x9fe6ff, sfx: "lightning" },
-  boomerang: { name: "Boomerang", key: "3", cd: 6.0,  kind: "projectile", proj: "boomerang", kb: 8,  range: 16, color: 0xffe14c, sfx: "whoosh" },
-  homing:    { name: "Homing",    key: "4", cd: 8.0,  kind: "projectile", proj: "homing",    kb: 9,  turn: 3.2, color: 0xc04cff, sfx: "homing" },
-  fireSpray: { name: "Fire Spray", key: "5", cd: 7.0, kind: "spray",      proj: "fireball",  kb: 5,  count: 7, spread: 0.9, color: 0xff7a2e, sfx: "spray" },
-  bouncer:   { name: "Bouncer",   key: "6", cd: 9.0,  kind: "projectile", proj: "bouncer",   kb: 8,  bounces: 4, color: 0x4cff9c, sfx: "whoosh" },
-  splitter:  { name: "Splitter",  key: "7", cd: 9.0,  kind: "projectile", proj: "splitter",  kb: 6,  splitDist: 7, shards: 5, color: 0xff4ca8, sfx: "fireball" },
-  meteor:    { name: "Meteor",    key: "8", cd: 12.0, kind: "meteor",     range: 18, fall: 1.1, radius: 5, kb: 22, color: 0xff3a1e, sfx: "meteor" },
+  fireball:  { name: "Fireball",  key: "1", cd: 0.55, kind: "projectile", proj: "fireball",  kb: 10, color: 0xff5a1e, sfx: "fireball" },
+  lightning: { name: "Lightning", key: "2", cd: 4.0,  kind: "lightning",  range: 18, kb: 13, chains: 2, chainRange: 7, color: 0x9fe6ff, sfx: "lightning" },
+  boomerang: { name: "Boomerang", key: "3", cd: 6.0,  kind: "projectile", proj: "boomerang", kb: 12, range: 16, color: 0xffe14c, sfx: "whoosh" },
+  homing:    { name: "Homing",    key: "4", cd: 8.0,  kind: "projectile", proj: "homing",    kb: 13, turn: 3.2, color: 0xc04cff, sfx: "homing" },
+  fireSpray: { name: "Fire Spray", key: "5", cd: 7.0, kind: "spray",      proj: "fireball",  kb: 7,  count: 7, spread: 0.9, color: 0xff7a2e, sfx: "spray" },
+  bouncer:   { name: "Bouncer",   key: "6", cd: 9.0,  kind: "projectile", proj: "bouncer",   kb: 12, bounces: 4, color: 0x4cff9c, sfx: "whoosh" },
+  splitter:  { name: "Splitter",  key: "7", cd: 9.0,  kind: "projectile", proj: "splitter",  kb: 9,  splitDist: 7, shards: 5, color: 0xff4ca8, sfx: "fireball" },
+  meteor:    { name: "Meteor",    key: "8", cd: 12.0, kind: "meteor",     range: 18, fall: 1.0, radius: 7, kb: 30, color: 0xff3a1e, sfx: "meteor" },
 
   // ---- Mobility ----
-  teleport:  { name: "Teleport",  key: "Q", cd: 8.0,  kind: "teleport",  range: 14, sfx: "teleport" },
-  thrust:    { name: "Thrust",    key: "E", cd: 7.0,  kind: "thrust",    power: 26, sfx: "whoosh" },
-  swap:      { name: "Swap",      key: "R", cd: 14.0, kind: "swap",      range: 18, sfx: "teleport" },
+  teleport:  { name: "Teleport",  key: "Q", cd: 8.0,  kind: "teleport",  range: 20, sfx: "teleport" },
+  thrust:    { name: "Thrust",    key: "E", cd: 7.0,  kind: "thrust",    power: 36, sfx: "whoosh" },
+  swap:      { name: "Swap",      key: "R", cd: 14.0, kind: "swap",      range: 22, sfx: "teleport" },
   windWalk:  { name: "Wind Walk", key: "F", cd: 16.0, kind: "windwalk",  duration: 4, speedMul: 1.6, sfx: "windwalk" },
   rush:      { name: "Rush",      key: "C", cd: 16.0, kind: "rush",      duration: 5, speedMul: 1.45, kbResist: 0.45, sfx: "rush" },
 
   // ---- Control / utility ----
-  drain:     { name: "Drain",     key: "V", cd: 12.0, kind: "drain",     range: 12, pull: 10, steal: 0.5, sfx: "drain" },
-  gravity:   { name: "Gravity",   key: "X", cd: 14.0, kind: "gravity",   range: 16, radius: 6, duration: 2.5, pull: 14, sfx: "gravity" },
+  drain:     { name: "Drain",     key: "V", cd: 12.0, kind: "drain",     range: 14, pull: 15, steal: 0.5, sfx: "drain" },
+  gravity:   { name: "Gravity",   key: "X", cd: 14.0, kind: "gravity",   range: 18, radius: 8, duration: 2.5, pull: 20, gravKb: 14, sfx: "gravity" },
   link:      { name: "Link",      key: "Z", cd: 16.0, kind: "link",      range: 16, duration: 4, sfx: "link" },
-  disable:   { name: "Disable",   key: "T", cd: 14.0, kind: "disable",   range: 16, duration: 1.6, kb: 4, color: 0xbbbbbb, sfx: "disable" },
+  disable:   { name: "Disable",   key: "T", cd: 14.0, kind: "disable",   range: 16, duration: 1.6, kb: 6, color: 0xbbbbbb, sfx: "disable" },
   shield:    { name: "Shield",    key: "G", cd: 16.0, kind: "shield",    duration: 4, charges: 1, sfx: "shield" },
   timeShift: { name: "Time Shift", key: "B", cd: 22.0, kind: "timeshift", delay: 3.0, sfx: "timeshift" },
   pocketWatch: { name: "Pocket Watch", key: "H", cd: 40.0, kind: "pocketwatch", item: true, sfx: "watch" },

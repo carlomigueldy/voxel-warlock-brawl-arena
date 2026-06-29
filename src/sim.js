@@ -415,22 +415,43 @@ export class Simulation {
     // Step meteors (delayed AoE impacts).
     for (const m of this.meteors) {
       m.t -= dt;
+      // During the final ~0.3s before detonation, gently drag players inward
+      // as a visual telegraph and to make dodging a skill check.
+      if (m.t > 0 && m.t <= 0.3) {
+        const dragStrength = 6; // units/s inward nudge
+        // Mirror the detonation fallback so a meteor without effRadius (e.g.
+        // deserialised/replicated state) still applies the drag consistently.
+        const dragR = m.effRadius ?? m.radius;
+        for (const p of this.players.values()) {
+          if (!p.alive || p.falling || p.spectating) continue;
+          const dx = m.x - p.x, dz = m.z - p.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist > 0.001 && dist <= dragR) {
+            p.vx += (dx / dist) * dragStrength * dt;
+            p.vz += (dz / dist) * dragStrength * dt;
+          }
+        }
+      }
       if (m.t <= 0) {
+        // Use effRadius for AoE so the charged-up blast matches the telegraph.
+        const blastR = m.effRadius ?? m.radius;
         for (const p of this.players.values()) {
           if (!p.alive || p.falling || p.spectating) continue;
           const dx = p.x - m.x, dz = p.z - m.z;
           const d = Math.hypot(dx, dz);
-          if (d <= m.radius) {
-            const falloff = 1 - d / m.radius;
+          if (d <= blastR) {
+            const falloff = 1 - d / blastR;
             // Players caught dead-centre are flung in their current facing
             // (or a default) so the impact always imparts knockback.
             let ndx = dx, ndz = dz;
             if (d < 0.001) { ndx = Math.cos(p.aim); ndz = Math.sin(p.aim); }
             const l = Math.hypot(ndx, ndz) || 1;
-            p.applyHit((ndx / l), (ndz / l), m.kb * (0.4 + 0.6 * falloff));
+            // Raised knockback floor (0.55 instead of 0.4) so edge-caught
+            // players still get flung meaningfully.
+            p.applyHit((ndx / l), (ndz / l), m.kb * (0.55 + 0.45 * falloff));
           }
         }
-        this.events.push({ type: "meteorImpact", x: m.x, z: m.z, radius: m.radius, by: m.ownerId });
+        this.events.push({ type: "meteorImpact", x: m.x, z: m.z, radius: blastR, by: m.ownerId });
         m.dead = true;
       }
     }

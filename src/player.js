@@ -248,9 +248,26 @@ export class Player {
     const s = this.status;
     for (const k of ["windWalk", "rush", "shield", "disabled", "gravity", "link"]) {
       if (s[k] > 0) {
+        const prev = s[k];
         s[k] = Math.max(0, s[k] - dt);
         if (k === "shield" && s[k] === 0) s.shieldCharges = 0;
         if (k === "link" && s[k] === 0) s.linkedTo = null;
+        // Gravity implosion burst: when the field expires, fling the player
+        // outward from the field origin — setup→payoff combo moment.
+        if (k === "gravity" && prev > 0 && s[k] === 0) {
+          const ox = this.x - s.gravX;
+          const oz = this.z - s.gravZ;
+          const dist = Math.hypot(ox, oz);
+          // Only burst if still inside the field (player didn't fully escape).
+          if (dist <= (SPELLS.gravity.radius ?? 8)) {
+            // Dead-centre fallback: if the pull dragged the victim exactly to
+            // the origin the direction vector is ~(0,0); fling along the player's
+            // current aim instead so the payoff always fires (mirrors meteor logic).
+            const dx = dist < 0.001 ? Math.cos(this.aim) : ox;
+            const dz = dist < 0.001 ? Math.sin(this.aim) : oz;
+            this.applyHit(dx, dz, SPELLS.gravity.gravKb ?? 14);
+          }
+        }
       }
     }
   }
