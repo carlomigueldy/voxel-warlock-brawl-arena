@@ -155,7 +155,7 @@ export class Bolt {
       z: +this.z.toFixed(2),
       y: +this.y.toFixed(2),
       c: this.color,
-      k: this.proj, // kind, so renderer can pick a mesh/VFX
+      k: this.disable ? "disable" : this.proj, // kind, so renderer can pick a mesh/VFX
     };
   }
 }
