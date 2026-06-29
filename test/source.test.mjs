@@ -12,6 +12,7 @@ console.log("Source integration checks:");
 
 const main = fs.readFileSync("src/main.js", "utf8");
 const ui = fs.readFileSync("src/ui.js", "utf8");
+const html = fs.readFileSync("index.html", "utf8");
 
 test("host start is gated by Simulation.startMatch result", () => {
   assert.match(main, /if \(!sim\.startMatch\(\)\)/);
@@ -86,6 +87,24 @@ test("generated character tinting preserves single-material meshes", () => {
 test("generated character label height follows simulation player height", () => {
   const renderer = fs.readFileSync("src/renderer.js", "utf8");
   assert.match(renderer, /CFG\.PLAYER_HEIGHT \+ 0\.55/);
+});
+
+test("host menu exposes all-abilities-at-start toggle", () => {
+  assert.match(html, /id="all-abilities-toggle"/);
+  assert.match(ui, /allAbilitiesAtStart/);
+  assert.match(main, /new Simulation\(\{ allAbilitiesAtStart/);
+});
+
+test("ability bar filters slots by acquired spells from snapshots", () => {
+  assert.match(ui, /me\?\.spells/);
+  assert.match(ui, /slot\.classList\.toggle\("locked"/);
+});
+
+test("host lobby exposes bot count and difficulty controls", () => {
+  assert.match(html, /id="bot-count"/);
+  assert.match(html, /id="bot-skill"/);
+  assert.match(ui, /getBotSettings/);
+  assert.match(main, /sim\.setBotRoster/);
 });
 
 console.log(`\n${passed} source checks passed.`);

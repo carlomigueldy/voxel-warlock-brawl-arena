@@ -28,6 +28,11 @@
         <input id="name-input" maxlength="14" placeholder="Your warlock name" />
       </div>
 
+      <label class="menu-toggle">
+        <input id="all-abilities-toggle" type="checkbox" checked />
+        <span>All abilities at start</span>
+      </label>
+
       <div class="menu-actions">
         <button id="btn-host" class="primary">Host Game</button>
         <div class="join-box">
@@ -37,7 +42,8 @@
       </div>
 
       <p id="menu-status" class="status"></p>
-      <p class="hint">Move: <b>WASD</b> &nbsp;•&nbsp; Aim: <b>Mouse</b> &nbsp;•&nbsp; Fire Bolt: <b>Click / Space</b></p>
+      <p class="hint">Move: <b>WASD</b> &nbsp;•&nbsp; Aim: <b>Mouse</b> &nbsp;•&nbsp; Fire: <b>Click / Space</b></p>
+      <p class="hint">Cast spells with <b>1-8 / Q E R F C V X Z T G B H</b> &nbsp;•&nbsp; Right-click casts selected spell at cursor</p>
     </div>
   </div>
 
@@ -59,6 +65,16 @@
         <div class="lobby-right">
           <p class="label">Warlocks</p>
           <ul id="player-list" class="player-list"></ul>
+          <div id="bot-controls" class="bot-controls hidden">
+            <label>Bot Count <input id="bot-count" type="number" min="0" max="5" value="0" /></label>
+            <label>Bot Skill
+              <select id="bot-skill">
+                <option value="smart">Smart</option>
+                <option value="brilliant">Brilliant</option>
+                <option value="expert">Expert</option>
+              </select>
+            </label>
+          </div>
           <button id="btn-start" class="primary hidden">Start Brawl</button>
           <p id="lobby-status" class="status"></p>
         </div>
@@ -75,6 +91,11 @@
     <div id="scoreboard"></div>
     <div id="charge-wrap"><div id="charge-bar"></div></div>
     <div id="center-msg" class="center-msg hidden"></div>
+    <div id="ability-bar" class="hidden"></div>
+    <div id="audio-controls">
+      <button id="btn-sfx">SFX: On</button>
+      <button id="btn-music">Music: On</button>
+    </div>
   </div>
 
   <!-- ===== Mobile touch controls ===== -->
