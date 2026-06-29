@@ -34,6 +34,9 @@ export class UI {
       arenaWorldUi: $("arena-world-ui"),
       botCountUi: $("bot-count-ui"), botCountValue: $("bot-count-value"),
       botSkillUi: $("bot-skill-ui"),
+      // Tutorial
+      tutSpellbookList: $("tut-spellbook-list"),
+      btnPractice: $("btn-practice"),
     };
     this.handlers = {};
     this.audio = null;
@@ -49,6 +52,8 @@ export class UI {
     this._spawnEmbers();
     this._bind();
     this._bindNavSpine();
+    this._bindTutorialTabs();
+    this._buildTutorialSpellbook();
     this._prefillFromUrl();
     this._maybeShowTouch();
   }
@@ -773,5 +778,125 @@ export class UI {
     const m = Math.floor(s / 60);
     const ss = Math.floor(s % 60).toString().padStart(2, "0");
     return `${m}:${ss}`;
+  }
+
+  // ---- Tutorial tab switching -----------------------------------------------
+
+  /** Switch to one of the five tutorial tabs ("basics"|"goal"|"controls"|"spellbook"|"tips"). */
+  _showTutorialTab(name) {
+    this.el.menu.querySelectorAll(".tut-panel").forEach((panel) => {
+      const on = panel.id === `tut-${name}`;
+      panel.classList.toggle("tut-panel-hidden", !on);
+      panel.setAttribute("aria-hidden", on ? "false" : "true");
+    });
+    this.el.menu.querySelectorAll(".tut-tab").forEach((tab) => {
+      const on = tab.dataset.tab === name;
+      tab.classList.toggle("is-active", on);
+      tab.setAttribute("aria-selected", on ? "true" : "false");
+      // Roving tabindex: only the active tab is a tab stop (WAI-ARIA tabs pattern).
+      tab.tabIndex = on ? 0 : -1;
+    });
+  }
+
+  /** Wire tutorial tab buttons and the practice CTA. Called once from the constructor. */
+  _bindTutorialTabs() {
+    const tabs = [...this.el.menu.querySelectorAll(".tut-tab")];
+    tabs.forEach((tab, i) => {
+      tab.addEventListener("click", () => this._showTutorialTab(tab.dataset.tab));
+      // Arrow / Home / End move focus across the tablist (WAI-ARIA tabs pattern).
+      tab.addEventListener("keydown", (e) => {
+        let next = -1;
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (i + 1) % tabs.length;
+        else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = tabs.length - 1;
+        if (next < 0) return;
+        e.preventDefault();
+        this._showTutorialTab(tabs[next].dataset.tab);
+        tabs[next].focus();
+      });
+    });
+    // Default to Basics.
+    this._showTutorialTab("basics");
+
+    // Practice vs Bot — mirrors the host flow but jumps straight to the game.
+    if (this.el.btnPractice) {
+      this.el.btnPractice.onclick = () => {
+        const name = this._name() || "Warlock";
+        this.handlers.practice?.(name, {
+          allAbilitiesAtStart: this.allAbilitiesAtStart(),
+          character: this.selectedCharacter,
+          ...this.getArenaSettings(),
+        });
+      };
+    }
+  }
+
+  /**
+   * Populate the spellbook panel from SPELL_ORDER + SPELLS (already imported).
+   * Grouped into Projectiles / Mobility / Control & Utility.
+   * Called once from the constructor so the list stays in sync with config.
+   */
+  _buildTutorialSpellbook() {
+    const container = this.el.tutSpellbookList;
+    if (!container) return;
+
+    const groups = [
+      { label: "Projectiles",       ids: SPELL_ORDER.slice(0, 8)  },
+      { label: "Mobility",          ids: SPELL_ORDER.slice(8, 13) },
+      { label: "Control / Utility", ids: SPELL_ORDER.slice(13)    },
+    ];
+
+    container.replaceChildren();
+
+    for (const group of groups) {
+      const section = document.createElement("div");
+      section.className = "tut-spell-group";
+
+      const heading = document.createElement("h3");
+      heading.className = "tut-spell-group-title";
+      heading.textContent = group.label;
+      section.appendChild(heading);
+
+      for (const id of group.ids) {
+        const s = SPELLS[id];
+        if (!s) continue;
+        const colorHex = "#" + ((s.color || 0x8888ff) >>> 0).toString(16).padStart(6, "0").slice(-6);
+
+        const row = document.createElement("div");
+        row.className = "tut-spell-row";
+        row.style.setProperty("--spell-color", colorHex);
+
+        const swatch = document.createElement("span");
+        swatch.className = "tut-spell-swatch";
+        swatch.style.background = colorHex;
+        swatch.setAttribute("aria-hidden", "true");
+
+        const keyChip = document.createElement("span");
+        keyChip.className = "tut-spell-key";
+        keyChip.textContent = s.key;
+
+        const info = document.createElement("div");
+        info.className = "tut-spell-info";
+
+        const name = document.createElement("span");
+        name.className = "tut-spell-name";
+        name.textContent = s.name;
+
+        const cd = document.createElement("span");
+        cd.className = "tut-spell-cd";
+        cd.textContent = `CD ${s.cd}s`;
+
+        const desc = document.createElement("span");
+        desc.className = "tut-spell-desc";
+        desc.textContent = s.desc || "";
+
+        info.append(name, cd, desc);
+        row.append(swatch, keyChip, info);
+        section.appendChild(row);
+      }
+
+      container.appendChild(section);
+    }
   }
 }

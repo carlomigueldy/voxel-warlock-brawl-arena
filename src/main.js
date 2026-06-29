@@ -61,8 +61,23 @@ function startHosting(name, options = {}) {
       // Add the host as a player.
       const p = sim.addPlayer(localId, name);
       playerMeta.set(localId, { name, colorIndex: p.colorIndex, character: options.character || CFG.DEFAULT_CHARACTER });
-      ui.showLobby(code, { isHost: true });
-      pushLobby();
+      if (options.practice) {
+        // Practice mode: add one Smart bot and skip the lobby straight to the game.
+        sim.setBotRoster(1, "smart");
+        syncBotMeta();
+        if (sim.startMatch()) {
+          host.broadcast({ type: MSG.START, round: sim.round });
+          ui.showGame();
+          inGame = true;
+        } else {
+          // Fallback: show the lobby so practice never dead-ends.
+          ui.showLobby(code, { isHost: true });
+          pushLobby();
+        }
+      } else {
+        ui.showLobby(code, { isHost: true });
+        pushLobby();
+      }
     },
     onPlayerJoin: (peerId, pname, character) => {
       const p = sim.addPlayer(peerId, pname);
@@ -280,6 +295,7 @@ function syncLocalSpellSlots(snap) {
 
 ui.on("host", startHosting);
 ui.on("join", startJoining);
+ui.on("practice", (name, options) => startHosting(name, { ...options, practice: true }));
 ui.on("selectSpell", (id) => input.setSelectedSpell(id));
 ui.on("spellSlotHotkey", (index, key) => {
   if (input.setSpellSlotHotkey(index, key)) ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
