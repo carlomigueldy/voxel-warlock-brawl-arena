@@ -4,7 +4,12 @@
 import * as THREE from "three";
 import { CFG } from "./config.js";
 import { Arena } from "./arena.js";
-import { buildWarlock, buildBolt } from "./voxel.js";
+import { buildWarlock, buildBolt, animateWarlock } from "./voxel.js";
+import {
+  loadCharacterTemplate,
+  characterReady,
+  buildCharacterInstance,
+} from "./character.js";
 
 export class GameRenderer {
   constructor(canvas) {
@@ -36,6 +41,10 @@ export class GameRenderer {
     // Smoothed camera target.
     this._camTarget = new THREE.Vector3(0, 0, 0);
 
+    loadCharacterTemplate()
+      .then(() => this._upgradePlayersToGLB())
+      .catch((err) => console.warn("Character GLB unavailable, using voxel fallback:", err));
+
     window.addEventListener("resize", () => this._onResize());
   }
 
@@ -66,7 +75,7 @@ export class GameRenderer {
 
   setLocalId(id) { this.localId = id; }
 
-  _makeLabel(name, color) {
+  _makeLabel(name, color, y = 3.4) {
     const cv = document.createElement("canvas");
     cv.width = 256; cv.height = 64;
     const ctx = cv.getContext("2d");
@@ -81,7 +90,7 @@ export class GameRenderer {
     const tex = new THREE.CanvasTexture(cv);
     const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
     spr.scale.set(3, 0.75, 1);
-    spr.position.y = 3.4;
+    spr.position.y = y;
     return spr;
   }
 
@@ -89,20 +98,60 @@ export class GameRenderer {
     let entry = this.playerMeshes.get(snap.id);
     if (!entry) {
       const color = CFG.COLORS[(meta?.colorIndex ?? 0) % CFG.COLORS.length];
-      const group = buildWarlock(color);
-      const label = this._makeLabel(meta?.name || "warlock", color);
+      let group = characterReady() ? buildCharacterInstance(color) : null;
+      const usingGLB = !!group;
+      if (!group) group = buildWarlock(color);
+      const labelY = usingGLB ? CFG.PLAYER_HEIGHT + 0.55 : 3.4;
+      const label = this._makeLabel(meta?.name || "warlock", color, labelY);
       group.add(label);
       this.scene.add(group);
-      entry = { group, label, color, rx: snap.x, rz: snap.z, ry: snap.y, ra: snap.a };
+      entry = {
+        group, label, color, usingGLB,
+        rx: snap.x, rz: snap.z, ry: snap.y, ra: snap.a,
+      };
       this.playerMeshes.set(snap.id, entry);
     }
     return entry;
   }
 
+  _upgradePlayersToGLB() {
+    if (!characterReady()) return;
+    for (const [id, e] of this.playerMeshes) {
+      if (e.usingGLB) continue;
+      const next = buildCharacterInstance(e.color);
+      if (!next) continue;
+      next.position.copy(e.group.position);
+      next.rotation.copy(e.group.rotation);
+      if (e.label) {
+        e.group.remove(e.label);
+        e.label.position.y = CFG.PLAYER_HEIGHT + 0.55;
+        next.add(e.label);
+      }
+      this.scene.remove(e.group);
+      this._disposeGroup(e.group);
+      this.scene.add(next);
+      e.group = next;
+      e.usingGLB = true;
+    }
+  }
+
+  _disposeGroup(group, materialsOnly = false) {
+    group.traverse((o) => {
+      if (!materialsOnly && o.geometry) o.geometry.dispose?.();
+      if (o.material) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => m.dispose?.());
+      }
+    });
+  }
+
   removePlayer(id) {
     const e = this.playerMeshes.get(id);
     if (e) {
+      const char = e.group.userData.character;
+      if (char?.mixer) char.mixer.stopAllAction();
       this.scene.remove(e.group);
+      this._disposeGroup(e.group, e.usingGLB);
       this.playerMeshes.delete(id);
     }
   }
@@ -154,6 +203,7 @@ export class GameRenderer {
 
     for (const [id, e] of this.playerMeshes) {
       if (!e.target) continue;
+      const px = e.rx, pz = e.rz;
       e.rx += (e.target.x - e.rx) * lerp;
       e.rz += (e.target.z - e.rz) * lerp;
       e.ry += (e.target.y - e.ry) * lerp;
@@ -166,13 +216,36 @@ export class GameRenderer {
       e.group.position.set(e.rx, e.ry, e.rz);
       e.group.rotation.y = -e.ra + Math.PI / 2;
 
-      // Tint by charge: hotter = more charged (closer to white-hot).
+      const inst = Math.hypot(e.rx - px, e.rz - pz) / dt;
+      e.spd = (e.spd || 0) + (inst - (e.spd || 0)) * (1 - Math.exp(-10 * dt));
+
       const c = Math.min(1, (e.target.c || 0) / CFG.CHARGE_MAX);
-      e.group.children.forEach((ch) => {
+
+      // Tint by charge: hotter = more charged (closer to white-hot).
+      e.group.traverse((ch) => {
         if (ch.material && ch.material.emissive) {
           ch.material.emissive.setRGB(c * 0.6, c * 0.1, 0);
         }
       });
+
+      const char = e.group.userData.character;
+      if (char) {
+        char.update({
+          speed: e.spd,
+          maxSpeed: CFG.MOVE_SPEED,
+          charge: c,
+          dt,
+        });
+      } else {
+        animateWarlock(e.group, {
+          speed: e.spd,
+          maxSpeed: CFG.MOVE_SPEED,
+          charge: c,
+          falling: !!e.target.f,
+          time: t,
+          dt,
+        });
+      }
     }
 
     // Spin bolts for flair.
