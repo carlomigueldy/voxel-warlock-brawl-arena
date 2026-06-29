@@ -29,6 +29,12 @@ export const CFG = {
   CHARGE_MAX: 4.0,           // cap so it stays playable
   CHARGE_DECAY: 0.05,        // charge bleeds off slowly per sec while alive
 
+  // --- Ability acquisition (rune mode) ---
+  RUNE_RADIUS: 0.8,
+  RUNE_SPAWN_RADIUS: 13,
+  RUNE_MAX_ACTIVE: 2,         // how many runes may exist on the field at once
+  RUNE_SPAWN_INTERVAL: 8,     // seconds between timed rune spawns
+
   // --- Rounds ---
   ROUND: {
     COUNTDOWN: 3,            // seconds before a round begins
