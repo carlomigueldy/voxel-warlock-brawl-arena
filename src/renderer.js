@@ -52,9 +52,13 @@ export class GameRenderer {
     // Smoothed camera target.
     this._camTarget = new THREE.Vector3(0, 0, 0);
 
-    loadCharacterTemplate()
-      .then(() => this._upgradePlayersToGLB())
-      .catch((err) => console.warn("Character GLB unavailable, using voxel fallback:", err));
+    // Preload every selectable character so any player's pick renders as a GLB
+    // (falling back to the voxel warlock per-player only if its load fails).
+    for (const ch of CFG.CHARACTERS) {
+      loadCharacterTemplate(ch.id)
+        .then(() => this._upgradePlayersToGLB())
+        .catch((err) => console.warn(`Character GLB '${ch.id}' unavailable, using voxel fallback:`, err));
+    }
 
     window.addEventListener("resize", () => this._onResize());
   }
@@ -130,7 +134,8 @@ export class GameRenderer {
     let entry = this.playerMeshes.get(snap.id);
     if (!entry) {
       const color = CFG.COLORS[(meta?.colorIndex ?? 0) % CFG.COLORS.length];
-      let group = characterReady() ? buildCharacterInstance(color) : null;
+      const character = meta?.character || undefined;
+      let group = characterReady(character) ? buildCharacterInstance(color, character) : null;
       const usingGLB = !!group;
       if (!group) group = buildWarlock(color);
       const labelY = usingGLB ? CFG.PLAYER_HEIGHT + 0.55 : 3.4;
@@ -138,7 +143,7 @@ export class GameRenderer {
       group.add(label);
       this.scene.add(group);
       entry = {
-        group, label, color, usingGLB,
+        group, label, color, usingGLB, character,
         rx: snap.x, rz: snap.z, ry: snap.y, ra: snap.a,
       };
       this.playerMeshes.set(snap.id, entry);
@@ -147,10 +152,10 @@ export class GameRenderer {
   }
 
   _upgradePlayersToGLB() {
-    if (!characterReady()) return;
     for (const [id, e] of this.playerMeshes) {
       if (e.usingGLB) continue;
-      const next = buildCharacterInstance(e.color);
+      if (!characterReady(e.character)) continue;
+      const next = buildCharacterInstance(e.color, e.character);
       if (!next) continue;
       next.position.copy(e.group.position);
       next.rotation.copy(e.group.rotation);

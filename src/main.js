@@ -1,12 +1,13 @@
 // Entry point: wires UI + networking + simulation + renderer into a playable
 // host-authoritative P2P game.
-import { CFG, MSG } from "./config.js";
+import { CFG, MSG, getCharacter } from "./config.js";
 import { Simulation, PHASE } from "./sim.js";
 import { GameRenderer } from "./renderer.js";
 import { InputController } from "./input.js";
 import { Host, Client } from "./net.js";
 import { UI } from "./ui.js";
 import { AudioEngine } from "./audio.js";
+import { CharacterPreview } from "./preview.js";
 
 const ui = new UI();
 const renderer = new GameRenderer(document.getElementById("game-canvas"));
@@ -15,6 +16,14 @@ const audio = new AudioEngine();
 renderer.setAudio(audio);
 ui.setAudio(audio);
 ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
+
+// Live 360° character preview on the menu.
+const charPreviewCanvas = document.getElementById("char-preview");
+if (charPreviewCanvas) {
+  const preview = new CharacterPreview(charPreviewCanvas);
+  ui.setPreview(preview);
+  preview.start();
+}
 
 // Browsers require a gesture to start audio; resume on first interaction.
 function unlockAudio() {
@@ -54,13 +63,13 @@ function startHosting(name, options = {}) {
       renderer.setLocalId(localId);
       // Add the host as a player.
       const p = sim.addPlayer(localId, name);
-      playerMeta.set(localId, { name, colorIndex: p.colorIndex });
+      playerMeta.set(localId, { name, colorIndex: p.colorIndex, character: options.character || CFG.DEFAULT_CHARACTER });
       ui.showLobby(code, { isHost: true });
       pushLobby();
     },
-    onPlayerJoin: (peerId, pname) => {
+    onPlayerJoin: (peerId, pname, character) => {
       const p = sim.addPlayer(peerId, pname);
-      playerMeta.set(peerId, { name: pname, colorIndex: p.colorIndex });
+      playerMeta.set(peerId, { name: pname, colorIndex: p.colorIndex, character: getCharacter(character).id });
       if (sim.phase === PHASE.LOBBY) applyBotSettings();
       // Tell everyone the full meta table so labels/colors match.
       pushLobby();
@@ -111,7 +120,9 @@ function startHosting(name, options = {}) {
       if (id.startsWith("bot:")) playerMeta.delete(id);
     }
     for (const p of sim.botPlayers()) {
-      playerMeta.set(p.id, { name: p.name, colorIndex: p.colorIndex, isBot: true });
+      // Give bots variety across the roster, keyed by their color index.
+      const character = CFG.CHARACTERS[p.colorIndex % CFG.CHARACTERS.length].id;
+      playerMeta.set(p.id, { name: p.name, colorIndex: p.colorIndex, isBot: true, character });
     }
   }
 
@@ -162,21 +173,22 @@ function startHosting(name, options = {}) {
 }
 
 // ---------- CLIENT FLOW ----------
-function startJoining(name, code) {
+function startJoining(name, code, character) {
   role = "client";
   ui.setMenuStatus("Connecting to room " + code + "…");
 
   client = new Client({
-    name, code,
+    name, code, character,
     onWelcome: (msg) => {
       localId = client.localId;
       renderer.setLocalId(localId);
+      playerMeta.set(localId, { name, colorIndex: 0, character: getCharacter(character).id });
       ui.showLobby(code, { isHost: false });
       ui.setLobbyStatus("Connected! Waiting for host to start…");
     },
     onLobby: (msg) => {
       playerMeta.clear();
-      msg.players.forEach((p) => playerMeta.set(p.id, { name: p.name, colorIndex: p.colorIndex, isBot: !!p.isBot }));
+      msg.players.forEach((p) => playerMeta.set(p.id, { name: p.name, colorIndex: p.colorIndex, isBot: !!p.isBot, character: p.character || CFG.DEFAULT_CHARACTER }));
       ui.renderPlayerList(msg.players, msg.hostId);
     },
     onStart: () => {
@@ -252,7 +264,7 @@ function playTransitionAudio(snap) {
 }
 
 function metaToArray() {
-  return [...playerMeta.entries()].map(([id, m]) => ({ id, name: m.name, colorIndex: m.colorIndex, isBot: !!m.isBot }));
+  return [...playerMeta.entries()].map(([id, m]) => ({ id, name: m.name, colorIndex: m.colorIndex, isBot: !!m.isBot, character: m.character || CFG.DEFAULT_CHARACTER }));
 }
 
 function syncLocalSpellSlots(snap) {

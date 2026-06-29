@@ -66,6 +66,42 @@ input:focus, select:focus { border-color: var(--accent2); }
 }
 .arena-controls label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
 .arena-controls select { margin-top: 6px; padding: 8px; font-size: 14px; }
+/* ---- Character selection ---- */
+.char-select { margin: 4px 0 18px; }
+.char-stage {
+  position: relative;
+  width: 100%; height: 240px;
+  background: radial-gradient(circle at 50% 35%, rgba(108,76,255,0.18), rgba(15,12,34,0.9));
+  border: 2px solid rgba(108,76,255,0.3); border-radius: 12px;
+  overflow: hidden; margin-bottom: 14px;
+}
+#char-preview { width: 100%; height: 100%; display: block; }
+.char-preview-name {
+  position: absolute; left: 0; right: 0; bottom: 10px;
+  text-align: center; font-weight: bold; font-size: 15px;
+  color: var(--text); text-shadow: 0 2px 6px rgba(0,0,0,0.7); pointer-events: none;
+}
+.char-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.char-card {
+  background: #0f0c22; border: 2px solid rgba(154,147,199,0.25);
+  border-radius: 10px; padding: 12px 8px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  color: var(--text); font: inherit; transition: transform .08s, border-color .15s, box-shadow .15s;
+}
+.char-card:hover { transform: translateY(-2px); border-color: var(--char-color); }
+.char-card.selected {
+  border-color: var(--char-color);
+  box-shadow: 0 0 0 2px var(--char-color), 0 8px 22px rgba(0,0,0,0.45);
+}
+.char-card-swatch { width: 28px; height: 28px; border-radius: 50%; box-shadow: 0 0 10px var(--char-color); }
+.char-card-name { font-size: 13px; font-weight: bold; }
+.char-card-blurb { font-size: 11px; color: var(--muted); line-height: 1.2; }
+
+@media (max-width: 560px) {
+  .char-cards { grid-template-columns: repeat(2, 1fr); }
+  .char-stage { height: 200px; }
+}
+
 .menu-actions { display: flex; flex-direction: column; gap: 14px; align-items: center; }
 .join-box { display: flex; gap: 10px; width: 100%; }
 .join-box input { text-transform: uppercase; letter-spacing: 4px; }

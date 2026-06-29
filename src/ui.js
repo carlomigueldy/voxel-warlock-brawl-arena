@@ -10,6 +10,8 @@ export class UI {
     this.el = {
       menu: $("menu"), lobby: $("lobby"), hud: $("hud"),
       nameInput: $("name-input"), btnHost: $("btn-host"),
+      charCards: $("char-cards"), charPreview: $("char-preview"),
+      charPreviewName: $("char-preview-name"),
       allAbilitiesToggle: $("all-abilities-toggle"),
       arenaWorld: $("arena-world"), landSize: $("land-size"),
       joinCode: $("join-code"), btnJoin: $("btn-join"),
@@ -30,10 +32,72 @@ export class UI {
     this._abilityEls = null;
     this._abilityMode = null;
     this.spellSlotHotkeys = [...CFG.DEFAULT_SPELL_SLOT_HOTKEYS];
+    this.preview = null;
+    this.selectedCharacter = this._initialCharacter();
     this._populateArenaControls();
+    this._buildCharacterCards();
     this._bind();
     this._prefillFromUrl();
     this._maybeShowTouch();
+  }
+
+  // Attach a live 3D preview (CharacterPreview) and show the saved selection.
+  setPreview(preview) {
+    this.preview = preview;
+    if (preview) preview.select(this.selectedCharacter);
+    this._highlightCharacter(this.selectedCharacter);
+  }
+
+  getCharacter() { return this.selectedCharacter; }
+
+  _initialCharacter() {
+    const saved = localStorage.getItem("vwb-character");
+    return CFG.CHARACTERS.some((c) => c.id === saved) ? saved : CFG.DEFAULT_CHARACTER;
+  }
+
+  _buildCharacterCards() {
+    if (!this.el.charCards) return;
+    this.el.charCards.replaceChildren();
+    for (const ch of CFG.CHARACTERS) {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "char-card";
+      card.dataset.character = ch.id;
+      const hex = "#" + ch.color.toString(16).padStart(6, "0");
+      card.style.setProperty("--char-color", hex);
+      const swatch = document.createElement("span");
+      swatch.className = "char-card-swatch";
+      swatch.style.background = hex;
+      const name = document.createElement("span");
+      name.className = "char-card-name";
+      name.textContent = ch.name;
+      const blurb = document.createElement("span");
+      blurb.className = "char-card-blurb";
+      blurb.textContent = ch.blurb;
+      card.append(swatch, name, blurb);
+      card.onclick = () => this._selectCharacter(ch.id);
+      this.el.charCards.appendChild(card);
+    }
+    this._highlightCharacter(this.selectedCharacter);
+  }
+
+  _selectCharacter(id) {
+    if (!CFG.CHARACTERS.some((c) => c.id === id)) return;
+    this.selectedCharacter = id;
+    localStorage.setItem("vwb-character", id);
+    this._highlightCharacter(id);
+    this.preview?.select(id);
+    this.handlers.character?.(id);
+  }
+
+  _highlightCharacter(id) {
+    if (!this.el.charCards) return;
+    for (const card of this.el.charCards.children) {
+      card.classList.toggle("selected", card.dataset.character === id);
+    }
+    if (this.el.charPreviewName) {
+      this.el.charPreviewName.textContent = (CFG.CHARACTERS.find((c) => c.id === id) || {}).name || "";
+    }
   }
 
   on(event, fn) { this.handlers[event] = fn; }
@@ -197,7 +261,7 @@ export class UI {
     this.el.btnHost.onclick = () => {
       const name = this._name();
       if (!name) return this.setMenuStatus("Enter a name first.");
-      this.handlers.host?.(name, { allAbilitiesAtStart: this.allAbilitiesAtStart(), ...this.getArenaSettings() });
+      this.handlers.host?.(name, { allAbilitiesAtStart: this.allAbilitiesAtStart(), character: this.selectedCharacter, ...this.getArenaSettings() });
     };
     this.el.btnJoin.onclick = () => this._tryJoin();
     this.el.joinCode.addEventListener("keydown", (e) => {
@@ -215,7 +279,7 @@ export class UI {
     const code = this.el.joinCode.value.trim().toUpperCase();
     if (!name) return this.setMenuStatus("Enter a name first.");
     if (code.length < 4) return this.setMenuStatus("Enter a valid room code.");
-    this.handlers.join?.(name, code);
+    this.handlers.join?.(name, code, this.selectedCharacter);
   }
 
   _name() { return this.el.nameInput.value.trim().slice(0, 14); }
@@ -273,11 +337,13 @@ export class UI {
     this.el.lobby.classList.add("hidden");
     this.el.hud.classList.add("hidden");
     if (this.el.touch) this.el.touch.classList.add("hidden");
+    this.preview?.start();
   }
 
   showLobby(code, { isHost }) {
     this.currentCode = code;
     localStorage.setItem("vwb-name", this._name());
+    this.preview?.stop();
     this.el.menu.classList.add("hidden");
     this.el.lobby.classList.remove("hidden");
     this.el.roomCode.textContent = code;
@@ -287,6 +353,7 @@ export class UI {
   }
 
   showGame() {
+    this.preview?.stop();
     this.el.menu.classList.add("hidden");
     this.el.lobby.classList.add("hidden");
     this.el.hud.classList.remove("hidden");

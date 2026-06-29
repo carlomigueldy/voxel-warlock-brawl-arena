@@ -144,6 +144,50 @@ test("host menu exposes all-abilities-at-start toggle", () => {
   assert.match(main, /allAbilitiesAtStart: options\.allAbilitiesAtStart/);
 });
 
+test("menu exposes a character-select UI with cards and a live preview", () => {
+  assert.match(html, /id="char-cards"/);
+  assert.match(html, /id="char-preview"/);
+  assert.match(ui, /_buildCharacterCards/);
+  assert.match(ui, /CFG\.CHARACTERS/);
+});
+
+test("config declares four selectable characters and a default", () => {
+  assert.ok(Array.isArray(CFG.CHARACTERS) && CFG.CHARACTERS.length === 4, "expected 4 selectable characters");
+  const ids = CFG.CHARACTERS.map((c) => c.id).sort();
+  assert.deepStrictEqual(ids, ["ember", "frost", "moss", "storm"]);
+  assert.ok(CFG.CHARACTERS.some((c) => c.id === CFG.DEFAULT_CHARACTER), "default character must be in the roster");
+});
+
+test("character ids match the loadable GLB roster", () => {
+  const character = fs.readFileSync("src/character.js", "utf8");
+  for (const c of CFG.CHARACTERS) {
+    assert.match(character, new RegExp(`${c.id}:`), `character.js must define assets for ${c.id}`);
+  }
+});
+
+test("selected character is networked from client to host on join", () => {
+  const net = fs.readFileSync("src/net.js", "utf8");
+  assert.match(net, /type: MSG\.JOIN, name: this\.name, character: this\.character/);
+  assert.match(net, /conn\._character/);
+});
+
+test("host carries each player's character in lobby meta", () => {
+  assert.match(main, /character: getCharacter\(character\)\.id/);
+  assert.match(main, /character: m\.character \|\| CFG\.DEFAULT_CHARACTER/);
+});
+
+test("renderer builds each player's mesh from their selected character", () => {
+  const renderer = fs.readFileSync("src/renderer.js", "utf8");
+  assert.match(renderer, /buildCharacterInstance\(color, character\)/);
+  assert.match(renderer, /characterReady\(character\)/);
+});
+
+test("live character preview module exists and spins the model", () => {
+  const preview = fs.readFileSync("src/preview.js", "utf8");
+  assert.match(preview, /turntable\.rotation\.y \+=/);
+  assert.match(preview, /buildCharacterInstance/);
+});
+
 test("ability bar filters slots by acquired spells from snapshots", () => {
   assert.match(ui, /me\?\.spells/);
   assert.match(ui, /slot\.classList\.toggle\("locked"/);
