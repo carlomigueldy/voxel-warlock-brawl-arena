@@ -1,0 +1,14 @@
+{
+  "name": "voxel-warlock-brawl-arena",
+  "version": "1.0.0",
+  "description": "A 3D low-poly voxel Warlock Brawl clone (Three.js + WebGL) with P2P multiplayer (invite link, room code, QR code).",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "serve": "python3 -m http.server 8080",
+    "dev": "npx --yes serve -l 8080 .",
+    "test": "node test/sim.test.mjs && node test/source.test.mjs"
+  },
+  "keywords": ["threejs", "webgl", "voxel", "p2p", "peerjs", "game", "warlock"],
+  "license": "MIT"
+}
