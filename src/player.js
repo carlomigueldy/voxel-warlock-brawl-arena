@@ -156,6 +156,8 @@ export class Player {
     this._nextBotAbilityAt = 0;
     this._botCastId = 0;
     this._hazardTime = 0;
+    // Reset bot-brain cross-round state (velocity memory, combo window, etc.)
+    if (this._brain) this._brain.reset();
     this.status = {
       windWalk: 0, rush: 0, shield: 0, shieldCharges: 0, disabled: 0,
       gravity: 0, gravX: 0, gravZ: 0, gravPull: 0, gravBy: null, linkedTo: null, link: 0,
