@@ -17,7 +17,7 @@ A 3D **low-poly voxel** *Warlock Brawl* clone built with **HTML5 + WebGL + Three
 
 ## Play
 
-Live deployment: _coming from Vercel after deploy_
+Live deployment: https://voxel-warlock-brawl-arena.vercel.app
 
 ## What is Warlock Brawl?
 
