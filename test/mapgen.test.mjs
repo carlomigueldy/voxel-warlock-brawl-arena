@@ -29,8 +29,9 @@ const layout = generateMap(WORLD, RADIUS, SEED);
 // Shape of the returned object
 // ---------------------------------------------------------------------------
 
-test("generateMap returns an object with seed, plateaus, and obstacles", () => {
+test("generateMap returns an object with seed, worldId, plateaus, and obstacles", () => {
   assert.strictEqual(layout.seed, SEED, "seed must be preserved");
+  assert.strictEqual(layout.worldId, WORLD, "worldId must be stored for shrink culling");
   assert.ok(Array.isArray(layout.plateaus),  "plateaus must be an array");
   assert.ok(Array.isArray(layout.obstacles), "obstacles must be an array");
 });
@@ -79,43 +80,54 @@ test("different seeds produce different layouts (statistical sanity)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Geometry stays within ARENA_MIN_RADIUS (footprints survive full shrink)
+// Geometry spreads across the STARTING disc (not just the centre) and stays
+// inside it. Features that fall off the platform as the arena shrinks are made
+// inert by the query layer (covered in collision.test.mjs), so the round-start
+// invariant is "on the disc at the starting radius", not ARENA_MIN_RADIUS.
 // ---------------------------------------------------------------------------
 
-test("all plateau centres lie on the platform at ARENA_MIN_RADIUS", () => {
+test("all plateau centres lie on the platform at the starting radius", () => {
   for (const pl of layout.plateaus) {
     assert.ok(
-      isOnArenaWorld(WORLD, CFG.ARENA_MIN_RADIUS, pl.x, pl.z),
-      `plateau centre (${pl.x.toFixed(2)}, ${pl.z.toFixed(2)}) is outside ARENA_MIN_RADIUS=${CFG.ARENA_MIN_RADIUS}`
+      isOnArenaWorld(WORLD, RADIUS, pl.x, pl.z),
+      `plateau centre (${pl.x.toFixed(2)}, ${pl.z.toFixed(2)}) is off the disc at radius ${RADIUS}`
     );
   }
 });
 
-test("all obstacle centres lie on the platform at ARENA_MIN_RADIUS", () => {
+test("all obstacle centres lie on the platform at the starting radius", () => {
   for (const ob of layout.obstacles) {
     assert.ok(
-      isOnArenaWorld(WORLD, CFG.ARENA_MIN_RADIUS, ob.x, ob.z),
-      `obstacle ${ob.id} (${ob.type}) centre (${ob.x.toFixed(2)}, ${ob.z.toFixed(2)}) is outside ARENA_MIN_RADIUS=${CFG.ARENA_MIN_RADIUS}`
+      isOnArenaWorld(WORLD, RADIUS, ob.x, ob.z),
+      `obstacle ${ob.id} (${ob.type}) centre (${ob.x.toFixed(2)}, ${ob.z.toFixed(2)}) is off the disc at radius ${RADIUS}`
     );
   }
 });
 
-test("all geometry stays within ARENA_MIN_RADIUS (bounding circle of footprint)", () => {
+test("all geometry bounding circles stay within the starting radius", () => {
   for (const pl of layout.plateaus) {
     const halfExt = Math.hypot(pl.w / 2, pl.d / 2);
     const furthest = Math.hypot(pl.x, pl.z) + halfExt;
     assert.ok(
-      furthest <= CFG.ARENA_MIN_RADIUS + 0.01,
-      `plateau bounding circle (${furthest.toFixed(2)}) exceeds ARENA_MIN_RADIUS=${CFG.ARENA_MIN_RADIUS}`
+      furthest <= RADIUS + 0.5,
+      `plateau bounding circle (${furthest.toFixed(2)}) exceeds starting radius ${RADIUS}`
     );
   }
   for (const ob of layout.obstacles) {
     const furthest = Math.hypot(ob.x, ob.z) + ob.r;
     assert.ok(
-      furthest <= CFG.ARENA_MIN_RADIUS + 0.01,
-      `obstacle ${ob.id} (${ob.type}) bounding circle (${furthest.toFixed(2)}) exceeds ARENA_MIN_RADIUS=${CFG.ARENA_MIN_RADIUS}`
+      furthest <= RADIUS + 0.5,
+      `obstacle ${ob.id} (${ob.type}) bounding circle (${furthest.toFixed(2)}) exceeds starting radius ${RADIUS}`
     );
   }
+});
+
+test("geometry is spread across the map, not clustered at the centre", () => {
+  // At least one feature should sit beyond ARENA_MIN_RADIUS — proving placement
+  // is no longer confined to the central safe zone.
+  const all = [...layout.plateaus, ...layout.obstacles];
+  const spread = all.some((f) => Math.hypot(f.x, f.z) > CFG.ARENA_MIN_RADIUS);
+  assert.ok(spread, "expected some geometry beyond ARENA_MIN_RADIUS (spread across the map)");
 });
 
 // ---------------------------------------------------------------------------

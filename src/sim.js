@@ -33,10 +33,13 @@ class LogicArena {
     this._query = new MapQuery(null);
   }
   isOnPlatform(x, z) { return isOnArenaWorld(this.world.id, this.radius, x, z); }
-  groundHeightAt(x, z)             { return this._query.groundHeightAt(x, z); }
-  blocksMovement(x, z, fromY)      { return this._query.blocksMovement(x, z, fromY); }
-  obstaclesBlockingRay(x0,z0,y0,x1,z1,y1) { return this._query.obstaclesBlockingRay(x0,z0,y0,x1,z1,y1); }
-  onRamp(x, z)                     { return this._query.onRamp(x, z); }
+  // Keep the query layer's active radius in sync with the (shrinking) arena so
+  // off-platform plateaus/obstacles stop blocking movement and rays.
+  _sync()                          { this._query.setActiveRadius(this.radius); }
+  groundHeightAt(x, z)             { this._sync(); return this._query.groundHeightAt(x, z); }
+  blocksMovement(x, z, fromY)      { this._sync(); return this._query.blocksMovement(x, z, fromY); }
+  obstaclesBlockingRay(x0,z0,y0,x1,z1,y1) { this._sync(); return this._query.obstaclesBlockingRay(x0,z0,y0,x1,z1,y1); }
+  onRamp(x, z)                     { this._sync(); return this._query.onRamp(x, z); }
   setLayout(layout)                { this._query.setLayout(layout); }
   reset() {
     this.radius = this.landSize.radius;

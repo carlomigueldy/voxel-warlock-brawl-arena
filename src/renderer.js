@@ -3,7 +3,7 @@
 // camera that follows the local warlock.
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CFG, SPELLS } from "./config.js";
+import { CFG, SPELLS, isOnArenaWorld } from "./config.js";
 import { Arena } from "./arena.js";
 import {
   buildWarlock, buildBolt, animateWarlock,
@@ -331,6 +331,11 @@ export class GameRenderer {
         snapshot.arenaWorld ?? CFG.DEFAULT_ARENA_WORLD
       );
     }
+    // Hide spread-out features the shrinking arena has dropped over the hazard.
+    this._cullMapMeshes(
+      snapshot.arenaR ?? CFG.ARENA_RADIUS,
+      snapshot.arenaWorld ?? CFG.DEFAULT_ARENA_WORLD
+    );
 
     const seen = new Set();
     for (const ps of snapshot.players) {
@@ -728,7 +733,8 @@ export class GameRenderer {
   // Called whenever snapshot.mapV increments (each round start) or becomes -1
   // (lobby / round end, layout = null → just dispose).
   _rebuildMapMeshes(layout, worldId) {
-    for (const g of this._mapMeshes) {
+    for (const e of this._mapMeshes) {
+      const g = e.g;
       this.scene.remove(g);
       g.traverse((o) => {
         if (o.geometry) o.geometry.dispose?.();
@@ -741,15 +747,17 @@ export class GameRenderer {
     this._mapMeshes = [];
     if (!layout) return;
 
-    // Plateaus and their ramps.
+    // Each entry stores its footprint CENTRE (cx,cz) so we can hide features
+    // once the shrinking arena no longer covers them (see _cullMapMeshes).
+    // Plateaus and their ramps cull together by the plateau centre.
     for (const pl of layout.plateaus) {
       const pg = buildPlateau(pl, worldId);
       this.scene.add(pg);
-      this._mapMeshes.push(pg);
+      this._mapMeshes.push({ g: pg, cx: pl.x, cz: pl.z });
       for (const ramp of pl.ramps) {
         const rg = buildRamp(ramp, pl.height, worldId);
         this.scene.add(rg);
-        this._mapMeshes.push(rg);
+        this._mapMeshes.push({ g: rg, cx: pl.x, cz: pl.z });
       }
     }
 
@@ -761,7 +769,16 @@ export class GameRenderer {
       og.position.set(ob.x, CFG.PLATFORM_TOP, ob.z);
       og.rotation.y = ob.rot;
       this.scene.add(og);
-      this._mapMeshes.push(og);
+      this._mapMeshes.push({ g: og, cx: ob.x, cz: ob.z });
+    }
+  }
+
+  // Hide map features whose footprint centre has left the platform as the arena
+  // shrinks, so spread-out geometry never floats over the hazard. Matches the
+  // sim's query-layer culling (arena-query.js setActiveRadius) for visual parity.
+  _cullMapMeshes(radius, worldId) {
+    for (const e of this._mapMeshes) {
+      e.g.visible = isOnArenaWorld(worldId, radius, e.cx, e.cz);
     }
   }
 

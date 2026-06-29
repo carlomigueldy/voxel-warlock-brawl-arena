@@ -421,4 +421,38 @@ test("obstaclesBlockingRay with real layout: plateau ray test is consistent with
 });
 
 // ---------------------------------------------------------------------------
+// Shrink-aware culling: features off the platform at the active radius are inert
+// ---------------------------------------------------------------------------
+
+test("MapQuery.setActiveRadius makes an off-platform obstacle inert", () => {
+  const farLayout = {
+    worldId: "circle",
+    plateaus: [],
+    obstacles: [{ id: 0, type: "boulder", x: 14, z: 0, r: 1, height: 3, rot: 0 }],
+  };
+  const q = new MapQuery(farLayout);
+  // No active radius set → full layout: the obstacle blocks.
+  assert.strictEqual(q.blocksMovement(14, 0, 0), true, "blocks at full layout");
+  // Arena shrunk to radius 8 → centre (14,0) is off the disc → inert.
+  q.setActiveRadius(8);
+  assert.strictEqual(q.blocksMovement(14, 0, 0), false, "inert once off the platform");
+  assert.strictEqual(q.isActiveAt(14, 0), false, "isActiveAt reports off-platform");
+  // Arena large again (radius 16) → centre on the disc → blocks once more.
+  q.setActiveRadius(16);
+  assert.strictEqual(q.blocksMovement(14, 0, 0), true, "active again when the disc covers it");
+});
+
+test("MapQuery.setActiveRadius drops an off-platform plateau to base ground height", () => {
+  const farPlateau = {
+    worldId: "circle",
+    plateaus: [{ x: 14, z: 0, w: 3, d: 3, height: 2, ramps: [] }],
+    obstacles: [],
+  };
+  const q = new MapQuery(farPlateau);
+  assert.ok(q.groundHeightAt(14, 0) > 1.5, "plateau top before shrink");
+  q.setActiveRadius(8);
+  assert.strictEqual(q.groundHeightAt(14, 0), CFG.PLATFORM_TOP, "base ground once off-platform");
+});
+
+// ---------------------------------------------------------------------------
 console.log(`\n${passed} collision/query checks passed.`);

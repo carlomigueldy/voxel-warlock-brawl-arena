@@ -3,7 +3,7 @@
 // Simulation and broadcasts to clients so both sides build from identical data.
 //
 // Output shape:
-//   { seed, plateaus, obstacles }
+//   { seed, worldId, plateaus, obstacles }
 //   plateaus : [{ x, z, w, d, height, ramps:[{ side, x, z, w, d }] }]
 //   obstacles: [{ id, type, x, z, r, height, rot }]
 //
@@ -66,10 +66,13 @@ export function generateMap(worldId, radius, seed) {
   const rng = mulberry32(seed);
   const m   = CFG.MAP;
 
-  // All geometry centres must lie on the platform even when the arena has
-  // shrunk to its minimum size.  This prevents geometry floating mid-air as
-  // the disc shrinks.
-  const safeRadius = CFG.ARENA_MIN_RADIUS; // 6 by default
+  // Geometry spreads across the whole STARTING disc, not just the centre.
+  // Placement is validated against the starting radius; as the arena shrinks,
+  // features whose centre leaves the platform are made inert by the query layer
+  // (arena-query.js) and hidden by the renderer, so nothing floats over the
+  // hazard.  We keep a small margin in from the rim so footprints sit on solid
+  // ground at round start.
+  const placeRadius = Math.max(CFG.ARENA_MIN_RADIUS, radius * m.PLACEMENT_RADIUS_FRAC);
 
   // Player spawn ring radius (mirrors the formula in sim.js spawnPoint()).
   const spawnRingR = Math.min(radius - 3, 12);
@@ -86,7 +89,7 @@ export function generateMap(worldId, radius, seed) {
     const d = Math.hypot(x, z);
     if (d < MAP_CENTER_CLEAR) return false;
     if (Math.abs(d - spawnRingR) < MAP_SPAWN_RING_CLEAR) return false;
-    return isOnArenaWorld(worldId, safeRadius, x, z);
+    return isOnArenaWorld(worldId, placeRadius, x, z);
   }
 
   // True when the rectangular footprint (centre x/z, half-extents hw×hd) does
@@ -138,8 +141,8 @@ export function generateMap(worldId, radius, seed) {
       // Bounding circle of the plateau rectangle (conservative footprint bound).
       const halfExt = Math.hypot(hw, hd);
       const distMin = MAP_CENTER_CLEAR + 0.1;
-      const distMax = safeRadius - halfExt - 0.05;
-      if (distMin > distMax) continue; // footprint too large to fit in safe zone
+      const distMax = placeRadius - halfExt - 0.05;
+      if (distMin > distMax) continue; // footprint too large to fit on the disc
 
       const ang  = rng() * Math.PI * 2;
       const dist = randRange(rng, distMin, distMax);
@@ -212,8 +215,8 @@ export function generateMap(worldId, radius, seed) {
       placed: for (let t = 0; t < TRIES; t++) {
         const r      = randRange(rng, spec.rLo, spec.rHi);
         const distMin = MAP_CENTER_CLEAR + 0.1;
-        const distMax = safeRadius - r - 0.05;
-        if (distMin > distMax) break placed; // type's r too large for safe zone
+        const distMax = placeRadius - r - 0.05;
+        if (distMin > distMax) break placed; // type's r too large for the disc
 
         const ang  = rng() * Math.PI * 2;
         const dist = randRange(rng, distMin, distMax);
@@ -233,5 +236,7 @@ export function generateMap(worldId, radius, seed) {
     }
   }
 
-  return { seed, plateaus, obstacles };
+  // worldId is stored on the layout so the query layer (arena-query.js) can
+  // decide which features are still on the platform as the arena shrinks.
+  return { seed, worldId, plateaus, obstacles };
 }

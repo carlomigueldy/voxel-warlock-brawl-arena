@@ -19,7 +19,7 @@
 //   Plateau x/z is the CENTRE; w/d are FULL extents.
 //   Ramp x/z is the CENTRE; w/d are FULL extents.
 //   Ramp sides: 0=+x face, 1=-x face, 2=+z face, 3=-z face.
-import { CFG } from "./config.js";
+import { CFG, isOnArenaWorld } from "./config.js";
 
 const BASE_Y = CFG.PLATFORM_TOP; // 0 — the default platform surface
 
@@ -276,15 +276,54 @@ export function onRamp(x, z, layout) {
 
 export class MapQuery {
   constructor(layout = null) {
-    /** @type {{ plateaus:object[], obstacles:object[] }|null} */
+    /** @type {{ worldId?:string, plateaus:object[], obstacles:object[] }|null} */
     this.layout = layout;
+    // Active-radius filtering: as the arena shrinks, features whose CENTRE has
+    // left the platform are inert. activeRadius = Infinity means "no shrink
+    // filtering" (the default, so headless tests see the full layout).
+    this.activeRadius = Infinity;
+    this._activeLayout = layout;   // cached filtered view
+    this._activeKey = null;        // quantized radius the cache was built for
   }
 
   /** Replace the stored layout (call at round start after generateMap). */
-  setLayout(layout) { this.layout = layout; }
+  setLayout(layout) {
+    this.layout = layout;
+    this.activeRadius = Infinity;
+    this._activeLayout = layout;
+    this._activeKey = null;
+  }
 
-  groundHeightAt(x, z)                              { return groundHeightAt(x, z, this.layout); }
-  blocksMovement(x, z, fromY)                        { return blocksMovement(x, z, fromY, this.layout); }
-  obstaclesBlockingRay(x0, z0, y0, x1, z1, y1)      { return obstaclesBlockingRay(x0, z0, y0, x1, z1, y1, this.layout); }
-  onRamp(x, z)                                       { return onRamp(x, z, this.layout); }
+  /**
+   * Update the current (shrinking) arena radius. Features whose centre is off
+   * the platform at this radius stop blocking movement/rays and report base
+   * ground height. Cheap: the filtered view is rebuilt only when the radius
+   * crosses a 0.25-unit bucket.
+   */
+  setActiveRadius(radius) {
+    this.activeRadius = radius;
+    if (!this.layout || !Number.isFinite(radius)) { this._activeLayout = this.layout; this._activeKey = null; return; }
+    const key = Math.round(radius * 4); // 0.25-unit buckets
+    if (key === this._activeKey) return;
+    this._activeKey = key;
+    const worldId = this.layout.worldId ?? CFG.DEFAULT_ARENA_WORLD;
+    const onPlat = (cx, cz) => isOnArenaWorld(worldId, radius, cx, cz);
+    this._activeLayout = {
+      worldId,
+      plateaus:  this.layout.plateaus.filter((pl) => onPlat(pl.x, pl.z)),
+      obstacles: this.layout.obstacles.filter((ob) => onPlat(ob.x, ob.z)),
+    };
+  }
+
+  /** Is the feature whose centre is (cx,cz) still on the platform? */
+  isActiveAt(cx, cz) {
+    if (!Number.isFinite(this.activeRadius) || !this.layout) return true;
+    const worldId = this.layout.worldId ?? CFG.DEFAULT_ARENA_WORLD;
+    return isOnArenaWorld(worldId, this.activeRadius, cx, cz);
+  }
+
+  groundHeightAt(x, z)                              { return groundHeightAt(x, z, this._activeLayout); }
+  blocksMovement(x, z, fromY)                        { return blocksMovement(x, z, fromY, this._activeLayout); }
+  obstaclesBlockingRay(x0, z0, y0, x1, z1, y1)      { return obstaclesBlockingRay(x0, z0, y0, x1, z1, y1, this._activeLayout); }
+  onRamp(x, z)                                       { return onRamp(x, z, this._activeLayout); }
 }

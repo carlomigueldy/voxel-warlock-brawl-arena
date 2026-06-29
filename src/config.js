@@ -62,29 +62,37 @@ export const CFG = {
   FALL_STUN_MIN_HEIGHT: 1.5, // minimum drop (world units) required to trigger stun
 
   // --- Map generation ---
-  // Procedural layout tunables.  All geometry centres must lie on the platform
-  // even at ARENA_MIN_RADIUS so shrinking never strands objects mid-air.
+  // Procedural layout tunables.  Geometry is spread across the whole starting
+  // disc.  As the arena shrinks, any feature whose centre falls off the
+  // platform becomes inert (no collision, hidden by the renderer) — so spread
+  // placement never strands solid objects mid-air over the hazard.
   MAP: {
-    // Plateaus — elevated sub-platforms reachable via ramps.
-    PLATEAU_COUNT_MIN:  2,
-    PLATEAU_COUNT_MAX:  3,
+    // Placement spans out to this fraction of the round's STARTING radius, so
+    // high grounds and props populate the whole map rather than just the centre.
+    PLACEMENT_RADIUS_FRAC: 0.92,
+
+    // Plateaus — elevated sub-platforms (high ground) reachable via ramps.
+    // Larger and more numerous so the map has real elevated land area.
+    PLATEAU_COUNT_MIN:  4,
+    PLATEAU_COUNT_MAX:  6,
     PLATEAU_HEIGHT_MIN: 1.5,   // world units above PLATFORM_TOP
     PLATEAU_HEIGHT_MAX: 2.5,
-    PLATEAU_W_MIN:      1.5,   // full width  (x extent)
-    PLATEAU_W_MAX:      2.5,
-    PLATEAU_D_MIN:      1.5,   // full depth  (z extent)
-    PLATEAU_D_MAX:      2.5,
-    PLATEAU_CLEARANCE:  0.5,   // minimum gap between plateau footprints
+    PLATEAU_W_MIN:      3.0,   // full width  (x extent)
+    PLATEAU_W_MAX:      6.0,
+    PLATEAU_D_MIN:      3.0,   // full depth  (z extent)
+    PLATEAU_D_MAX:      6.0,
+    PLATEAU_CLEARANCE:  1.0,   // minimum gap between plateau footprints
 
-    // Obstacle counts per type [min, max].
-    OBS_TREE_MIN:        2,  OBS_TREE_MAX:        3,
-    OBS_STONE_MIN:       2,  OBS_STONE_MAX:       3,
-    OBS_COLUMN_MIN:      1,  OBS_COLUMN_MAX:      2,
-    OBS_DEBRIS_MIN:      2,  OBS_DEBRIS_MAX:      4,
-    OBS_WALL_MIN:        1,  OBS_WALL_MAX:        2,
-    OBS_BOULDER_MIN:     1,  OBS_BOULDER_MAX:     2,
-    OBS_DEADGIANT_MIN:   0,  OBS_DEADGIANT_MAX:   1,
-    OBS_DRAGONBONES_MIN: 0,  OBS_DRAGONBONES_MAX: 1,
+    // Obstacle counts per type [min, max] — raised since they now spread over
+    // the full map area rather than clustering at the centre.
+    OBS_TREE_MIN:        4,  OBS_TREE_MAX:        6,
+    OBS_STONE_MIN:       3,  OBS_STONE_MAX:       5,
+    OBS_COLUMN_MIN:      2,  OBS_COLUMN_MAX:      4,
+    OBS_DEBRIS_MIN:      3,  OBS_DEBRIS_MAX:      6,
+    OBS_WALL_MIN:        2,  OBS_WALL_MAX:        4,
+    OBS_BOULDER_MIN:     2,  OBS_BOULDER_MAX:     4,
+    OBS_DEADGIANT_MIN:   1,  OBS_DEADGIANT_MAX:   2,
+    OBS_DRAGONBONES_MIN: 1,  OBS_DRAGONBONES_MAX: 2,
   },
 
   // --- Bolt (the core weapon) ---

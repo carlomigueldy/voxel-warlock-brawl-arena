@@ -329,7 +329,7 @@ test("renderer loads Meshy GLBs with procedural fallbacks", () => {
 });
 
 test("renderer labels ability runes with spell names", () => {
-  assert.match(renderer, /import \{ CFG, SPELLS \} from "\.\/config\.js";/);
+  assert.match(renderer, /import \{ CFG, SPELLS[^}]*\} from "\.\/config\.js";/);
   assert.match(renderer, /SPELLS\[r\.spell\]\?\.name/);
   assert.match(renderer, /_makeLabel\(name, r\.c \|\| 0xffffff, 1\.65\)/);
   assert.match(renderer, /userData\.label/);
