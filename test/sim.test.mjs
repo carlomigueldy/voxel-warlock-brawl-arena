@@ -456,17 +456,26 @@ test("every bot tier casts handbook abilities (no dead range checks)", () => {
 });
 
 test("bot difficulty tiers fire at distinct cadences (expert > brilliant > smart)", () => {
+  // Pin both bots at a fixed close distance before every tick so knockback
+  // cannot push them outside their fireRange — this isolates the fireEvery
+  // cadence constant (the actual invariant) from positioning noise caused by
+  // balance tuning (KB values, friction, spell ranges, etc.).
   function countShots(skill, seconds) {
     const sim = new Simulation();
     sim.setBotRoster(2, skill);
     assert.strictEqual(sim.startMatch(), true);
     advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
-    const bot = sim.botPlayers()[0];
+    const bots = sim.botPlayers();
+    const bot = bots[0];
     let shots = 0, prev = false;
     const dt = 1 / CFG.TICK_RATE;
     for (let t = 0; t < seconds; t += dt) {
+      // Reset positions and velocities so neither bot escapes fireRange or dies.
+      for (const p of sim.players.values()) { p.vx = 0; p.vz = 0; p.alive = true; p.falling = false; p._hazardTime = 0; }
+      if (bots[0]) { bots[0].x = 0; bots[0].z = 0; }
+      if (bots[1]) { bots[1].x = 8; bots[1].z = 0; } // 8u: inside every tier's fireRange
       sim.step(dt);
-      if (!bot.alive || sim.phase !== PHASE.PLAYING) break;
+      if (sim.phase !== PHASE.PLAYING) break;
       const f = bot.input.fire;
       if (f && !prev) shots++;
       prev = f;
