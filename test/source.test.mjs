@@ -13,6 +13,7 @@ console.log("Source integration checks:");
 const main = fs.readFileSync("src/main.js", "utf8");
 const ui = fs.readFileSync("src/ui.js", "utf8");
 const html = fs.readFileSync("index.html", "utf8");
+const css = fs.readFileSync("src/style.css", "utf8");
 
 test("host start is gated by Simulation.startMatch result", () => {
   assert.match(main, /if \(!sim\.startMatch\(\)\)/);
@@ -105,6 +106,102 @@ test("host lobby exposes bot count and difficulty controls", () => {
   assert.match(html, /id="bot-skill"/);
   assert.match(ui, /getBotSettings/);
   assert.match(main, /sim\.setBotRoster/);
+});
+
+test("UI stylesheet defines voxel low-poly design system tokens", () => {
+  assert.match(css, /--stone-dark:/);
+  assert.match(css, /--lava-core:/);
+  assert.match(css, /--mana-crystal:/);
+  assert.match(css, /--voxel-cut:/);
+  assert.match(css, /clip-path: polygon/);
+  assert.match(css, /linear-gradient\(135deg/);
+});
+
+test("UI markup applies voxel component primitives across menu lobby and HUD", () => {
+  assert.match(html, /class="panel voxel-card menu-card"/);
+  assert.match(html, /class="panel voxel-card lobby-card"/);
+  assert.match(html, /class="lobby-left voxel-card shard-card"/);
+  assert.match(html, /class="lobby-right voxel-card shard-card"/);
+  assert.match(html, /class="join-box voxel-control-cluster"/);
+  assert.match(html, /class="voxel-field"/);
+  assert.match(html, /id="hud-top" class="hud-slab"/);
+  assert.match(html, /id="scoreboard" class="hud-slab scoreboard-card"/);
+  assert.match(html, /id="charge-wrap" class="hud-slab charge-meter"/);
+});
+
+test("UI stylesheet styles reusable voxel component primitives", () => {
+  assert.match(css, /\.voxel-card/);
+  assert.match(css, /\.voxel-field/);
+  assert.match(css, /\.voxel-toggle/);
+  assert.match(css, /\.hud-slab/);
+  assert.match(css, /\.shard-card/);
+  assert.match(css, /\.voxel-control-cluster/);
+  assert.match(css, /--facet-top:/);
+  assert.match(css, /--facet-bottom:/);
+});
+
+test("every voxel component class used in markup is defined in the stylesheet", () => {
+  const used = new Set();
+  for (const m of html.matchAll(/class="([^"]*)"/g)) {
+    for (const cls of m[1].split(/\s+/)) {
+      if (/^(voxel-|rune-|shard-|hud-slab|scoreboard-card|charge-meter|menu-card|lobby-card)/.test(cls)) used.add(cls);
+    }
+  }
+  for (const cls of used) {
+    assert.match(css, new RegExp("\\." + cls.replace(/[-]/g, "\\-") + "\\b"), `missing CSS for .${cls}`);
+  }
+});
+
+test("UI honors reduced-motion preference", () => {
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+});
+
+test("UI exposes eight selectable redesign variants", () => {
+  for (const v of [3, 4, 5, 6, 7, 8, 9, 10]) {
+    assert.match(html, new RegExp(`theme-v${v}`));
+    assert.match(html, new RegExp(`v=${v}`));
+  }
+  assert.match(html, /URLSearchParams\(location\.search\)/);
+});
+
+test("UI stylesheet defines distinct voxel redesign variants", () => {
+  for (const v of [3, 4, 5, 6, 7, 8, 9, 10]) assert.match(css, new RegExp(`\\.theme-v${v}`));
+  assert.match(css, /Obsidian Forge/);
+  assert.match(css, /Arcane Crystal/);
+  assert.match(css, /Goblin Workshop/);
+  assert.match(css, /Frost Citadel/);
+  assert.match(css, /Elven Grove/);
+  assert.match(css, /Necromancer Crypt/);
+  assert.match(css, /Dragon Hoard/);
+  assert.match(css, /Celestial Sanctum/);
+});
+
+test("UI exposes four component design-system variants via ds param", () => {
+  assert.match(html, /URLSearchParams\(location\.search\)[\s\S]*get\("ds"\)/);
+  for (const d of [1, 2, 3, 4]) {
+    assert.match(html, new RegExp(`ds-v${d}`));
+    assert.match(html, new RegExp(`ds=${d}`));
+  }
+});
+
+test("design-system variants restructure components, not just colors", () => {
+  for (const d of [1, 2, 3, 4]) {
+    assert.match(css, new RegExp(`\\.ds-v${d} \\.voxel-card`));
+    assert.match(css, new RegExp(`\\.ds-v${d} \\.voxel-button`));
+    assert.match(css, new RegExp(`\\.ds-v${d} \\.voxel-field`));
+    assert.match(css, new RegExp(`\\.ds-v${d} \\.hud-slab`));
+    assert.match(css, new RegExp(`\\.ds-v${d} \\.ability-slot`));
+  }
+  assert.match(css, /Beveled Blocks/);
+  assert.match(css, /Carved Tablet/);
+  assert.match(css, /Crystal Facet/);
+  assert.match(css, /Pixel Frame/);
+});
+
+test("variant pickers preserve the other design axis after the DOM exists", () => {
+  assert.match(html, /addEventListener\("DOMContentLoaded"/);
+  assert.match(html, /data-set-v/);
+  assert.match(html, /data-set-ds/);
 });
 
 console.log(`\n${passed} source checks passed.`);

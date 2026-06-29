@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 <title>Voxel Warlock Brawl</title>
-<link rel="stylesheet" href="./src/style.css" />
+<link rel="stylesheet" href="./src/style.css?v=voxel-ds-ui-4" />
 <!-- Three.js + addons via import map (no build step required) -->
 <script type="importmap">
 {
@@ -16,28 +16,65 @@
 </script>
 </head>
 <body>
+  <script>
+    (() => {
+      const params = new URLSearchParams(location.search);
+      const variant = params.get("v");
+      const ds = params.get("ds");
+      const themes = { "3": "theme-v3", "4": "theme-v4", "5": "theme-v5", "6": "theme-v6", "7": "theme-v7", "8": "theme-v8", "9": "theme-v9", "10": "theme-v10" };
+      const systems = { "1": "ds-v1", "2": "ds-v2", "3": "ds-v3", "4": "ds-v4" };
+      document.body.classList.add(themes[variant] || "theme-v3");
+      document.body.classList.add(systems[ds] || "ds-v1");
+      const updatePickers = () => {
+        const keep = (next) => {
+          const p = new URLSearchParams(location.search);
+          for (const [k, val] of Object.entries(next)) p.set(k, val);
+          return "?" + p.toString();
+        };
+        document.querySelectorAll("[data-set-v]").forEach((a) => (a.href = keep({ v: a.dataset.setV })));
+        document.querySelectorAll("[data-set-ds]").forEach((a) => (a.href = keep({ ds: a.dataset.setDs })));
+      };
+      addEventListener("DOMContentLoaded", updatePickers);
+    })();
+  </script>
+  <nav class="variant-picker" aria-label="Color themes">
+    <a href="?v=3" data-set-v="3" class="variant-link variant-v3">v=3 Obsidian Forge</a>
+    <a href="?v=4" data-set-v="4" class="variant-link variant-v4">v=4 Arcane Crystal</a>
+    <a href="?v=5" data-set-v="5" class="variant-link variant-v5">v=5 Goblin Workshop</a>
+    <a href="?v=6" data-set-v="6" class="variant-link variant-v6">v=6 Frost Citadel</a>
+    <a href="?v=7" data-set-v="7" class="variant-link variant-v7">v=7 Elven Grove</a>
+    <a href="?v=8" data-set-v="8" class="variant-link variant-v8">v=8 Necromancer Crypt</a>
+    <a href="?v=9" data-set-v="9" class="variant-link variant-v9">v=9 Dragon Hoard</a>
+    <a href="?v=10" data-set-v="10" class="variant-link variant-v10">v=10 Celestial Sanctum</a>
+  </nav>
+  <nav class="ds-picker" aria-label="Component design systems">
+    <a href="?ds=1" data-set-ds="1" class="ds-link ds-link-v1">ds=1 Beveled Blocks</a>
+    <a href="?ds=2" data-set-ds="2" class="ds-link ds-link-v2">ds=2 Carved Tablet</a>
+    <a href="?ds=3" data-set-ds="3" class="ds-link ds-link-v3">ds=3 Crystal Facet</a>
+    <a href="?ds=4" data-set-ds="4" class="ds-link ds-link-v4">ds=4 Pixel Frame</a>
+  </nav>
   <canvas id="game-canvas"></canvas>
 
   <!-- ===== Main Menu ===== -->
   <div id="menu" class="overlay">
-    <div class="panel">
+    <div class="panel voxel-card menu-card">
       <h1>VOXEL<span>WARLOCK</span>BRAWL</h1>
-      <p class="tag">Blast rivals off the platform into the lava. Last warlock standing wins.</p>
+      <p class="tag rune-tag">Blast rivals off the platform into the lava. Last warlock standing wins.</p>
 
-      <div class="menu-row">
-        <input id="name-input" maxlength="14" placeholder="Your warlock name" />
+      <div class="menu-row voxel-field-wrap">
+        <input id="name-input" class="voxel-field" maxlength="14" placeholder="Your warlock name" />
       </div>
 
-      <label class="menu-toggle">
+      <label class="menu-toggle voxel-toggle">
         <input id="all-abilities-toggle" type="checkbox" checked />
         <span>All abilities at start</span>
       </label>
 
       <div class="menu-actions">
-        <button id="btn-host" class="primary">Host Game</button>
-        <div class="join-box">
-          <input id="join-code" maxlength="6" placeholder="ROOM CODE" />
-          <button id="btn-join">Join</button>
+        <button id="btn-host" class="primary voxel-button">Host Game</button>
+        <div class="join-box voxel-control-cluster">
+          <input id="join-code" class="voxel-field" maxlength="6" placeholder="ROOM CODE" />
+          <button id="btn-join" class="voxel-button">Join</button>
         </div>
       </div>
 
@@ -49,33 +86,33 @@
 
   <!-- ===== Lobby ===== -->
   <div id="lobby" class="overlay hidden">
-    <div class="panel">
+    <div class="panel voxel-card lobby-card">
       <h2>Lobby</h2>
       <div class="lobby-grid">
-        <div class="lobby-left">
-          <p class="label">Room Code</p>
-          <div id="room-code" class="room-code">------</div>
-          <div class="share-row">
-            <button id="btn-copy-code">Copy Code</button>
-            <button id="btn-copy-link">Copy Invite Link</button>
+        <div class="lobby-left voxel-card shard-card">
+          <p class="label rune-label">Room Code</p>
+          <div id="room-code" class="room-code rune-chip">------</div>
+          <div class="share-row voxel-control-cluster">
+            <button id="btn-copy-code" class="voxel-button">Copy Code</button>
+            <button id="btn-copy-link" class="voxel-button">Copy Invite Link</button>
           </div>
-          <div id="qr" class="qr"></div>
+          <div id="qr" class="qr rune-plate"></div>
           <p class="hint">Scan the QR code or share the link to invite players.</p>
         </div>
-        <div class="lobby-right">
-          <p class="label">Warlocks</p>
-          <ul id="player-list" class="player-list"></ul>
-          <div id="bot-controls" class="bot-controls hidden">
-            <label>Bot Count <input id="bot-count" type="number" min="0" max="5" value="0" /></label>
+        <div class="lobby-right voxel-card shard-card">
+          <p class="label rune-label">Warlocks</p>
+          <ul id="player-list" class="player-list shard-list"></ul>
+          <div id="bot-controls" class="bot-controls voxel-card hidden">
+            <label>Bot Count <input id="bot-count" class="voxel-field" type="number" min="0" max="5" value="0" /></label>
             <label>Bot Skill
-              <select id="bot-skill">
+              <select id="bot-skill" class="voxel-field">
                 <option value="smart">Smart</option>
                 <option value="brilliant">Brilliant</option>
                 <option value="expert">Expert</option>
               </select>
             </label>
           </div>
-          <button id="btn-start" class="primary hidden">Start Brawl</button>
+          <button id="btn-start" class="primary voxel-button hidden">Start Brawl</button>
           <p id="lobby-status" class="status"></p>
         </div>
       </div>
@@ -84,24 +121,24 @@
 
   <!-- ===== In-game HUD ===== -->
   <div id="hud" class="hidden">
-    <div id="hud-top">
+    <div id="hud-top" class="hud-slab">
       <div id="round-info">Round 1</div>
       <div id="timer">0:00</div>
     </div>
-    <div id="scoreboard"></div>
-    <div id="charge-wrap"><div id="charge-bar"></div></div>
-    <div id="center-msg" class="center-msg hidden"></div>
+    <div id="scoreboard" class="hud-slab scoreboard-card"></div>
+    <div id="charge-wrap" class="hud-slab charge-meter"><div id="charge-bar"></div></div>
+    <div id="center-msg" class="center-msg voxel-card hidden"></div>
     <div id="ability-bar" class="hidden"></div>
-    <div id="audio-controls">
-      <button id="btn-sfx">SFX: On</button>
-      <button id="btn-music">Music: On</button>
+    <div id="audio-controls" class="voxel-control-cluster">
+      <button id="btn-sfx" class="voxel-button">SFX: On</button>
+      <button id="btn-music" class="voxel-button">Music: On</button>
     </div>
   </div>
 
   <!-- ===== Mobile touch controls ===== -->
   <div id="touch-controls" class="hidden">
-    <div id="joystick"><div id="joystick-knob"></div></div>
-    <button id="fire-btn">FIRE</button>
+    <div id="joystick" class="hud-slab"><div id="joystick-knob"></div></div>
+    <button id="fire-btn" class="primary voxel-button">FIRE</button>
   </div>
 
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
