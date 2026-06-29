@@ -155,30 +155,30 @@ export function isOnArenaWorld(worldId, radius, x, z) {
 // cast handlers (src/spells.js) read live alongside each entry.
 export const SPELLS = {
   // ---- Core projectiles ----
-  fireball:  { name: "Fireball",  key: "1", cd: 0.55, kind: "projectile", proj: "fireball",  kb: 10, color: 0xff5a1e, sfx: "fireball" },
-  lightning: { name: "Lightning", key: "2", cd: 4.0,  kind: "lightning",  range: 18, kb: 13, chains: 2, chainRange: 7, color: 0x9fe6ff, sfx: "lightning" },
-  boomerang: { name: "Boomerang", key: "3", cd: 6.0,  kind: "projectile", proj: "boomerang", kb: 12, range: 16, color: 0xffe14c, sfx: "whoosh" },
-  homing:    { name: "Homing",    key: "4", cd: 8.0,  kind: "projectile", proj: "homing",    kb: 13, turn: 3.2, color: 0xc04cff, sfx: "homing" },
-  fireSpray: { name: "Fire Spray", key: "5", cd: 7.0, kind: "spray",      proj: "fireball",  kb: 7,  count: 7, spread: 0.9, color: 0xff7a2e, sfx: "spray" },
-  bouncer:   { name: "Bouncer",   key: "6", cd: 9.0,  kind: "projectile", proj: "bouncer",   kb: 12, bounces: 4, color: 0x4cff9c, sfx: "whoosh" },
-  splitter:  { name: "Splitter",  key: "7", cd: 9.0,  kind: "projectile", proj: "splitter",  kb: 9,  splitDist: 7, shards: 5, color: 0xff4ca8, sfx: "fireball" },
-  meteor:    { name: "Meteor",    key: "8", cd: 12.0, kind: "meteor",     range: 18, fall: 1.0, radius: 7, kb: 30, color: 0xff3a1e, sfx: "meteor" },
+  fireball:  { name: "Fireball",  key: "1", cd: 0.55, kind: "projectile", proj: "fireball",  kb: 10, color: 0xff5a1e, sfx: "fireball",  desc: "Fast bolt that knocks foes back." },
+  lightning: { name: "Lightning", key: "2", cd: 4.0,  kind: "lightning",  range: 18, kb: 13, chains: 2, chainRange: 7, color: 0x9fe6ff, sfx: "lightning", desc: "Lightning that chains to nearby enemies." },
+  boomerang: { name: "Boomerang", key: "3", cd: 6.0,  kind: "projectile", proj: "boomerang", kb: 12, range: 16, color: 0xffe14c, sfx: "whoosh",    desc: "Returning projectile that hits on the way back." },
+  homing:    { name: "Homing",    key: "4", cd: 8.0,  kind: "projectile", proj: "homing",    kb: 13, turn: 3.2, color: 0xc04cff, sfx: "homing",    desc: "Tracking bolt that hunts down its target." },
+  fireSpray: { name: "Fire Spray", key: "5", cd: 7.0, kind: "spray",      proj: "fireball",  kb: 7,  count: 7, spread: 0.9, color: 0xff7a2e, sfx: "spray",    desc: "Fan of fire bolts covering a wide arc." },
+  bouncer:   { name: "Bouncer",   key: "6", cd: 9.0,  kind: "projectile", proj: "bouncer",   kb: 12, bounces: 4, color: 0x4cff9c, sfx: "whoosh",   desc: "Ricochets off walls up to four times." },
+  splitter:  { name: "Splitter",  key: "7", cd: 9.0,  kind: "projectile", proj: "splitter",  kb: 9,  splitDist: 7, shards: 5, color: 0xff4ca8, sfx: "fireball", desc: "Splits into five piercing shards on impact." },
+  meteor:    { name: "Meteor",    key: "8", cd: 12.0, kind: "meteor",     range: 18, fall: 1.0, radius: 7, kb: 30, color: 0xff3a1e, sfx: "meteor",   desc: "Calls a falling meteor with a heavy blast." },
 
   // ---- Mobility ----
-  teleport:  { name: "Teleport",  key: "Q", cd: 8.0,  kind: "teleport",  range: 20, sfx: "teleport" },
-  thrust:    { name: "Thrust",    key: "E", cd: 7.0,  kind: "thrust",    power: 36, sfx: "whoosh" },
-  swap:      { name: "Swap",      key: "R", cd: 14.0, kind: "swap",      range: 22, sfx: "teleport" },
-  windWalk:  { name: "Wind Walk", key: "F", cd: 16.0, kind: "windwalk",  duration: 4, speedMul: 1.6, sfx: "windwalk" },
-  rush:      { name: "Rush",      key: "C", cd: 16.0, kind: "rush",      duration: 5, speedMul: 1.45, kbResist: 0.45, sfx: "rush" },
+  teleport:  { name: "Teleport",  key: "Q", cd: 8.0,  kind: "teleport",  range: 20, sfx: "teleport", desc: "Blink instantly toward your aim." },
+  thrust:    { name: "Thrust",    key: "E", cd: 7.0,  kind: "thrust",    power: 36, sfx: "whoosh",   desc: "Launches you forward with great force." },
+  swap:      { name: "Swap",      key: "R", cd: 14.0, kind: "swap",      range: 22, sfx: "teleport", desc: "Swaps positions with a distant target." },
+  windWalk:  { name: "Wind Walk", key: "F", cd: 16.0, kind: "windwalk",  duration: 4, speedMul: 1.6, sfx: "windwalk", desc: "Greatly boosts speed for a short dash." },
+  rush:      { name: "Rush",      key: "C", cd: 16.0, kind: "rush",      duration: 5, speedMul: 1.45, kbResist: 0.45, sfx: "rush",   desc: "Sprint faster and shrug off knockback." },
 
   // ---- Control / utility ----
-  drain:     { name: "Drain",     key: "V", cd: 12.0, kind: "drain",     range: 14, pull: 15, steal: 0.5, sfx: "drain" },
-  gravity:   { name: "Gravity",   key: "X", cd: 14.0, kind: "gravity",   range: 18, radius: 8, duration: 2.5, pull: 20, gravKb: 14, sfx: "gravity" },
-  link:      { name: "Link",      key: "Z", cd: 16.0, kind: "link",      range: 16, duration: 4, sfx: "link" },
-  disable:   { name: "Disable",   key: "T", cd: 14.0, kind: "disable",   range: 16, duration: 1.6, kb: 6, color: 0xbbbbbb, sfx: "disable" },
-  shield:    { name: "Shield",    key: "G", cd: 16.0, kind: "shield",    duration: 4, charges: 1, sfx: "shield" },
-  timeShift: { name: "Time Shift", key: "B", cd: 22.0, kind: "timeshift", delay: 3.0, sfx: "timeshift" },
-  pocketWatch: { name: "Pocket Watch", key: "H", cd: 40.0, kind: "pocketwatch", item: true, sfx: "watch" },
+  drain:     { name: "Drain",     key: "V", cd: 12.0, kind: "drain",     range: 14, pull: 15, steal: 0.5, sfx: "drain",      desc: "Pulls an enemy close and siphons their charge." },
+  gravity:   { name: "Gravity",   key: "X", cd: 14.0, kind: "gravity",   range: 18, radius: 8, duration: 2.5, pull: 20, gravKb: 14, sfx: "gravity", desc: "Creates a gravity well that pulls nearby foes." },
+  link:      { name: "Link",      key: "Z", cd: 16.0, kind: "link",      range: 16, duration: 4, sfx: "link",      desc: "Tethers a foe and mirrors their knockback." },
+  disable:   { name: "Disable",   key: "T", cd: 14.0, kind: "disable",   range: 16, duration: 1.6, kb: 6, color: 0xbbbbbb, sfx: "disable",  desc: "Briefly stuns and knocks back a target." },
+  shield:    { name: "Shield",    key: "G", cd: 16.0, kind: "shield",    duration: 4, charges: 1, sfx: "shield",     desc: "Absorbs the next incoming hit." },
+  timeShift: { name: "Time Shift", key: "B", cd: 22.0, kind: "timeshift", delay: 3.0, sfx: "timeshift",              desc: "Rewinds your position back three seconds." },
+  pocketWatch: { name: "Pocket Watch", key: "H", cd: 40.0, kind: "pocketwatch", item: true, sfx: "watch",           desc: "Instantly resets all your spell cooldowns." },
 };
 
 // Ordering used for the on-screen ability bar.

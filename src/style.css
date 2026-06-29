@@ -473,6 +473,7 @@ html, body {
   padding: 3px; transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
 }
 .ability-slot:hover { transform: translateY(-2px); }
+.ability-slot:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; transform: translateY(-2px); }
 .ability-slot.ready { box-shadow: 0 0 8px rgba(124,255,90,0.35); border-color: rgba(124,255,90,0.6); }
 .ability-slot.locked { opacity: 0.35; filter: grayscale(1); }
 .ability-slot.empty { border-style: dashed; }
@@ -495,6 +496,66 @@ html, body {
   font-size: 10px; line-height: 16px; color: #fff; background: rgba(108,76,255,0.65);
 }
 
+/* ===== Spell tooltip ===== */
+.spell-tooltip {
+  position: fixed;
+  z-index: 9000;
+  pointer-events: none;
+  padding: 10px 13px;
+  max-width: 220px;
+  background: rgba(22, 17, 46, 0.97);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-panel), 0 0 16px rgba(108, 76, 255, 0.35);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0;
+  transform: translateY(5px) scale(0.96);
+  transition: opacity 0.14s ease, transform 0.18s var(--ease-spring), visibility 0s 0.18s;
+  visibility: hidden;
+  display: block;
+}
+.spell-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.14s ease, transform 0.18s var(--ease-spring);
+  visibility: visible;
+}
+.spell-tooltip-title {
+  font-family: var(--font-display);
+  font-size: 9px;
+  margin-bottom: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  line-height: 1.3;
+}
+.spell-tooltip-key {
+  font-family: var(--font-display);
+  font-size: 7px;
+  background: rgba(108, 76, 255, 0.25);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  padding: 2px 5px;
+  color: var(--muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.spell-tooltip-desc {
+  color: var(--text);
+  line-height: 1.45;
+  margin-bottom: 7px;
+}
+.spell-tooltip-stats {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+
 /* ===== Audio controls ===== */
 #audio-controls { position: fixed; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 6; }
 #audio-controls button {
@@ -515,6 +576,7 @@ html, body {
   .char-cards { grid-template-columns: repeat(2, 1fr); }
   .ability-slot { width: 50px; height: 50px; }
   .ability-name { display: none; }
+  .spell-tooltip { max-width: 180px; font-size: 11px; }
 }
 
 /* ---------- Reduced motion ---------- */

@@ -307,7 +307,9 @@ export class UI {
     const s = SPELLS[id];
     if (!s) return;
     const slot = this._slotShell(s.name, s.key, s.name, s.color || 0x8888ff);
+    slot.el.dataset.spell = id;
     slot.el.onclick = () => this.handlers.selectSpell?.(id);
+    this._attachTooltip(slot.el);
     this.el.abilityBar.appendChild(slot.el);
     this._abilityEls[id] = { slot: slot.el, cd: slot.cd };
   }
@@ -341,6 +343,7 @@ export class UI {
       const spell = slot.el.dataset.spell;
       if (spell) this.handlers.selectSpell?.(spell);
     };
+    this._attachTooltip(slot.el);
     this.el.abilityBar.appendChild(slot.el);
     this._abilityEls[index] = { slot: slot.el, cd: slot.cd, key: slot.key, nm: slot.nm, swatch: slot.swatch };
   }
@@ -348,7 +351,10 @@ export class UI {
   _slotShell(title, keyText, nameText, color) {
     const el = document.createElement("div");
     el.className = "ability-slot";
-    el.title = title;
+    el.tabIndex = 0;
+    el.setAttribute("role", "button");
+    // title attribute intentionally omitted for filled slots — custom tooltip supersedes it.
+    // Empty / non-spell slots may set it after construction.
     const key = document.createElement("span");
     key.className = "ability-key";
     key.textContent = keyText;
@@ -370,6 +376,111 @@ export class UI {
     return null;
   }
 
+  // ---- Spell tooltip -------------------------------------------------------
+
+  /** Lazily create (once) the shared tooltip DOM node and append to the HUD. */
+  _initTooltip() {
+    if (this._tooltipEl) return this._tooltipEl;
+    const tt = document.createElement("div");
+    tt.className = "spell-tooltip";
+    tt.setAttribute("role", "tooltip");
+    tt.setAttribute("aria-hidden", "true");
+    (this.el.hud || document.body).appendChild(tt);
+    this._tooltipEl = tt;
+    return tt;
+  }
+
+  /**
+   * Build tooltip content for a given spell id using safe DOM methods only —
+   * no innerHTML, no dynamic HTML strings. Returns a DocumentFragment or null.
+   */
+  _buildTooltipContent(id) {
+    const s = SPELLS[id];
+    if (!s) return null;
+    const color = "#" + ((s.color || 0x8888ff) >>> 0).toString(16).padStart(6, "0").slice(-6);
+    const stats = [`Cooldown: ${s.cd}s`];
+    if (s.range != null)    stats.push(`Range: ${s.range}`);
+    if (s.kb != null)       stats.push(`Knockback: ${s.kb}`);
+    if (s.duration != null) stats.push(`Duration: ${s.duration}s`);
+    if (s.count != null)    stats.push(`Count: ${s.count}`);
+    if (s.chains != null)   stats.push(`Chains: ${s.chains}`);
+
+    const frag = document.createDocumentFragment();
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "spell-tooltip-title";
+    titleEl.style.color = color;
+    titleEl.textContent = s.name;
+    const keyEl = document.createElement("span");
+    keyEl.className = "spell-tooltip-key";
+    keyEl.textContent = s.key;
+    titleEl.appendChild(keyEl);
+    frag.appendChild(titleEl);
+
+    const descEl = document.createElement("div");
+    descEl.className = "spell-tooltip-desc";
+    descEl.textContent = s.desc || "";
+    frag.appendChild(descEl);
+
+    const statsEl = document.createElement("div");
+    statsEl.className = "spell-tooltip-stats";
+    statsEl.textContent = stats.join(" · ");
+    frag.appendChild(statsEl);
+
+    return frag;
+  }
+
+  /** Position the tooltip above (or below if clipped) the anchor element. */
+  _positionTooltip(tt, anchor) {
+    tt.style.visibility = "hidden";
+    tt.style.display = "block";
+    const rect = anchor.getBoundingClientRect();
+    const tw = tt.offsetWidth;
+    const th = tt.offsetHeight;
+    let left = rect.left + rect.width / 2 - tw / 2;
+    let top  = rect.top - th - 8;
+    if (top < 8) top = rect.bottom + 8;
+    left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+    tt.style.left = left + "px";
+    tt.style.top  = top  + "px";
+    tt.style.visibility = "";
+  }
+
+  _showTooltip(slotEl) {
+    const id = slotEl.dataset.spell;
+    if (!id || !SPELLS[id]) { this._hideTooltip(); return; }
+    const tt = this._initTooltip();
+    const content = this._buildTooltipContent(id);
+    if (!content) { this._hideTooltip(); return; }
+    tt.replaceChildren(content);
+    tt.removeAttribute("aria-hidden");
+    tt.classList.add("visible");
+    this._positionTooltip(tt, slotEl);
+  }
+
+  _hideTooltip() {
+    if (!this._tooltipEl) return;
+    this._tooltipEl.classList.remove("visible");
+    this._tooltipEl.setAttribute("aria-hidden", "true");
+  }
+
+  /**
+   * Wire mouseenter/mouseleave + focus/blur on a slot element.
+   * The hotkey-picker child is excluded: hovering it does not incorrectly show
+   * a spell tooltip because we always re-read dataset.spell at event time.
+   */
+  _attachTooltip(slotEl) {
+    slotEl.addEventListener("mouseenter", (e) => {
+      if (e.target !== slotEl && e.target.classList.contains("hotkey-picker")) return;
+      this._showTooltip(slotEl);
+    });
+    slotEl.addEventListener("mouseleave", () => this._hideTooltip());
+    slotEl.addEventListener("focusin", () => this._showTooltip(slotEl));
+    slotEl.addEventListener("focusout", () => this._hideTooltip());
+  }
+
+  // -------------------------------------------------------------------------
+
   updateAbilityBar(snapshot, localId) {
     const me = snapshot.players.find((p) => p.id === localId);
     const slotMode = snapshot.spellSlotsEnabled && Array.isArray(me?.spellSlots);
@@ -386,7 +497,7 @@ export class UI {
         const total = empty ? 1 : (SPELLS[id].cd || 1);
         const pct = Math.max(0, Math.min(100, (remain / total) * 100));
         slot.dataset.spell = empty ? "" : id;
-        slot.title = empty ? `Empty spell slot ${i + 1}` : SPELLS[id].name;
+        slot.title = empty ? `Empty spell slot ${i + 1}` : "";
         nm.textContent = empty ? "Empty" : SPELLS[id].name;
         swatch.style.background = "#" + ((empty ? 0x444466 : (SPELLS[id].color || 0x8888ff)).toString(16).padStart(6, "0"));
         cd.style.height = empty ? "100%" : pct + "%";
