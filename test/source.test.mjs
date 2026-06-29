@@ -48,4 +48,12 @@ test("disconnect handling sends the host back to lobby when a match cannot conti
   assert.match(main, /inGame = false/);
 });
 
+test("host lobby exposes bot count and difficulty controls", () => {
+  const html = fs.readFileSync("index.html", "utf8");
+  assert.match(html, /id="bot-count"/);
+  assert.match(html, /id="bot-skill"/);
+  assert.match(ui, /getBotSettings/);
+  assert.match(main, /sim\.setBotRoster/);
+});
+
 console.log(`\n${passed} source checks passed.`);

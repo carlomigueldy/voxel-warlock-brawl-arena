@@ -1,6 +1,6 @@
 // Pure, authoritative game simulation. Deliberately free of Three.js so it can
 // run on the host and be unit-tested headlessly in Node.
-import { CFG } from "./config.js";
+import { CFG, SPELLS } from "./config.js";
 import { Player } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
@@ -20,6 +20,22 @@ export const PHASE = {
   MATCH_END: "matchEnd",
 };
 
+const BOT_PREFIX = "bot:";
+const BOT_DEFAULT_CAST_RANGE = 16; // fallback for spells without an explicit handbook range
+const BOT_SETTINGS = {
+  smart: { preferredRange: 10, retreatRange: 3.2, fireRange: 14, accuracy: 0.22, fireEvery: 0.75, strafe: 0.35, abilityEvery: 4.5 },
+  brilliant: { preferredRange: 9, retreatRange: 4, fireRange: 16, accuracy: 0.1, fireEvery: 0.48, strafe: 0.55, abilityEvery: 3.0 },
+  expert: { preferredRange: 8, retreatRange: 4.8, fireRange: 30, accuracy: 0.02, fireEvery: 0.28, strafe: 0.75, abilityEvery: 1.7 },
+};
+
+function normalizeBotSkill(skill) {
+  return CFG.BOT_SKILLS.includes(skill) ? skill : "smart";
+}
+
+function botDisplayName(skill, index) {
+  return `${skill[0].toUpperCase()}${skill.slice(1)} Bot ${index + 1}`;
+}
+
 export class Simulation {
   constructor() {
     this.players = new Map(); // id -> Player
@@ -36,16 +52,35 @@ export class Simulation {
     this.events = [];        // transient events for the renderer/sound (e.g. hits)
   }
 
-  addPlayer(id, name) {
+  addPlayer(id, name, options = {}) {
     if (this.players.has(id)) return this.players.get(id);
     const idx = this.players.size;
-    const p = new Player(id, name, idx);
+    const p = new Player(id, name, idx, options);
     if (this.phase !== PHASE.LOBBY) {
       p.alive = false;
       p.spectating = true;
     }
     this.players.set(id, p);
     return p;
+  }
+
+  setBotRoster(count, skill = "smart") {
+    const botSkill = normalizeBotSkill(skill);
+    const humanCount = [...this.players.values()].filter((p) => !p.isBot).length;
+    const wanted = Math.max(0, Math.min(CFG.MAX_PLAYERS - humanCount, Number.parseInt(count, 10) || 0));
+    for (const id of [...this.players.keys()]) {
+      if (this.players.get(id).isBot) this.players.delete(id);
+    }
+    const bots = [];
+    for (let i = 0; i < wanted; i++) {
+      bots.push(this.addPlayer(`${BOT_PREFIX}${i + 1}`, botDisplayName(botSkill, i), { isBot: true, botSkill }));
+    }
+    if (this.phase !== PHASE.LOBBY) this.resolveRoundIfNeeded();
+    return bots;
+  }
+
+  botPlayers() {
+    return [...this.players.values()].filter((p) => p.isBot);
   }
 
   removePlayer(id) {
@@ -158,7 +193,9 @@ export class Simulation {
     const ox = owner.x + Math.cos(owner.aim) * (CFG.PLAYER_RADIUS + 0.6);
     const oz = owner.z + Math.sin(owner.aim) * (CFG.PLAYER_RADIUS + 0.6);
     this.bolts.push(new Bolt(owner.id, ox, oz, owner.aim, owner.color));
-    owner.cooldown = CFG.BOLT_COOLDOWN;
+    owner.cooldown = owner.isBot && Number.isFinite(owner._botFireCooldown)
+      ? owner._botFireCooldown
+      : CFG.BOLT_COOLDOWN;
   }
 
   // Advance the whole simulation by dt seconds (host authoritative).
@@ -198,6 +235,8 @@ export class Simulation {
         this.arena.radius - CFG.ROUND.SHRINK_RATE * dt
       );
     }
+
+    this.updateBotInputs();
 
     // Fire intents -> default fireball (holding fire / Space).
     for (const p of this.players.values()) {
@@ -285,6 +324,82 @@ export class Simulation {
     }
 
     this.resolveRoundIfNeeded();
+  }
+
+  updateBotInputs() {
+    const living = this.alivePlayers();
+    for (const bot of living.filter((p) => p.isBot)) {
+      const target = living
+        .filter((p) => p.id !== bot.id)
+        .sort((a, b) => Math.hypot(a.x - bot.x, a.z - bot.z) - Math.hypot(b.x - bot.x, b.z - bot.z))[0];
+      if (!target) continue;
+      bot.input = this.planBotInput(bot, target);
+    }
+  }
+
+  planBotInput(bot, target) {
+    const settings = BOT_SETTINGS[normalizeBotSkill(bot.botSkill)];
+    const dx = target.x - bot.x;
+    const dz = target.z - bot.z;
+    const dist = Math.hypot(dx, dz) || 1;
+    const towardX = dx / dist;
+    const towardZ = dz / dist;
+    const centerDist = Math.hypot(bot.x, bot.z) || 1;
+    const centerX = -bot.x / centerDist;
+    const centerZ = -bot.z / centerDist;
+    const edgeDanger = this.arena.radius - centerDist < 4;
+    let moveX = 0;
+    let moveZ = 0;
+    if (edgeDanger) {
+      moveX += centerX * 1.4;
+      moveZ += centerZ * 1.4;
+    } else if (dist > settings.preferredRange) {
+      moveX += towardX;
+      moveZ += towardZ;
+    } else if (dist < settings.retreatRange) {
+      moveX -= towardX;
+      moveZ -= towardZ;
+    }
+    const side = bot.id.charCodeAt(bot.id.length - 1) % 2 === 0 ? 1 : -1;
+    moveX += -towardZ * settings.strafe * side;
+    moveZ += towardX * settings.strafe * side;
+    const aim = Math.atan2(dz, dx) + settings.accuracy * Math.sin(this.playTime * 3 + bot.colorIndex);
+    bot._botFireCooldown = settings.fireEvery;
+    const fire = dist <= settings.fireRange && bot.canFire() && (bot._nextBotFireAt ?? 0) <= this.playTime;
+    if (fire) bot._nextBotFireAt = this.playTime + settings.fireEvery;
+    this.queueBotAbility(bot, target, dist, settings);
+    return { move: [moveX, moveZ], aim, fire, seq: bot.input.seq + 1, casts: [] };
+  }
+
+  queueBotAbility(bot, target, dist, settings) {
+    if ((bot._nextBotAbilityAt ?? 0) > this.playTime || bot.status.disabled > 0) return;
+    const skill = normalizeBotSkill(bot.botSkill);
+    const edgeDanger = this.arena.radius - Math.hypot(bot.x, bot.z) < 4;
+    // Some spells (fireball, homing) have no explicit `range` in the handbook;
+    // fall back to a generous default so the comparison is never `dist <= undefined`
+    // (which is always false and would silently disable those branches).
+    const reach = (id) => (Number.isFinite(SPELLS[id].range) ? SPELLS[id].range : BOT_DEFAULT_CAST_RANGE);
+    let spell = null;
+    let tx = target.x;
+    let tz = target.z;
+    if (edgeDanger && bot.canCast("thrust")) {
+      spell = "thrust"; tx = 0; tz = 0;
+    } else if (bot.charge > 1.6 && bot.canCast("shield")) {
+      spell = "shield";
+    } else if (skill === "expert" && dist <= reach("meteor") && bot.canCast("meteor")) {
+      spell = "meteor";
+    } else if (skill !== "smart" && dist <= reach("lightning") && bot.canCast("lightning")) {
+      spell = "lightning";
+    } else if (skill === "expert" && dist <= reach("gravity") && bot.canCast("gravity")) {
+      spell = "gravity";
+    } else if (dist <= reach("homing") && bot.canCast("homing")) {
+      spell = "homing";
+    } else if (dist <= reach("fireball") && bot.canCast("fireball")) {
+      spell = "fireball";
+    }
+    if (!spell) return;
+    bot.pendingCasts.push({ id: ++bot._botCastId, spell, tx, tz });
+    bot._nextBotAbilityAt = this.playTime + settings.abilityEvery;
   }
 
   endRound(winner) {

@@ -60,6 +60,16 @@
         <div class="lobby-right">
           <p class="label">Warlocks</p>
           <ul id="player-list" class="player-list"></ul>
+          <div id="bot-controls" class="bot-controls hidden">
+            <label>Bot Count <input id="bot-count" type="number" min="0" max="5" value="0" /></label>
+            <label>Bot Skill
+              <select id="bot-skill">
+                <option value="smart">Smart</option>
+                <option value="brilliant">Brilliant</option>
+                <option value="expert">Expert</option>
+              </select>
+            </label>
+          </div>
           <button id="btn-start" class="primary hidden">Start Brawl</button>
           <p id="lobby-status" class="status"></p>
         </div>
