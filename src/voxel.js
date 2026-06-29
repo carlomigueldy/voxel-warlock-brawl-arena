@@ -1,6 +1,7 @@
 // Low-poly voxel mesh builders. Everything is built from boxes for the
 // blocky aesthetic, merged where possible to keep draw calls down.
 import * as THREE from "three";
+import { CFG, getArenaWorld, isOnArenaWorld } from "./config.js";
 
 function box(w, h, d, color, x = 0, y = 0, z = 0, flat = true) {
   const geo = new THREE.BoxGeometry(w, h, d);
@@ -293,25 +294,23 @@ export function buildMeteor(x, z, fall, radius, color) {
 
 // Build the voxel platform mesh for a given radius using merged boxes.
 // We rebuild it when the radius changes (shrinking arena).
-export function buildPlatform(radius) {
+export function buildPlatform(radius, worldId = CFG.DEFAULT_ARENA_WORLD) {
   const g = new THREE.Group();
   const step = 2; // voxel block size for the floor
-  const top = 0x6c4cff;
-  const side = 0x3a2a7a;
-  const r2 = radius * radius;
+  const world = getArenaWorld(worldId);
 
   // Use instancing for performance.
   const cells = [];
   for (let x = -radius; x <= radius; x += step) {
     for (let z = -radius; z <= radius; z += step) {
-      if (x * x + z * z <= r2) cells.push([x, z]);
+      if (isOnArenaWorld(world.id, radius, x, z)) cells.push([x, z]);
     }
   }
 
   const topGeo = new THREE.BoxGeometry(step, 1, step);
   const sideGeo = new THREE.BoxGeometry(step, 3, step);
-  const topMat = new THREE.MeshLambertMaterial({ color: top, flatShading: true });
-  const sideMat = new THREE.MeshLambertMaterial({ color: side, flatShading: true });
+  const topMat = new THREE.MeshLambertMaterial({ color: world.top, flatShading: true });
+  const sideMat = new THREE.MeshLambertMaterial({ color: world.side, flatShading: true });
 
   const topMesh = new THREE.InstancedMesh(topGeo, topMat, cells.length);
   const sideMesh = new THREE.InstancedMesh(sideGeo, sideMat, cells.length);
@@ -335,6 +334,7 @@ export function buildPlatform(radius) {
 
   g.add(sideMesh, topMesh);
   g.userData.radius = radius;
+  g.userData.world = world.id;
   return g;
 }
 

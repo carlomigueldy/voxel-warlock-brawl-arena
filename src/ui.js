@@ -11,6 +11,7 @@ export class UI {
       menu: $("menu"), lobby: $("lobby"), hud: $("hud"),
       nameInput: $("name-input"), btnHost: $("btn-host"),
       allAbilitiesToggle: $("all-abilities-toggle"),
+      arenaWorld: $("arena-world"), landSize: $("land-size"),
       joinCode: $("join-code"), btnJoin: $("btn-join"),
       menuStatus: $("menu-status"),
       roomCode: $("room-code"), btnCopyCode: $("btn-copy-code"),
@@ -27,6 +28,7 @@ export class UI {
     this.handlers = {};
     this.audio = null;
     this._abilityEls = null;
+    this._populateArenaControls();
     this._bind();
     this._prefillFromUrl();
     this._maybeShowTouch();
@@ -99,11 +101,20 @@ export class UI {
     }
   }
 
+  _populateArenaControls() {
+    if (this.el.arenaWorld) {
+      this.el.arenaWorld.replaceChildren(...CFG.ARENA_WORLDS.map((world) => new Option(world.name, world.id, false, world.id === CFG.DEFAULT_ARENA_WORLD)));
+    }
+    if (this.el.landSize) {
+      this.el.landSize.replaceChildren(...Object.values(CFG.ARENA_LAND_SIZES).map((size) => new Option(size.name, size.id, false, size.id === CFG.DEFAULT_ARENA_LAND_SIZE)));
+    }
+  }
+
   _bind() {
     this.el.btnHost.onclick = () => {
       const name = this._name();
       if (!name) return this.setMenuStatus("Enter a name first.");
-      this.handlers.host?.(name, { allAbilitiesAtStart: this.allAbilitiesAtStart() });
+      this.handlers.host?.(name, { allAbilitiesAtStart: this.allAbilitiesAtStart(), ...this.getArenaSettings() });
     };
     this.el.btnJoin.onclick = () => this._tryJoin();
     this.el.joinCode.addEventListener("keydown", (e) => {
@@ -127,6 +138,12 @@ export class UI {
   _name() { return this.el.nameInput.value.trim().slice(0, 14); }
 
   allAbilitiesAtStart() { return this.el.allAbilitiesToggle?.checked !== false; }
+
+  getArenaSettings() {
+    const arenaWorld = CFG.ARENA_WORLDS.some((world) => world.id === this.el.arenaWorld?.value) ? this.el.arenaWorld.value : CFG.DEFAULT_ARENA_WORLD;
+    const landSize = CFG.ARENA_LAND_SIZES[this.el.landSize?.value] ? this.el.landSize.value : CFG.DEFAULT_ARENA_LAND_SIZE;
+    return { arenaWorld, landSize };
+  }
 
   getBotSettings() {
     return {

@@ -92,7 +92,7 @@ test("generated character label height follows simulation player height", () => 
 test("host menu exposes all-abilities-at-start toggle", () => {
   assert.match(html, /id="all-abilities-toggle"/);
   assert.match(ui, /allAbilitiesAtStart/);
-  assert.match(main, /new Simulation\(\{ allAbilitiesAtStart/);
+  assert.match(main, /allAbilitiesAtStart: options\.allAbilitiesAtStart/);
 });
 
 test("ability bar filters slots by acquired spells from snapshots", () => {
@@ -105,6 +105,20 @@ test("host lobby exposes bot count and difficulty controls", () => {
   assert.match(html, /id="bot-skill"/);
   assert.match(ui, /getBotSettings/);
   assert.match(main, /sim\.setBotRoster/);
+});
+
+test("host menu exposes arena world and land size controls", () => {
+  assert.match(html, /id="arena-world"/);
+  assert.match(html, /id="land-size"/);
+  assert.match(ui, /getArenaSettings/);
+  assert.match(main, /arenaWorld: options\.arenaWorld/);
+  assert.match(main, /landSize: options\.landSize/);
+});
+
+test("renderer applies arena world from snapshots", () => {
+  const renderer = fs.readFileSync("src/renderer.js", "utf8");
+  assert.match(renderer, /snapshot\.arenaWorld/);
+  assert.match(renderer, /setWorld/);
 });
 
 console.log(`\n${passed} source checks passed.`);

@@ -6,6 +6,20 @@ export const CFG = {
   ARENA_RADIUS: 18,          // starting platform radius (world units)
   ARENA_MIN_RADIUS: 6,       // platform never shrinks below this
   ARENA_SHRINK_PER_SEC: 0.0, // set per-round; see ROUND
+  DEFAULT_ARENA_WORLD: "circle",
+  DEFAULT_ARENA_LAND_SIZE: "medium",
+  ARENA_LAND_SIZES: {
+    small: { id: "small", name: "Small", radius: 14 },
+    medium: { id: "medium", name: "Medium", radius: 18 },
+    large: { id: "large", name: "Large", radius: 24 },
+  },
+  ARENA_WORLDS: [
+    { id: "circle", name: "Classic Circle", top: 0x6c4cff, side: 0x3a2a7a },
+    { id: "islands", name: "Twin Islands", top: 0x4cc9ff, side: 0x1f5872 },
+    { id: "bridge", name: "Narrow Bridge", top: 0xffd23c, side: 0x805f16 },
+    { id: "cross", name: "Arcane Cross", top: 0x7cff5a, side: 0x2e6b25 },
+    { id: "ring", name: "Outer Ring", top: 0xff4ca8, side: 0x7a2552 },
+  ],
   VOXEL: 1,                  // voxel size
   LAVA_Y: -4,                // height of the lava plane (death below platform top)
   PLATFORM_TOP: 0,           // top surface of the platform
@@ -56,6 +70,36 @@ export const CFG = {
   // Player colors (low-poly palette) assigned by join order.
   COLORS: [0xff5a3c, 0x4cc9ff, 0x7cff5a, 0xffd23c, 0xc04cff, 0xff4ca8],
 };
+
+export function getArenaWorld(id) {
+  return CFG.ARENA_WORLDS.find((world) => world.id === id) || CFG.ARENA_WORLDS.find((world) => world.id === CFG.DEFAULT_ARENA_WORLD);
+}
+
+export function getArenaLandSize(id) {
+  return CFG.ARENA_LAND_SIZES[id] || CFG.ARENA_LAND_SIZES[CFG.DEFAULT_ARENA_LAND_SIZE];
+}
+
+export function isOnArenaWorld(worldId, radius, x, z) {
+  const r = Math.max(CFG.ARENA_MIN_RADIUS, radius);
+  const ax = Math.abs(x);
+  const az = Math.abs(z);
+  const d = Math.hypot(x, z);
+  switch (getArenaWorld(worldId).id) {
+    case "islands": {
+      const spread = r * 0.45;
+      const islandR = r * 0.58;
+      return Math.hypot(x + spread, z) <= islandR || Math.hypot(x - spread, z) <= islandR || (ax <= r * 0.18 && az <= r * 0.16);
+    }
+    case "bridge":
+      return (ax <= r && az <= r * 0.22) || (az <= r && ax <= r * 0.18);
+    case "cross":
+      return d <= r && (ax <= r * 0.32 || az <= r * 0.32 || d <= r * 0.28);
+    case "ring":
+      return d <= r && (d >= r * 0.42 || ax <= r * 0.18 || az <= r * 0.18);
+    default:
+      return d <= r;
+  }
+}
 
 // --- Spellbook ---
 // Every ability/item from the Warlock Brawl handbook

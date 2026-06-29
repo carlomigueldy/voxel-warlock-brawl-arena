@@ -60,7 +60,7 @@ export class GameRenderer {
 
   setAudio(audio) { this.audio = audio; }
 
-  _panFor(x) { return Math.max(-1, Math.min(1, x / CFG.ARENA_RADIUS)); }
+  _panFor(x) { return Math.max(-1, Math.min(1, x / this.arena.radius)); }
 
   _addEffect(group) {
     this.scene.add(group);
@@ -182,6 +182,7 @@ export class GameRenderer {
     // many frames on the client between network updates).
     const isNewSnap = snapshot.t !== this._lastSnapT;
     this._lastSnapT = snapshot.t;
+    this.arena.setWorld(snapshot.arenaWorld ?? CFG.DEFAULT_ARENA_WORLD);
     this.arena.setRadius(snapshot.arenaR ?? CFG.ARENA_RADIUS);
 
     const seen = new Set();
