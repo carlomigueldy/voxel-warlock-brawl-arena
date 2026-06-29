@@ -24,6 +24,7 @@ export class UI {
       lobbyStatus: $("lobby-status"),
       roundInfo: $("round-info"), timer: $("timer"),
       scoreboard: $("scoreboard"), chargeBar: $("charge-bar"),
+      hazardWarning: $("hazard-warning"),
       centerMsg: $("center-msg"), touch: $("touch-controls"),
       abilityBar: $("ability-bar"),
       btnSfx: $("btn-sfx"), btnMusic: $("btn-music"),
@@ -599,6 +600,11 @@ export class UI {
     const me = snapshot.players.find((p) => p.id === localId);
     const pct = me ? Math.min(100, (me.c / CFG.CHARGE_MAX) * 100) : 0;
     this.el.chargeBar.style.width = pct + "%";
+    if (this.el.hazardWarning) {
+      const hazardTime = me?.hz || 0;
+      this.el.hazardWarning.classList.toggle("hidden", hazardTime <= 0);
+      this.el.hazardWarning.textContent = hazardTime > 0 ? `HAZARD ${hazardTime.toFixed(1)}s` : "";
+    }
 
     // Center messages.
     if (snapshot.phase === "countdown") {

@@ -428,6 +428,11 @@ html, body {
   border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
 }
 #charge-bar { width: 0%; height: 100%; background: linear-gradient(90deg, var(--arcane), var(--ember)); transition: width 0.1s; }
+#hazard-warning {
+  position: absolute; bottom: 54px; left: 50%; transform: translateX(-50%);
+  background: rgba(255,90,60,0.86); color: #fff; padding: 7px 14px; border-radius: 999px;
+  font-size: 14px; font-weight: bold; letter-spacing: .5px; text-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
 .center-msg {
   position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%);
   font-family: var(--font-display); font-size: clamp(24px, 5vw, 40px); text-align: center;
