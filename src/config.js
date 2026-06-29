@@ -69,30 +69,33 @@ export const CFG = {
   MAP: {
     // Placement spans out to this fraction of the round's STARTING radius, so
     // high grounds and props populate the whole map rather than just the centre.
-    PLACEMENT_RADIUS_FRAC: 0.92,
+    PLACEMENT_RADIUS_FRAC: 0.96,
 
     // Plateaus — elevated sub-platforms (high ground) reachable via ramps.
-    // Larger and more numerous so the map has real elevated land area.
-    PLATEAU_COUNT_MIN:  4,
-    PLATEAU_COUNT_MAX:  6,
+    // Usually a single big high ground; occasionally a second, placed far from
+    // the first so the two command opposite parts of the map.
+    PLATEAU_BASE_COUNT:    1,    // always at least this many
+    PLATEAU_SECOND_CHANCE: 0.2,  // probability of a 2nd plateau
+    PLATEAU_MIN_SEPARATION: 14,  // min distance between two plateau centres
     PLATEAU_HEIGHT_MIN: 1.5,   // world units above PLATFORM_TOP
     PLATEAU_HEIGHT_MAX: 2.5,
-    PLATEAU_W_MIN:      3.0,   // full width  (x extent)
+    PLATEAU_W_MIN:      3.5,   // full width  (x extent)
     PLATEAU_W_MAX:      6.0,
-    PLATEAU_D_MIN:      3.0,   // full depth  (z extent)
+    PLATEAU_D_MIN:      3.5,   // full depth  (z extent)
     PLATEAU_D_MAX:      6.0,
     PLATEAU_CLEARANCE:  1.0,   // minimum gap between plateau footprints
 
-    // Obstacle counts per type [min, max] — raised since they now spread over
-    // the full map area rather than clustering at the centre.
-    OBS_TREE_MIN:        4,  OBS_TREE_MAX:        6,
-    OBS_STONE_MIN:       3,  OBS_STONE_MAX:       5,
-    OBS_COLUMN_MIN:      2,  OBS_COLUMN_MAX:      4,
-    OBS_DEBRIS_MIN:      3,  OBS_DEBRIS_MAX:      6,
-    OBS_WALL_MIN:        2,  OBS_WALL_MAX:        4,
-    OBS_BOULDER_MIN:     2,  OBS_BOULDER_MAX:     4,
-    OBS_DEADGIANT_MIN:   1,  OBS_DEADGIANT_MAX:   2,
-    OBS_DRAGONBONES_MIN: 1,  OBS_DRAGONBONES_MAX: 2,
+    // Obstacle counts per type [min, max] — kept low and spaced out (OBS_MIN_GAP)
+    // so cover reads as scattered landmarks, not a dense maze.
+    OBS_MIN_GAP:         3.0,  // minimum gap between obstacle edges
+    OBS_TREE_MIN:        1,  OBS_TREE_MAX:        3,
+    OBS_STONE_MIN:       1,  OBS_STONE_MAX:       2,
+    OBS_COLUMN_MIN:      1,  OBS_COLUMN_MAX:      2,
+    OBS_DEBRIS_MIN:      1,  OBS_DEBRIS_MAX:      2,
+    OBS_WALL_MIN:        1,  OBS_WALL_MAX:        2,
+    OBS_BOULDER_MIN:     1,  OBS_BOULDER_MAX:     2,
+    OBS_DEADGIANT_MIN:   0,  OBS_DEADGIANT_MAX:   1,
+    OBS_DRAGONBONES_MIN: 0,  OBS_DRAGONBONES_MAX: 1,
   },
 
   // --- Bolt (the core weapon) ---

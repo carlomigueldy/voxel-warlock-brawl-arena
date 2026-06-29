@@ -36,12 +36,28 @@ test("generateMap returns an object with seed, worldId, plateaus, and obstacles"
   assert.ok(Array.isArray(layout.obstacles), "obstacles must be an array");
 });
 
-test("plateau count is within the configured range", () => {
+test("plateau count is within the configured range (base, optional +1)", () => {
+  const maxCount = CFG.MAP.PLATEAU_BASE_COUNT + 1;
   assert.ok(
     layout.plateaus.length >= 0 &&
-    layout.plateaus.length <= CFG.MAP.PLATEAU_COUNT_MAX,
-    `plateau count ${layout.plateaus.length} out of range`
+    layout.plateaus.length <= maxCount,
+    `plateau count ${layout.plateaus.length} exceeds ${maxCount}`
   );
+});
+
+test("two high grounds, when present, are far apart", () => {
+  // Scan many seeds; whenever a layout yields two plateaus they must respect
+  // PLATEAU_MIN_SEPARATION so they sit on opposite parts of the map.
+  for (let s = 0; s < 200; s++) {
+    const lay = generateMap(WORLD, RADIUS, s);
+    if (lay.plateaus.length >= 2) {
+      const [a, b] = lay.plateaus;
+      assert.ok(
+        Math.hypot(a.x - b.x, a.z - b.z) >= CFG.MAP.PLATEAU_MIN_SEPARATION - 1e-6,
+        `seed ${s}: plateaus too close (${Math.hypot(a.x - b.x, a.z - b.z).toFixed(1)})`
+      );
+    }
+  }
 });
 
 test("obstacle array is non-empty (some objects always placed)", () => {
@@ -300,11 +316,12 @@ test("CFG.ROUND.SHRINK_START_DELAY was raised above the old 6 s value", () => {
 
 test("CFG.MAP contains all required tunable keys", () => {
   const required = [
-    "PLATEAU_COUNT_MIN","PLATEAU_COUNT_MAX",
+    "PLACEMENT_RADIUS_FRAC",
+    "PLATEAU_BASE_COUNT","PLATEAU_SECOND_CHANCE","PLATEAU_MIN_SEPARATION",
     "PLATEAU_HEIGHT_MIN","PLATEAU_HEIGHT_MAX",
     "PLATEAU_W_MIN","PLATEAU_W_MAX",
     "PLATEAU_D_MIN","PLATEAU_D_MAX",
-    "PLATEAU_CLEARANCE",
+    "PLATEAU_CLEARANCE","OBS_MIN_GAP",
     "OBS_TREE_MIN","OBS_TREE_MAX",
     "OBS_STONE_MIN","OBS_STONE_MAX",
     "OBS_COLUMN_MIN","OBS_COLUMN_MAX",

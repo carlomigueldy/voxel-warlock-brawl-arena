@@ -103,10 +103,12 @@ export function generateMap(worldId, radius, seed) {
     return true;
   }
 
-  // True when a circle (x,z,r) clears all already-placed circles by ≥ 0.5 units.
+  // True when a circle (x,z,r) clears all already-placed circles by the
+  // configured minimum gap (keeps obstacles spaced out, not bunched).
   function circleClear(x, z, r, placed) {
+    const gap = m.OBS_MIN_GAP ?? 0.5;
     for (const p of placed) {
-      if (Math.hypot(x - p.x, z - p.z) < r + p.r + 0.5) return false;
+      if (Math.hypot(x - p.x, z - p.z) < r + p.r + gap) return false;
     }
     return true;
   }
@@ -127,7 +129,8 @@ export function generateMap(worldId, radius, seed) {
   // ------------------------------------------------------------------
   // 1. Plateaus
   // ------------------------------------------------------------------
-  const plateauCount = randInt(rng, m.PLATEAU_COUNT_MIN, m.PLATEAU_COUNT_MAX);
+  // Usually one high ground; a small chance of a second placed far away.
+  const plateauCount = m.PLATEAU_BASE_COUNT + (rng() < m.PLATEAU_SECOND_CHANCE ? 1 : 0);
   const plateaus     = [];
   const placed_rects = []; // { x, z, hw, hd } — for clearance bookkeeping
 
@@ -151,6 +154,8 @@ export function generateMap(worldId, radius, seed) {
 
       if (!isValidCenter(px, pz)) continue;
       if (!rectClear(px, pz, hw, hd, placed_rects)) continue;
+      // Keep multiple high grounds far apart so they sit on opposite sides.
+      if (placed_rects.some((p) => Math.hypot(px - p.x, pz - p.z) < m.PLATEAU_MIN_SEPARATION)) continue;
 
       const height = randRange(rng, m.PLATEAU_HEIGHT_MIN, m.PLATEAU_HEIGHT_MAX);
 
