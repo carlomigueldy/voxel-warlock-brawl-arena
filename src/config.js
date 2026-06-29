@@ -98,6 +98,27 @@ export const CFG = {
     OBS_DRAGONBONES_MIN: 0,  OBS_DRAGONBONES_MAX: 1,
   },
 
+  // Obstacle type registry — defines every toggleable map-object category.
+  // `id` must match the `type` strings in OBS_SPECS (mapgen.js); `label` is
+  // the human-readable name shown in the host settings UI.
+  // Order here controls the order they appear in the settings panel.
+  OBSTACLE_TYPES: [
+    { id: "tree",        label: "Trees" },
+    { id: "stone",       label: "Rocks" },
+    { id: "column",      label: "Columns" },
+    { id: "deadGiant",   label: "Giant Bodies" },
+    { id: "dragonBones", label: "Dragon Bones" },
+    { id: "debris",      label: "Debris" },
+    { id: "wall",        label: "Walls" },
+    { id: "boulder",     label: "Boulders" },
+  ],
+  // Host default: every obstacle type is enabled.  Keys must cover every id in
+  // OBSTACLE_TYPES so the UI and sim start from a fully-populated state.
+  DEFAULT_OBSTACLE_TOGGLES: {
+    tree: true, stone: true, column: true, deadGiant: true,
+    dragonBones: true, debris: true, wall: true, boulder: true,
+  },
+
   // --- Bolt (the core weapon) ---
   BOLT_SPEED: 26,            // units/sec
   BOLT_RADIUS: 0.45,

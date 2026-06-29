@@ -338,4 +338,161 @@ test("CFG.MAP contains all required tunable keys", () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// CFG.OBSTACLE_TYPES and CFG.DEFAULT_OBSTACLE_TOGGLES registry sanity
+// ---------------------------------------------------------------------------
+
+test("CFG.OBSTACLE_TYPES is an ordered array of 8 entries with id and label", () => {
+  assert.ok(Array.isArray(CFG.OBSTACLE_TYPES), "OBSTACLE_TYPES must be an array");
+  assert.strictEqual(CFG.OBSTACLE_TYPES.length, 8, "expected exactly 8 obstacle type entries");
+  const expected = ["tree", "stone", "column", "deadGiant", "dragonBones", "debris", "wall", "boulder"];
+  for (let i = 0; i < expected.length; i++) {
+    assert.strictEqual(CFG.OBSTACLE_TYPES[i].id, expected[i],
+      `OBSTACLE_TYPES[${i}].id should be "${expected[i]}", got "${CFG.OBSTACLE_TYPES[i].id}"`);
+    assert.ok(typeof CFG.OBSTACLE_TYPES[i].label === "string" && CFG.OBSTACLE_TYPES[i].label.length > 0,
+      `OBSTACLE_TYPES[${i}].label must be a non-empty string`);
+  }
+});
+
+test("CFG.DEFAULT_OBSTACLE_TOGGLES maps every OBSTACLE_TYPES id to true", () => {
+  assert.ok(typeof CFG.DEFAULT_OBSTACLE_TOGGLES === "object" && CFG.DEFAULT_OBSTACLE_TOGGLES !== null,
+    "DEFAULT_OBSTACLE_TOGGLES must be an object");
+  for (const { id } of CFG.OBSTACLE_TYPES) {
+    assert.strictEqual(CFG.DEFAULT_OBSTACLE_TOGGLES[id], true,
+      `DEFAULT_OBSTACLE_TOGGLES["${id}"] must be true`);
+  }
+  // No extra keys beyond the 8 registered ids
+  assert.strictEqual(Object.keys(CFG.DEFAULT_OBSTACLE_TOGGLES).length, CFG.OBSTACLE_TYPES.length,
+    "DEFAULT_OBSTACLE_TOGGLES must not have extra keys beyond the 8 registered obstacle types");
+});
+
+// ---------------------------------------------------------------------------
+// Toggle feature: disabling an obstacle type removes it from the output
+// ---------------------------------------------------------------------------
+
+test("disabling 'tree' yields zero tree obstacles and non-zero other obstacles", () => {
+  const lay = generateMap(WORLD, RADIUS, SEED, { tree: false });
+  const trees = lay.obstacles.filter((o) => o.type === "tree");
+  assert.strictEqual(trees.length, 0, "no tree obstacles expected when tree is disabled");
+  const others = lay.obstacles.filter((o) => o.type !== "tree");
+  assert.ok(others.length > 0, "at least one non-tree obstacle must remain when only trees are disabled");
+});
+
+test("disabling 'stone' yields zero stone obstacles and non-zero other obstacles", () => {
+  const lay = generateMap(WORLD, RADIUS, SEED, { stone: false });
+  const stones = lay.obstacles.filter((o) => o.type === "stone");
+  assert.strictEqual(stones.length, 0, "no stone obstacles expected when stone is disabled");
+  const others = lay.obstacles.filter((o) => o.type !== "stone");
+  assert.ok(others.length > 0, "at least one non-stone obstacle must remain when only stones are disabled");
+});
+
+test("disabling multiple types removes all of them, leaves the rest", () => {
+  const lay = generateMap(WORLD, RADIUS, SEED, { tree: false, column: false, debris: false });
+  const disabled = lay.obstacles.filter((o) => ["tree", "column", "debris"].includes(o.type));
+  assert.strictEqual(disabled.length, 0, "disabled types must not appear in the output");
+  const enabled = lay.obstacles.filter((o) => !["tree", "column", "debris"].includes(o.type));
+  assert.ok(enabled.length > 0, "enabled types must still produce obstacles");
+});
+
+test("same seed + same toggle set is deterministic (disabling a type shifts later types' RNG stream)", () => {
+  // Skipping a disabled type before its RNG draws means subsequent types see a
+  // different stream — enabled types DO change position relative to a fully-enabled
+  // run.  The contract only guarantees intra-run determinism: identical seed +
+  // identical toggle set always produces an identical layout.  That is all
+  // multiplayer needs (clients render the host-broadcast mapLayout).
+  const a = generateMap(WORLD, RADIUS, SEED, { stone: false });
+  const b = generateMap(WORLD, RADIUS, SEED, { stone: false });
+  assert.deepStrictEqual(a, b, "same seed + same toggles must produce an identical layout on every call");
+
+  // Verify the cross-type shift is real: a run with stone disabled must differ
+  // from a fully-enabled run (for this seed, other types land in new positions).
+  const full = generateMap(WORLD, RADIUS, SEED);
+  const fullNonStone = full.obstacles.filter((o) => o.type !== "stone");
+  const toggledNonStone = a.obstacles.filter((o) => o.type !== "stone");
+  // We cannot guarantee they differ for every possible seed, but for SEED they do.
+  // If this assertion ever fails, choose a different SEED constant at the top of
+  // this file — it does NOT indicate a code regression.
+  assert.notDeepStrictEqual(
+    toggledNonStone,
+    fullNonStone,
+    "disabling stone shifts later types' positions — cross-type positions are NOT preserved (expected)"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Back-compat: all-enabled matches the no-arg default
+// ---------------------------------------------------------------------------
+
+test("all-enabled (DEFAULT_OBSTACLE_TOGGLES) produces the same layout as no enabledObstacles arg", () => {
+  const withDefaults = generateMap(WORLD, RADIUS, SEED, CFG.DEFAULT_OBSTACLE_TOGGLES);
+  const withNoArg    = generateMap(WORLD, RADIUS, SEED);
+  assert.deepStrictEqual(withDefaults, withNoArg,
+    "passing DEFAULT_OBSTACLE_TOGGLES must be byte-for-byte identical to omitting the 4th arg");
+});
+
+test("all-enabled back-compat holds across several seeds", () => {
+  for (const s of [0, 7, 100, 999]) {
+    const withDefaults = generateMap(WORLD, RADIUS, s, CFG.DEFAULT_OBSTACLE_TOGGLES);
+    const withNoArg    = generateMap(WORLD, RADIUS, s);
+    assert.deepStrictEqual(withDefaults, withNoArg,
+      `seed ${s}: DEFAULT_OBSTACLE_TOGGLES must match omitted 4th arg`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Toggle determinism: same seed + same toggle set => identical output
+// ---------------------------------------------------------------------------
+
+test("toggle determinism: same seed and {tree:false} always produce identical layouts", () => {
+  const a = generateMap(WORLD, RADIUS, SEED, { tree: false });
+  const b = generateMap(WORLD, RADIUS, SEED, { tree: false });
+  assert.deepStrictEqual(a, b, "same seed and same toggles must produce identical layouts");
+});
+
+test("toggle determinism holds for multiple toggle combinations and seeds", () => {
+  const cases = [
+    { toggles: { tree: false, stone: false }, seeds: [1, 42, 999] },
+    { toggles: { wall: false, boulder: false, debris: false }, seeds: [0, 7] },
+    { toggles: { deadGiant: false, dragonBones: false }, seeds: [13, 77] },
+  ];
+  for (const { toggles, seeds } of cases) {
+    for (const s of seeds) {
+      const a = generateMap(WORLD, RADIUS, s, toggles);
+      const b = generateMap(WORLD, RADIUS, s, toggles);
+      assert.deepStrictEqual(a, b,
+        `seed ${s} with toggles ${JSON.stringify(toggles)}: layout must be deterministic`);
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Empty / undefined enabledObstacles => full set may spawn (no regression)
+// ---------------------------------------------------------------------------
+
+test("empty object enabledObstacles ({}) allows all 8 types to spawn (no regression)", () => {
+  // With an empty toggles object, no type has enabledObstacles[type] === false,
+  // so every OBS_SPEC is processed normally — the layout must equal the no-arg run.
+  const withEmpty = generateMap(WORLD, RADIUS, SEED, {});
+  const withNoArg = generateMap(WORLD, RADIUS, SEED);
+  assert.deepStrictEqual(withEmpty, withNoArg,
+    "passing {} as enabledObstacles must be identical to omitting the 4th arg");
+});
+
+test("undefined enabledObstacles (omitted) allows all types to spawn (no regression)", () => {
+  // generateMap defaults to {} when the 4th arg is omitted; this verifies the
+  // call without any explicit toggle argument still produces a full obstacle set.
+  const lay = generateMap(WORLD, RADIUS, SEED);
+  const types = new Set(lay.obstacles.map((o) => o.type));
+  // Trees and stones always have min count >= 1, so they must appear.
+  assert.ok(types.has("tree"),  "tree obstacles must spawn when enabledObstacles is omitted");
+  assert.ok(types.has("stone"), "stone obstacles must spawn when enabledObstacles is omitted");
+});
+
+test("passing undefined explicitly behaves the same as omitting the 4th arg", () => {
+  const a = generateMap(WORLD, RADIUS, SEED, undefined);
+  const b = generateMap(WORLD, RADIUS, SEED);
+  assert.deepStrictEqual(a, b,
+    "generateMap(w,r,s,undefined) must equal generateMap(w,r,s)");
+});
+
 console.log(`\n${passed} map-gen checks passed.`);
