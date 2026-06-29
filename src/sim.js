@@ -380,6 +380,7 @@ export class Simulation {
         const d = Math.hypot(b.x - rune.x, b.z - rune.z);
         if (d <= CFG.RUNE_RADIUS + CFG.BOLT_RADIUS) {
           destroyed = true;
+          b.dead = true;
           this.events.push({ type: "runeDestroyed", spell: rune.spell, by: b.ownerId, x: rune.x, z: rune.z });
           break;
         }
@@ -387,6 +388,7 @@ export class Simulation {
       if (!destroyed) remaining.push(rune);
     }
     this.runes = remaining;
+    this.bolts = this.bolts.filter((b) => !b.dead);
   }
 
   resolveRunePickups() {

@@ -88,7 +88,10 @@ export class Player {
   }
 
   acquireSpell(spellId) {
-    if (SPELLS[spellId]) this.spells.add(spellId);
+    if (SPELLS[spellId]) {
+      this.spells.add(spellId);
+      this.cooldowns[spellId] = 0;
+    }
   }
 
   removeSpell(spellId) {

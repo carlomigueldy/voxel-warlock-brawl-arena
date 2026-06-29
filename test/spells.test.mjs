@@ -369,4 +369,30 @@ test("destroying a rune emits a runeDestroyed event", () => {
     "no runeDestroyed event emitted");
 });
 
+test("destroying a rune consumes the projectile", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = -10; a.z = -10; b.x = 10; b.z = 10;
+  sim.runes = [{ id: 8, spell: "gravity", x: 0, z: 0 }];
+  sim.bolts = [new Bolt("a", 0, 0, 0, 0xffffff)];
+  sim.step(1 / CFG.TICK_RATE);
+  assert.strictEqual(sim.bolts.length, 0, "projectile survived after destroying a rune");
+});
+
+test("reacquiring a consumed rune ability clears its stale cooldown", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  a.acquireSpell("teleport");
+  a.x = 0; a.z = 0;
+  cast(sim, "a", "teleport", 5, 0);
+  a.acquireSpell("teleport");
+  assert.strictEqual(a.canCast("teleport"), true, "reacquired teleport should be ready");
+});
+
 console.log(`\n${passed} spellbook tests passed.`);
