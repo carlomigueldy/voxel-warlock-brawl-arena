@@ -2,6 +2,7 @@
 // Run with: node test/sim.test.mjs
 import assert from "node:assert";
 import { Simulation, PHASE } from "../src/sim.js";
+import { Bolt } from "../src/bolt.js";
 import { CFG } from "../src/config.js";
 
 let passed = 0;
@@ -141,6 +142,31 @@ test("opposing projectiles cancel each other without damaging players", () => {
   assert.strictEqual(a.vx, 0, "caster A should not receive knockback");
   assert.strictEqual(b.vx, 0, "caster B should not receive knockback");
   assert.ok(sawClash, "missing projectile clash event");
+});
+
+test("fast opposing projectiles clash even when they cross within a single tick", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  const b = sim.players.get("b");
+  // Park casters far apart and out of the projectiles' path so they can't be hit.
+  a.x = 0; a.z = 12; a.vx = 0; a.vz = 0;
+  b.x = 0; b.z = -12; b.vx = 0; b.vz = 0;
+  // Two near-head-on bolts on crossing paths with a 0.62 lateral offset. Their
+  // geometric closest approach (0.62) is well inside the clash diameter (0.9),
+  // but at full BOLT_SPEED they swap sides between ticks, so a point-overlap
+  // check sampled only at tick boundaries never sees them within range.
+  sim.bolts.push(new Bolt("a", -4, 0, 0, 0xffffff));
+  sim.bolts.push(new Bolt("b", 4, 0.62, Math.PI, 0xffffff));
+  let sawClash = false;
+  for (let t = 0; t < 0.2; t += 1 / CFG.TICK_RATE) {
+    sim.step(1 / CFG.TICK_RATE);
+    sawClash ||= sim.events.some((ev) => ev.type === "projectileClash");
+  }
+  assert.ok(sawClash, "fast crossing projectiles tunneled without clashing");
+  assert.strictEqual(sim.bolts.length, 0, "tunneled projectiles were not destroyed");
 });
 
 test("charge increases knockback on subsequent hits (Smash-style)", () => {
