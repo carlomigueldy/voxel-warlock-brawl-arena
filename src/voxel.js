@@ -2,6 +2,7 @@
 // blocky aesthetic, merged where possible to keep draw calls down.
 import * as THREE from "three";
 import { CFG, getArenaWorld, getArenaHazard, isOnArenaWorld } from "./config.js";
+import { CastAnimator } from "./animations.js";
 
 function box(w, h, d, color, x = 0, y = 0, z = 0, flat = true) {
   const geo = new THREE.BoxGeometry(w, h, d);
@@ -80,6 +81,10 @@ export function buildWarlock(color) {
     legL: hipL, legR: hipR,
   };
   g.userData.anim = { phase: 0, cast: 0, fall: 0 };
+  // Body-cast archetype overlay (attack/slam/dash/buff/channel), shared with the
+  // GLB rig via the same CastAnimator state machine.
+  g.userData.castAnim = new CastAnimator();
+  g.userData.triggerCast = (archetype) => g.userData.castAnim.trigger(archetype);
   g.scale.setScalar(0.9);
   return g;
 }
@@ -133,6 +138,48 @@ export function animateWarlock(group, state) {
   rig.neck.rotation.x = _lerp(0, -0.25, cast) - lean * 0.5;
   rig.hat.rotation.z = Math.sin(time * 2 + ph * 0.3) * 0.07;
   rig.hat.rotation.x = swing * 0.1;
+
+  // Body-cast archetype overlay on top of the locomotion pose.
+  const castAnim = group.userData.castAnim;
+  if (castAnim) {
+    castAnim.update(dt);
+    applyVoxelCastOverlay(rig, castAnim, time);
+  }
+}
+
+// Per-archetype arm/spine emphasis for the voxel fallback warlock, blended in by
+// the CastAnimator weight so casts read distinctly from movement.
+function applyVoxelCastOverlay(rig, cast, time) {
+  const w = cast.weight;
+  if (w <= 0.0001 || !cast.archetype) return;
+  switch (cast.archetype) {
+    case "attack": // both arms thrust forward
+      rig.armL.rotation.x += -2.0 * w;
+      rig.armR.rotation.x += -2.0 * w;
+      rig.spine.rotation.x += 0.2 * w;
+      break;
+    case "slam": // arms overhead then down
+      rig.armL.rotation.x += (-2.6 + Math.sin(time * 20) * 0.3) * w;
+      rig.armR.rotation.x += (-2.6 + Math.sin(time * 20) * 0.3) * w;
+      rig.spine.rotation.x += 0.3 * w;
+      break;
+    case "dash": // crouched lunge, arms back
+      rig.armL.rotation.x += 0.9 * w;
+      rig.armR.rotation.x += 0.9 * w;
+      rig.spine.rotation.x += 0.4 * w;
+      break;
+    case "buff": // arms-up flourish
+      rig.armL.rotation.x += -2.8 * w;
+      rig.armR.rotation.x += -2.8 * w;
+      rig.armL.rotation.z += -0.6 * w;
+      rig.armR.rotation.z += 0.6 * w;
+      break;
+    case "channel": // braced pull, lean back
+      rig.armL.rotation.x += -1.4 * w;
+      rig.armR.rotation.x += -1.4 * w;
+      rig.spine.rotation.x += -0.25 * w;
+      break;
+  }
 }
 
 // A glowing projectile. `kind` lets each spell get a distinct silhouette while

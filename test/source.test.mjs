@@ -54,9 +54,20 @@ test("disconnect handling sends the host back to lobby when a match cannot conti
 
 test("generated character asset URLs resolve relative to the character module", () => {
   const character = fs.readFileSync("src/character.js", "utf8");
-  assert.match(character, /new URL\("\.\.\/assets\/warlock-player-rigged\.glb", import\.meta\.url\)\.href/);
-  assert.match(character, /new URL\("\.\.\/assets\/warlock-player-walking\.glb", import\.meta\.url\)\.href/);
-  assert.match(character, /new URL\("\.\.\/assets\/warlock-player-running\.glb", import\.meta\.url\)\.href/);
+  // Character-aware loader resolves rigged + walk + run GLBs per selectable
+  // character relative to the module.
+  assert.match(character, /new URL\(p, import\.meta\.url\)\.href/);
+  assert.match(character, /assets\/characters\/ember-warlock-rigged\.glb/);
+  assert.match(character, /assets\/characters\/ember-warlock-walking\.glb/);
+  assert.match(character, /assets\/characters\/ember-warlock-running\.glb/);
+});
+
+test("character roster exposes four rigged voxel characters", () => {
+  const character = fs.readFileSync("src/character.js", "utf8");
+  assert.match(character, /export const CHARACTER_ASSETS/);
+  for (const id of ["ember", "frost", "storm", "moss"]) {
+    assert.match(character, new RegExp(`${id}:`), `roster must include ${id}`);
+  }
 });
 
 test("generated character model is scaled to the simulation player height", () => {
@@ -91,10 +102,91 @@ test("generated character label height follows simulation player height", () => 
   assert.match(renderer, /CFG\.PLAYER_HEIGHT \+ 0\.55/);
 });
 
+test("renderer triggers cast animations from simulation events", () => {
+  const renderer = fs.readFileSync("src/renderer.js", "utf8");
+  assert.match(renderer, /archetypeForEvent/);
+  // the cast trigger must be applied to the resolved caster's mesh
+  assert.match(renderer, /triggerCast|playCast/);
+});
+
+test("character GLB instances accept a cast archetype trigger", () => {
+  const character = fs.readFileSync("src/character.js", "utf8");
+  assert.match(character, /CastAnimator/);
+  assert.match(character, /triggerCast/);
+});
+
+test("character rig loads per-character walk and run animation clips", () => {
+  const character = fs.readFileSync("src/character.js", "utf8");
+  assert.match(character, /walk/i);
+  assert.match(character, /run/i);
+});
+
+test("voxel fallback warlock supports cast archetype overlays", () => {
+  const voxel = fs.readFileSync("src/voxel.js", "utf8");
+  assert.match(voxel, /castArchetype|triggerCast/);
+});
+
+test("renderer passes falling and time to GLB character animations", () => {
+  const renderer = fs.readFileSync("src/renderer.js", "utf8");
+  const match = renderer.match(/if \(char\) \{\s*char\.update\(\{([\s\S]*?)\}\);\s*\} else/);
+  assert.ok(match, "could not find GLB character update block");
+  assert.match(match[1], /falling: !!e\.target\.f/);
+  assert.match(match[1], /time: t/);
+});
+
+test("simulation emits cast events for held-fire auto-attacks", () => {
+  const sim = fs.readFileSync("src/sim.js", "utf8");
+  assert.match(sim, /type: "cast"[\s\S]*spell: "fireball"/);
+});
+
 test("host menu exposes all-abilities-at-start toggle", () => {
   assert.match(html, /id="all-abilities-toggle"/);
   assert.match(ui, /allAbilitiesAtStart/);
   assert.match(main, /allAbilitiesAtStart: options\.allAbilitiesAtStart/);
+});
+
+test("menu exposes a character-select UI with cards and a live preview", () => {
+  assert.match(html, /id="char-cards"/);
+  assert.match(html, /id="char-preview"/);
+  assert.match(ui, /_buildCharacterCards/);
+  assert.match(ui, /CFG\.CHARACTERS/);
+});
+
+test("config declares four selectable characters and a default", () => {
+  assert.ok(Array.isArray(CFG.CHARACTERS) && CFG.CHARACTERS.length === 4, "expected 4 selectable characters");
+  const ids = CFG.CHARACTERS.map((c) => c.id).sort();
+  assert.deepStrictEqual(ids, ["ember", "frost", "moss", "storm"]);
+  assert.ok(CFG.CHARACTERS.some((c) => c.id === CFG.DEFAULT_CHARACTER), "default character must be in the roster");
+});
+
+test("character ids match the loadable GLB roster", () => {
+  const character = fs.readFileSync("src/character.js", "utf8");
+  for (const c of CFG.CHARACTERS) {
+    assert.match(character, new RegExp(`${c.id}:`), `character.js must define assets for ${c.id}`);
+  }
+});
+
+test("selected character is networked from client to host on join", () => {
+  const net = fs.readFileSync("src/net.js", "utf8");
+  assert.match(net, /type: MSG\.JOIN, name: this\.name, character: this\.character/);
+  assert.match(net, /conn\._character/);
+});
+
+test("host carries each player's character in lobby meta", () => {
+  assert.match(main, /character: getCharacter\(character\)\.id/);
+  assert.match(main, /character: m\.character \|\| CFG\.DEFAULT_CHARACTER/);
+});
+
+test("renderer builds each player's mesh from their selected character", () => {
+  const renderer = fs.readFileSync("src/renderer.js", "utf8");
+  assert.match(renderer, /buildCharacterInstance\(color, character\)/);
+  assert.match(renderer, /characterReady\(character\)/);
+});
+
+test("live character preview module exists and spins the model", () => {
+  const preview = fs.readFileSync("src/preview.js", "utf8");
+  assert.match(preview, /turntable\.rotation\.y \+=/);
+  assert.match(preview, /buildCharacterInstance/);
 });
 
 test("ability bar filters slots by acquired spells from snapshots", () => {
