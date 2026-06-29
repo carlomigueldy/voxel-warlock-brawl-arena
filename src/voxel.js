@@ -59,22 +59,141 @@ export function buildWarlock(color) {
   return g;
 }
 
-// A glowing bolt projectile (icosahedron-ish voxel cluster).
-export function buildBolt(color) {
+// A glowing projectile. `kind` lets each spell get a distinct silhouette while
+// reusing the same voxel-glow recipe (core box + translucent halo + light).
+export function buildBolt(color, kind = "fireball") {
   const g = new THREE.Group();
+  let coreSize = 0.5, haloSize = 0.8, haloOpacity = 0.25;
+  switch (kind) {
+    case "boomerang": coreSize = 0.65; haloSize = 1.0; break;
+    case "homing": coreSize = 0.4; haloSize = 0.9; haloOpacity = 0.35; break;
+    case "bouncer": coreSize = 0.55; haloSize = 0.85; break;
+    case "splitter": coreSize = 0.6; haloSize = 0.95; break;
+  }
   const core = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.5, 0.5),
+    new THREE.BoxGeometry(coreSize, coreSize, coreSize),
     new THREE.MeshBasicMaterial({ color })
   );
   const halo = new THREE.Mesh(
-    new THREE.BoxGeometry(0.8, 0.8, 0.8),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25 })
+    new THREE.BoxGeometry(haloSize, haloSize, haloSize),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: haloOpacity })
   );
   core.rotation.set(0.6, 0.6, 0);
   halo.rotation.set(0.6, 0.6, 0);
   g.add(halo, core);
+  if (kind === "boomerang") {
+    // Cross-blade so it reads as a spinning boomerang.
+    const blade = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 0.18, 0.18),
+      new THREE.MeshBasicMaterial({ color })
+    );
+    g.add(blade);
+  }
   const light = new THREE.PointLight(color, 1.2, 6);
   g.add(light);
+  g.userData.kind = kind;
+  return g;
+}
+
+// A short-lived particle burst (used for hits, casts, impacts). Returns a group
+// with a per-frame `update(dt)` and a `done` flag the renderer polls.
+export function buildBurst(color, opts = {}) {
+  const count = opts.count || 14;
+  const speed = opts.speed || 6;
+  const size = opts.size || 0.18;
+  const life = opts.life || 0.5;
+  const g = new THREE.Group();
+  const parts = [];
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
+  for (let i = 0; i < count; i++) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), mat.clone());
+    const a = Math.random() * Math.PI * 2;
+    const el = (Math.random() - 0.3) * 1.4;
+    const sp = speed * (0.5 + Math.random());
+    m.userData.v = new THREE.Vector3(Math.cos(a) * sp, el * sp * 0.6 + 2, Math.sin(a) * sp);
+    g.add(m); parts.push(m);
+  }
+  g.userData.t = 0;
+  g.userData.life = life;
+  g.userData.done = false;
+  g.userData.update = (dt) => {
+    g.userData.t += dt;
+    const k = g.userData.t / life;
+    for (const m of parts) {
+      m.position.addScaledVector(m.userData.v, dt);
+      m.userData.v.y -= 14 * dt;
+      m.userData.v.multiplyScalar(1 - 1.5 * dt);
+      m.material.opacity = Math.max(0, 1 - k);
+      m.scale.setScalar(Math.max(0.05, 1 - k));
+    }
+    if (k >= 1) g.userData.done = true;
+  };
+  return g;
+}
+
+// A lightning bolt rendered as a jagged emissive tube between two points.
+export function buildLightning(x1, z1, x2, z2, color) {
+  const g = new THREE.Group();
+  const y = 1.2;
+  const start = new THREE.Vector3(x1, y, z1);
+  const end = new THREE.Vector3(x2, y, z2);
+  const segs = 8;
+  const points = [];
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const p = start.clone().lerp(end, t);
+    if (i > 0 && i < segs) {
+      p.x += (Math.random() - 0.5) * 1.2;
+      p.z += (Math.random() - 0.5) * 1.2;
+      p.y += (Math.random() - 0.5) * 0.8;
+    }
+    points.push(p);
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1 }));
+  g.add(line);
+  const light = new THREE.PointLight(color, 2, 12);
+  light.position.copy(start.clone().lerp(end, 0.5));
+  g.add(light);
+  g.userData.t = 0; g.userData.life = 0.3; g.userData.done = false;
+  g.userData.update = (dt) => {
+    g.userData.t += dt;
+    const k = g.userData.t / g.userData.life;
+    line.material.opacity = Math.max(0, 1 - k);
+    light.intensity = Math.max(0, 2 * (1 - k));
+    if (k >= 1) g.userData.done = true;
+  };
+  return g;
+}
+
+// A telegraphed meteor: a falling rock plus a ground ring marker.
+export function buildMeteor(x, z, fall, radius, color) {
+  const g = new THREE.Group();
+  const rock = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 1.6, 1.6),
+    new THREE.MeshLambertMaterial({ color: 0x552211, emissive: 0xff3a1e, emissiveIntensity: 0.6, flatShading: true })
+  );
+  rock.position.set(x, 30, z);
+  g.add(rock);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(radius - 0.3, radius, 32),
+    new THREE.MeshBasicMaterial({ color: 0xff3a1e, transparent: true, opacity: 0.4, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(x, 0.1, z);
+  g.add(ring);
+  const light = new THREE.PointLight(0xff3a1e, 1.5, 14);
+  light.position.set(x, 8, z);
+  g.add(light);
+  g.userData = { x, z, fall, total: fall, rock, ring, light, done: false };
+  g.userData.update = (dt, tLeft) => {
+    const k = 1 - tLeft / g.userData.total; // 0..1 as it falls
+    rock.position.y = 30 * (1 - k);
+    rock.rotation.x += dt * 4; rock.rotation.z += dt * 3;
+    ring.material.opacity = 0.3 + 0.4 * k;
+    ring.scale.setScalar(1 + 0.1 * Math.sin(k * 20));
+    light.position.y = rock.position.y;
+  };
   return g;
 }
 

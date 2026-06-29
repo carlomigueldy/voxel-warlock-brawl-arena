@@ -58,25 +58,78 @@ Any static HTTP server works because the app uses browser-native ES modules and 
 | --- | --- | --- |
 | Move | `WASD` / Arrow keys | Left joystick |
 | Aim | Mouse | Screen/movement direction |
-| Fire Bolt | Left click / `Space` | FIRE button |
+| Fire Fireball | Left click / `Space` | FIRE button |
+| Cast spell | Hotkey (see below) at cursor | Tap ability slot |
+| Cast selected spell | Right click | Tap ability slot |
+
+Click any slot on the on-screen **ability bar** to select it; the bar also shows
+live cooldown sweeps. Toggle **SFX** and **Music** with the buttons top-right.
+
+## Spellbook (full Warlock Brawl handbook)
+
+Every ability and item from the [official handbook](https://www.warlockbrawl.com/handbook)
+is implemented:
+
+| Key | Spell | Effect |
+| --- | --- | --- |
+| `1` | Fireball | Core knockback projectile |
+| `2` | Lightning | Instant chain-lightning to nearby foes |
+| `3` | Boomerang | Projectile that flies out and curves back |
+| `4` | Homing | Projectile that steers toward enemies |
+| `5` | Fire Spray | Cone of fireballs |
+| `6` | Bouncer | Projectile that ricochets off the rim |
+| `7` | Splitter | Projectile that bursts into shards |
+| `8` | Meteor | Telegraphed AoE slam at a target point |
+| `Q` | Teleport | Blink toward the cursor |
+| `E` | Thrust | Launch yourself along your aim |
+| `R` | Swap | Trade places with the nearest enemy |
+| `F` | Wind Walk | Brief stealth + speed |
+| `C` | Rush | Speed + knockback resistance |
+| `V` | Drain | Pull a foe and steal their charge |
+| `X` | Gravity | Pull field at a target point |
+| `Z` | Link | Bind to a foe |
+| `T` | Disable | Silencing projectile |
+| `G` | Shield | Block the next incoming hit |
+| `B` | Time Shift | Rewind to your past position |
+| `H` | Pocket Watch | Reset all your cooldowns |
+
+**Items / passives** (`config.js` → `ITEMS`): Aegis, Cape, Helmet, Warden,
+Shield (knockback resist); Boots of Speed, Stone of Jordan (speed); Blood Sword,
+Mask of Death (lifesteal); Cursed Pendant (glass cannon); Pendant, Stone of
+Jordan (cooldown reduction); Lava Treads (lava grace); Staff of Fireball
+(empowered fireball).
+
+## Audio & visual effects
+
+- **Procedural SFX** synthesized at runtime (no asset files) — every spell, hit,
+  death, countdown and victory cue has its own voice, with stereo panning from
+  world position and a reverb send.
+- **Generative ambient music** pad under the action.
+- **VFX**: per-spell projectile silhouettes, particle bursts, chain-lightning
+  arcs, expanding shockwave rings, falling meteors with ground telegraphs, link
+  tethers, shield bubbles, wind-walk fade, charge-based emissive glow, and
+  impact screen-shake.
 
 ## Project structure
 
 ```text
 src/
-  config.js    Shared constants + wire protocol + room-code helpers
+  config.js    Shared constants + spellbook + items + wire protocol
   sim.js       Pure authoritative simulation, no DOM/Three.js coupling
-  player.js    Warlock state, movement, charge, knockback physics
-  bolt.js      Projectile motion and hit resolution
+  spells.js    Spell-cast resolution for every handbook ability
+  player.js    Warlock state, movement, charge, statuses, item modifiers
+  bolt.js      All projectile kinds (fireball/homing/boomerang/bouncer/...)
   arena.js     Shrinking voxel platform and lava visuals
-  voxel.js     Low-poly mesh builders
-  renderer.js  Three.js scene, camera, interpolation, rendering
-  input.js     Keyboard, mouse, and touch input
+  voxel.js     Low-poly mesh builders + VFX (bursts, lightning, meteors)
+  renderer.js  Three.js scene, camera, interpolation, VFX, screen-shake
+  audio.js     Procedural Web Audio SFX engine + ambient music
+  input.js     Keyboard, mouse, and touch input + spell hotkeys
   net.js       PeerJS host/client networking
-  ui.js        Menu, lobby, HUD, invite link, room code, QR code
+  ui.js        Menu, lobby, HUD, ability bar, audio toggles, QR code
   main.js      App wiring and host/client loops
 test/
   sim.test.mjs     Headless gameplay simulation checks
+  spells.test.mjs  Full spellbook + item system checks
   source.test.mjs  Source-level integration checks
 ```
 

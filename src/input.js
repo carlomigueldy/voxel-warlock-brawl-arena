@@ -1,5 +1,20 @@
 // Local input collection (keyboard/mouse + touch). Produces an input object
 // that gets sent to the host (or applied directly if we are the host).
+import { SPELLS, SPELL_ORDER } from "./config.js";
+
+// Map keyboard codes to spell ids from the spellbook definition.
+function buildKeyMap() {
+  const map = {};
+  for (const id of SPELL_ORDER) {
+    const s = SPELLS[id];
+    if (!s) continue;
+    const k = s.key;
+    if (/^[0-9]$/.test(k)) map["Digit" + k] = id;
+    else if (/^[A-Z]$/.test(k)) map["Key" + k] = id;
+  }
+  return map;
+}
+
 export class InputController {
   constructor(renderer) {
     this.renderer = renderer;
@@ -8,8 +23,14 @@ export class InputController {
     this.mouseY = window.innerHeight / 2;
     this.fire = false;
     this.seq = 0;
+    this.castId = 0;
+    this.pendingCasts = [];     // queued {id, spell, tx, tz} awaiting send
+    this._castWindow = [];      // resend buffer: [{c, ttl}]
+    this.keyMap = buildKeyMap();
     this.touchMove = [0, 0];
     this.touchFire = false;
+    this.onCast = null;          // optional callback (e.g. resume audio)
+    this.selectedSpell = "fireball"; // touch ability selection
 
     this._bind();
   }
@@ -18,6 +39,9 @@ export class InputController {
     addEventListener("keydown", (e) => {
       this.keys[e.code] = true;
       if (e.code === "Space") this.fire = true;
+      // Ability hotkeys queue a cast at the current aim/target point.
+      const spell = this.keyMap[e.code];
+      if (spell && !e.repeat) this.queueCast(spell);
     });
     addEventListener("keyup", (e) => {
       this.keys[e.code] = false;
@@ -27,10 +51,32 @@ export class InputController {
       this.mouseX = e.clientX;
       this.mouseY = e.clientY;
     });
-    addEventListener("mousedown", (e) => { if (e.button === 0) this.fire = true; });
+    addEventListener("mousedown", (e) => {
+      if (e.button === 0) this.fire = true;
+      // Right-click casts the currently selected ability at the cursor.
+      if (e.button === 2) this.queueCast(this.selectedSpell);
+    });
     addEventListener("mouseup", (e) => { if (e.button === 0) this.fire = false; });
+    addEventListener("contextmenu", (e) => e.preventDefault());
 
     this._bindTouch();
+  }
+
+  setSelectedSpell(id) { if (SPELLS[id]) this.selectedSpell = id; }
+
+  // Queue a spell cast aimed at the current cursor's ground point.
+  queueCast(spell) {
+    if (!SPELLS[spell]) return;
+    const pt = this.renderer.screenToPoint
+      ? this.renderer.screenToPoint(this.mouseX, this.mouseY)
+      : null;
+    this.pendingCasts.push({
+      id: ++this.castId,
+      spell,
+      tx: pt ? pt.x : NaN,
+      tz: pt ? pt.z : NaN,
+    });
+    if (this.onCast) this.onCast(spell);
   }
 
   _bindTouch() {
@@ -92,6 +138,15 @@ export class InputController {
     const aim = this.renderer.screenToAim(this.mouseX, this.mouseY);
     const fire = this.fire || this.touchFire;
 
-    return { move: [mx, mz], aim, fire, seq: ++this.seq };
+    // Move new casts into a short resend window. Input is sent unreliably, so we
+    // include each cast in a few consecutive packets; the host dedupes by id.
+    if (this.pendingCasts.length) {
+      for (const c of this.pendingCasts) this._castWindow.push({ c, ttl: 4 });
+      this.pendingCasts = [];
+    }
+    const casts = this._castWindow.map((e) => e.c);
+    this._castWindow = this._castWindow.filter((e) => --e.ttl > 0);
+
+    return { move: [mx, mz], aim, fire, seq: ++this.seq, casts };
   }
 }
