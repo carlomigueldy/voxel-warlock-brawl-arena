@@ -9,6 +9,7 @@ import {
   buildWarlock, buildBolt, animateWarlock,
   buildBurst, buildLightning, buildMeteor, buildRune,
   buildPlateau, buildRamp,
+  buildMobByType, animateMob,
 } from "./voxel.js";
 import { PROP_BUILDERS } from "./props.js";
 import {
@@ -69,6 +70,7 @@ export class GameRenderer {
     this.boltMeshes = new Map();   // id -> group
     this.meteorMeshes = new Map(); // id -> group
     this.runeMeshes = new Map();   // id -> group
+    this.mobMeshes = new Map();    // id -> { group, rx, rz, ry, ra, target, spd }
     this.effects = [];             // transient VFX groups with .userData.update
     this.linkLines = new Map();    // "a|b" -> line
     this.localId = null;
@@ -423,6 +425,29 @@ export class GameRenderer {
       }
     }
 
+    // Mobs — build-if-absent, position from snapshot, prune unseen.
+    const mobSeen = new Set();
+    for (const mob of snapshot.mobs || []) {
+      mobSeen.add(mob.id);
+      let e = this.mobMeshes.get(mob.id);
+      if (!e) {
+        const grp = buildMobByType(mob.type, mob.color || 0xaaaaaa);
+        this.scene.add(grp);
+        e = { group: grp, rx: mob.x, rz: mob.z, ry: mob.y ?? 0, ra: mob.a ?? 0, target: mob, spd: 0 };
+        this.mobMeshes.set(mob.id, e);
+      }
+      e.target = mob;
+      // Scale the foreground health bar to reflect remaining HP.
+      const hb = e.group.userData.healthBar;
+      if (hb && mob.max > 0) hb.scale.x = Math.max(0.001, mob.hp / mob.max);
+    }
+    for (const id of [...this.mobMeshes.keys()]) {
+      if (!mobSeen.has(id)) {
+        this.scene.remove(this.mobMeshes.get(id).group);
+        this.mobMeshes.delete(id);
+      }
+    }
+
     // Link lines between linked warlocks.
     this._updateLinks(snapshot);
 
@@ -595,6 +620,28 @@ export class GameRenderer {
         case "sfx":
           this.audio?.play(ev.sfx, this._panFor(ev.x || 0));
           break;
+        case "mobSpawn":
+          this._addEffect(this._burstAt(ev.x, ev.z, ev.color || 0xaaaaaa, { count: 16, speed: 7, life: 0.6 }));
+          this._addEffect(this._ringPulse(ev.x, ev.z, 2.0, ev.color || 0xaaaaaa));
+          this.audio?.play("whoosh", this._panFor(ev.x));
+          break;
+        case "mobHit":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0xffaa44, { count: 10, speed: 5 }));
+          this.audio?.play("hit", this._panFor(ev.x));
+          this._shake = Math.min(0.4, this._shake + 0.07);
+          break;
+        case "mobAbility":
+          this._addEffect(this._burstAt(ev.x, ev.z, ev.color || 0xff3a1e, { count: 22, speed: 9, life: 0.65 }, 0.6));
+          this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius || 4, ev.color || 0xff3a1e));
+          this.audio?.play("meteorImpact", this._panFor(ev.x));
+          this._shake = Math.min(0.9, this._shake + 0.32);
+          break;
+        case "mobDeath":
+          this._addEffect(this._burstAt(ev.x, ev.z, ev.color || 0xaaaaaa, { count: 30, speed: 9, life: 0.8 }, 1.0));
+          this._addEffect(this._ringPulse(ev.x, ev.z, 3.0, ev.color || 0xffffff));
+          this.audio?.play("death", this._panFor(ev.x));
+          this._shake = Math.min(0.8, this._shake + 0.28);
+          break;
       }
     }
   }
@@ -697,6 +744,34 @@ export class GameRenderer {
     for (const g of this.runeMeshes.values()) {
       g.rotation.y += dt * 1.8;
       if (g.userData.core) g.userData.core.position.y = 0.55 + Math.sin(t * 4) * 0.08;
+    }
+
+    // Interpolate + animate mob meshes.
+    for (const [, e] of this.mobMeshes) {
+      if (!e.target) continue;
+      const prevX = e.rx, prevZ = e.rz;
+      e.rx += (e.target.x - e.rx) * lerp;
+      e.rz += (e.target.z - e.rz) * lerp;
+      e.ry += ((e.target.y ?? 0) - e.ry) * lerp;
+      let da = (e.target.a ?? 0) - e.ra;
+      while (da >  Math.PI) da -= Math.PI * 2;
+      while (da < -Math.PI) da += Math.PI * 2;
+      e.ra += da * lerp;
+
+      e.group.position.set(e.rx, e.ry, e.rz);
+      e.group.rotation.y = -e.ra + Math.PI / 2;
+
+      const inst = Math.hypot(e.rx - prevX, e.rz - prevZ) / dt;
+      e.spd = e.spd + (inst - e.spd) * (1 - Math.exp(-8 * dt));
+
+      animateMob(e.group, {
+        type:     e.target.type,
+        speed:    e.spd,
+        maxSpeed: 5.0,
+        falling:  !!e.target.f,
+        dt,
+        time:     t,
+      });
     }
 
     // Advance transient VFX and cull finished ones.
@@ -831,6 +906,8 @@ export class GameRenderer {
     this.meteorMeshes.clear();
     for (const g of this.runeMeshes.values()) this.scene.remove(g);
     this.runeMeshes.clear();
+    for (const e of this.mobMeshes.values()) this.scene.remove(e.group);
+    this.mobMeshes.clear();
     for (const g of this.effects) this.scene.remove(g);
     this.effects = [];
     for (const l of this.linkLines.values()) this.scene.remove(l);

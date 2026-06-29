@@ -30,6 +30,8 @@ export class UI {
       btnSfx: $("btn-sfx"), btnMusic: $("btn-music"),
       // Custom control shells (native inputs above remain the source of truth).
       abilitiesToggleUi: $("abilities-toggle-ui"),
+      mobsToggleUi: $("mobs-toggle-ui"),
+      mobsToggle: $("mobs-toggle"),
       landSizeUi: $("land-size-ui"),
       arenaWorldUi: $("arena-world-ui"),
       botCountUi: $("bot-count-ui"), botCountValue: $("bot-count-value"),
@@ -59,6 +61,7 @@ export class UI {
   // the source test-suite contracts keep working unchanged.
   _buildCustomControls() {
     this._buildAbilitiesToggle();
+    this._buildMobsToggle();
     this._buildArenaCards();
     this._buildLandSizeSegmented();
     this._buildBotControls();
@@ -67,6 +70,21 @@ export class UI {
   _buildAbilitiesToggle() {
     const btn = this.el.abilitiesToggleUi;
     const native = this.el.allAbilitiesToggle;
+    if (!btn || !native) return;
+    const sync = () => {
+      const on = native.checked;
+      btn.classList.toggle("is-on", on);
+      btn.setAttribute("aria-checked", String(on));
+      const state = btn.querySelector(".rune-toggle-state");
+      if (state) state.textContent = on ? "ON" : "OFF";
+    };
+    btn.addEventListener("click", () => { native.checked = !native.checked; sync(); });
+    sync();
+  }
+
+  _buildMobsToggle() {
+    const btn = this.el.mobsToggleUi;
+    const native = this.el.mobsToggle;
     if (!btn || !native) return;
     const sync = () => {
       const on = native.checked;
@@ -535,7 +553,7 @@ export class UI {
     this.el.btnHost.onclick = () => {
       const name = this._name();
       if (!name) return this.setMenuStatus("Enter a name first.");
-      this.handlers.host?.(name, { allAbilitiesAtStart: this.allAbilitiesAtStart(), character: this.selectedCharacter, ...this.getArenaSettings() });
+      this.handlers.host?.(name, { allAbilitiesAtStart: this.allAbilitiesAtStart(), mobsEnabled: this.mobsEnabled(), character: this.selectedCharacter, ...this.getArenaSettings() });
     };
     this.el.btnJoin.onclick = () => this._tryJoin();
     this.el.joinCode.addEventListener("input", () => {
@@ -562,6 +580,8 @@ export class UI {
   _name() { return this.el.nameInput.value.trim().slice(0, 14); }
 
   allAbilitiesAtStart() { return this.el.allAbilitiesToggle?.checked !== false; }
+
+  mobsEnabled() { return this.el.mobsToggle?.checked !== false; }
 
   getArenaSettings() {
     const arenaWorld = CFG.ARENA_WORLDS.some((world) => world.id === this.el.arenaWorld?.value) ? this.el.arenaWorld.value : CFG.DEFAULT_ARENA_WORLD;
