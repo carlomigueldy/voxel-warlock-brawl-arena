@@ -101,6 +101,18 @@ test("firing spawns a bolt that travels", () => {
   assert.ok(sim.bolts[0].x > bx0, "bolt did not travel");
 });
 
+test("held-fire auto-attacks emit a cast event for animation", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  a.x = 0; a.z = 0; a.aim = 0; a.cooldown = 0;
+  sim.setInput("a", { move: [0, 0], aim: 0, fire: true, seq: 1 });
+  sim.step(1 / CFG.TICK_RATE);
+  assert.ok(sim.events.some((ev) => ev.type === "cast" && ev.spell === "fireball" && ev.id === "a"), "held fire should emit fireball cast event");
+});
+
 test("a bolt hit applies knockback velocity to the victim", () => {
   const sim = new Simulation();
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");

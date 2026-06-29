@@ -83,7 +83,8 @@ export class Host {
     switch (msg.type) {
       case MSG.JOIN:
         conn._playerName = sanitizeName(msg.name);
-        this.callbacks.onPlayerJoin?.(conn.peer, conn._playerName);
+        conn._character = typeof msg.character === "string" ? msg.character : null;
+        this.callbacks.onPlayerJoin?.(conn.peer, conn._playerName, conn._character);
         // Acknowledge with the player's authoritative id.
         conn.send({ type: MSG.WELCOME, id: conn.peer, hostName: this.name });
         break;
@@ -114,8 +115,9 @@ export class Host {
 
 // ---------------- CLIENT ----------------
 export class Client {
-  constructor({ name, code, onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose }) {
+  constructor({ name, code, character, onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose }) {
     this.name = name;
+    this.character = character || null;
     this.code = code.toUpperCase();
     this.hostId = codeToPeerId(this.code);
     this.callbacks = { onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose };
@@ -135,7 +137,7 @@ export class Client {
   _wireConn() {
     this.conn.on("open", () => {
       this.localId = this.peer.id;
-      this.conn.send({ type: MSG.JOIN, name: this.name });
+      this.conn.send({ type: MSG.JOIN, name: this.name, character: this.character });
     });
     this.conn.on("data", (msg) => this._onData(msg));
     this.conn.on("close", () => this.callbacks.onClose?.());
