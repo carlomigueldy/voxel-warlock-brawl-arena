@@ -95,6 +95,25 @@ export function buildBolt(color, kind = "fireball") {
   return g;
 }
 
+export function buildRune(color) {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.9, 0.25, 0.9),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45 })
+  );
+  const core = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.5, 0.5),
+    new THREE.MeshBasicMaterial({ color })
+  );
+  core.position.y = 0.55;
+  core.rotation.set(0.5, 0.5, 0);
+  const light = new THREE.PointLight(color, 1.2, 5);
+  light.position.y = 1.0;
+  g.add(base, core, light);
+  g.userData.core = core;
+  return g;
+}
+
 // A short-lived particle burst (used for hits, casts, impacts). Returns a group
 // with a per-frame `update(dt)` and a `done` flag the renderer polls.
 export function buildBurst(color, opts = {}) {

@@ -10,6 +10,7 @@ export class UI {
     this.el = {
       menu: $("menu"), lobby: $("lobby"), hud: $("hud"),
       nameInput: $("name-input"), btnHost: $("btn-host"),
+      allAbilitiesToggle: $("all-abilities-toggle"),
       joinCode: $("join-code"), btnJoin: $("btn-join"),
       menuStatus: $("menu-status"),
       roomCode: $("room-code"), btnCopyCode: $("btn-copy-code"),
@@ -85,13 +86,16 @@ export class UI {
     if (!this._abilityEls) return;
     const me = snapshot.players.find((p) => p.id === localId);
     const cds = me?.cds || {};
+    const acquired = new Set(me?.spells || SPELL_ORDER);
     for (const id in this._abilityEls) {
-      const { cd } = this._abilityEls[id];
+      const { slot, cd } = this._abilityEls[id];
+      const locked = !acquired.has(id);
       const remain = cds[id] || 0;
       const total = SPELLS[id].cd || 1;
       const pct = Math.max(0, Math.min(100, (remain / total) * 100));
-      cd.style.height = pct + "%";
-      this._abilityEls[id].slot.classList.toggle("ready", remain <= 0);
+      cd.style.height = locked ? "100%" : pct + "%";
+      slot.classList.toggle("locked", locked);
+      slot.classList.toggle("ready", !locked && remain <= 0);
     }
   }
 
@@ -99,7 +103,7 @@ export class UI {
     this.el.btnHost.onclick = () => {
       const name = this._name();
       if (!name) return this.setMenuStatus("Enter a name first.");
-      this.handlers.host?.(name);
+      this.handlers.host?.(name, { allAbilitiesAtStart: this.allAbilitiesAtStart() });
     };
     this.el.btnJoin.onclick = () => this._tryJoin();
     this.el.joinCode.addEventListener("keydown", (e) => {
@@ -121,6 +125,8 @@ export class UI {
   }
 
   _name() { return this.el.nameInput.value.trim().slice(0, 14); }
+
+  allAbilitiesAtStart() { return this.el.allAbilitiesToggle?.checked !== false; }
 
   getBotSettings() {
     return {
