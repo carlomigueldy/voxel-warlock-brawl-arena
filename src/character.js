@@ -168,7 +168,9 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
     const gait = Math.min(1, (info.speed || 0) / maxSpeed);
     let tIdle = 0, tWalk = 0, tRun = 0;
 
-    if (gait < 0.08) {
+    if (info.falling) {
+      tIdle = 1;
+    } else if (gait < 0.08) {
       tIdle = 1;
     } else if (gait < 0.6) {
       const k = (gait - 0.08) / (0.6 - 0.08);

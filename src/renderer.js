@@ -481,6 +481,8 @@ export class GameRenderer {
           speed: e.spd,
           maxSpeed: CFG.MOVE_SPEED,
           charge: c,
+          falling: !!e.target.f,
+          time: t,
           dt,
         });
       } else {

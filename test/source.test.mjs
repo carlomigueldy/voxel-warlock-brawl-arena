@@ -125,6 +125,19 @@ test("voxel fallback warlock supports cast archetype overlays", () => {
   assert.match(voxel, /castArchetype|triggerCast/);
 });
 
+test("renderer passes falling and time to GLB character animations", () => {
+  const renderer = fs.readFileSync("src/renderer.js", "utf8");
+  const match = renderer.match(/if \(char\) \{\s*char\.update\(\{([\s\S]*?)\}\);\s*\} else/);
+  assert.ok(match, "could not find GLB character update block");
+  assert.match(match[1], /falling: !!e\.target\.f/);
+  assert.match(match[1], /time: t/);
+});
+
+test("simulation emits cast events for held-fire auto-attacks", () => {
+  const sim = fs.readFileSync("src/sim.js", "utf8");
+  assert.match(sim, /type: "cast"[\s\S]*spell: "fireball"/);
+});
+
 test("host menu exposes all-abilities-at-start toggle", () => {
   assert.match(html, /id="all-abilities-toggle"/);
   assert.match(ui, /allAbilitiesAtStart/);
