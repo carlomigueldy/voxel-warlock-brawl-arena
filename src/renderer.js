@@ -423,7 +423,7 @@ export class GameRenderer {
   update() {
     const dt = Math.min(0.05, this.clock.getDelta());
     const t = this.clock.elapsedTime;
-    this.arena.update(t);
+    this.arena.update(t, dt);
 
     const lerp = 1 - Math.exp(-18 * dt); // framerate-independent smoothing
 

@@ -3,7 +3,7 @@
 // Owns both the logical radius (used by the simulation) and the visuals.
 import * as THREE from "three";
 import { CFG, getArenaWorld, getArenaHazard, isOnArenaWorld } from "./config.js";
-import { buildPlatform, buildHazard, animateHazard } from "./voxel.js";
+import { buildPlatform, buildHazard, animateHazard, buildHazardDetails, animateHazardDetails } from "./voxel.js";
 
 export class Arena {
   constructor(scene) {
@@ -15,11 +15,13 @@ export class Arena {
     this._builtWorld = null;
     this.platform = null;
     this.lava = null; // current hazard surface (kept as `lava` for callers)
+    this.details = null; // ambient detail props floating over the hazard
     this._buildHazard();
     this.rebuild();
   }
 
-  // (Re)build the themed hazard surface and swap it into the scene.
+  // (Re)build the themed hazard surface (and its ambient detail props) and swap
+  // them into the scene, disposing the previous ones to avoid GPU leaks.
   _buildHazard() {
     this.hazard = getArenaHazard(this.world.id);
     if (this.lava) {
@@ -27,8 +29,17 @@ export class Arena {
       this.lava.geometry?.dispose?.();
       this.lava.material?.dispose?.();
     }
+    if (this.details) {
+      this.scene.remove(this.details);
+      this.details.traverse((o) => {
+        if (o.geometry) o.geometry.dispose?.();
+        if (o.material) o.material.dispose?.();
+      });
+    }
     this.lava = buildHazard(160, CFG.LAVA_Y, this.hazard);
     this.scene.add(this.lava);
+    this.details = buildHazardDetails(160, CFG.LAVA_Y, this.hazard);
+    this.scene.add(this.details);
   }
 
   setWorld(worldId) {
@@ -64,8 +75,9 @@ export class Arena {
     return isOnArenaWorld(this.world.id, this.radius, x, z);
   }
 
-  update(t) {
+  update(t, dt) {
     animateHazard(this.lava, t);
+    animateHazardDetails(this.details, t, dt);
   }
 
   reset(radius = CFG.ARENA_RADIUS, worldId = CFG.DEFAULT_ARENA_WORLD) {

@@ -164,4 +164,30 @@ test("renderer tints ambient glow and fog from the active hazard theme", () => {
   assert.match(renderer, /hazard/i);
 });
 
+test("every hazard declares ambient detail props for immersion", () => {
+  for (const id in CFG.ARENA_HAZARDS) {
+    const hazard = CFG.ARENA_HAZARDS[id];
+    assert.ok(hazard.detail && typeof hazard.detail === "object", `hazard ${id} needs a detail descriptor`);
+    assert.ok(typeof hazard.detail.kind === "string" && hazard.detail.kind.length, `hazard ${id} detail needs a kind`);
+    assert.ok(Number.isInteger(hazard.detail.count) && hazard.detail.count > 0, `hazard ${id} detail needs a positive count`);
+    assert.ok(Number.isFinite(hazard.detail.color), `hazard ${id} detail needs a color`);
+  }
+  const kinds = new Set(Object.values(CFG.ARENA_HAZARDS).map((h) => h.detail.kind));
+  assert.ok(kinds.size >= 4, "hazards should use a variety of detail prop kinds");
+});
+
+test("voxel exposes a theme-driven hazard detail builder and animator", () => {
+  const voxel = fs.readFileSync("src/voxel.js", "utf8");
+  assert.match(voxel, /export function buildHazardDetails/);
+  assert.match(voxel, /export function animateHazardDetails/);
+});
+
+test("arena builds, animates, and disposes hazard detail props", () => {
+  const arena = fs.readFileSync("src/arena.js", "utf8");
+  assert.match(arena, /buildHazardDetails/);
+  assert.match(arena, /animateHazardDetails/);
+  // The detail group must be disposed when the hazard is rebuilt (no leaks).
+  assert.match(arena, /this\.details/);
+});
+
 console.log(`\n${passed} source checks passed.`);

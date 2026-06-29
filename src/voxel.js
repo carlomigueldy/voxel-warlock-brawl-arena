@@ -419,6 +419,99 @@ export function animateHazard(mesh, t) {
   pos.needsUpdate = true;
 }
 
+// Ambient detail props that float above the hazard surface (embers, spray,
+// bubbles, dust, arcane shards). Returns a Group of instanced-ish small meshes,
+// each carrying its own per-particle state. animateHazardDetails advances them
+// and recycles any that rise past their ceiling, so the field loops forever.
+export function buildHazardDetails(size, y, hazard) {
+  const theme = hazard || getArenaHazard(CFG.DEFAULT_ARENA_WORLD);
+  const detail = theme.detail;
+  const g = new THREE.Group();
+  if (!detail) return g;
+
+  const half = size * 0.5;
+  const kind = detail.kind;
+  const color = detail.color ?? theme.color;
+  const baseSize = detail.size ?? 0.25;
+  const rise = detail.rise ?? 4;
+  const ceiling = (detail.ceiling ?? 9);
+
+  // Shards (void) are opaque flat-shaded crystals; everything else is a soft
+  // additive-looking translucent mote.
+  const makeMesh = () => {
+    if (kind === "shards") {
+      return new THREE.Mesh(
+        new THREE.OctahedronGeometry(baseSize),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 })
+      );
+    }
+    return new THREE.Mesh(
+      new THREE.BoxGeometry(baseSize, baseSize, baseSize),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 })
+    );
+  };
+
+  for (let i = 0; i < detail.count; i++) {
+    const m = makeMesh();
+    const px = (Math.random() * 2 - 1) * half * 0.55;
+    const pz = (Math.random() * 2 - 1) * half * 0.55;
+    const startY = y + Math.random() * ceiling;
+    m.position.set(px, startY, pz);
+    m.userData.p = {
+      x: px, z: pz,
+      baseY: y,
+      ceiling,
+      vy: rise * (0.5 + Math.random()),
+      drift: (Math.random() * 2 - 1) * 0.6,
+      phase: Math.random() * Math.PI * 2,
+      spin: (Math.random() * 2 - 1) * 2,
+      size: baseSize,
+    };
+    g.add(m);
+  }
+  g.userData.detail = detail;
+  return g;
+}
+
+// Per-frame motion for the ambient detail props. Each particle rises, drifts,
+// fades near its ceiling, then recycles to the surface — an endless loop.
+export function animateHazardDetails(group, t, dt) {
+  if (!group || !group.children.length) return;
+  const detail = group.userData.detail || {};
+  const kind = detail.kind;
+  const step = Number.isFinite(dt) ? dt : 0.016;
+  for (const m of group.children) {
+    const p = m.userData.p;
+    if (!p) continue;
+    p.vy += 0; // constant rise (kept simple/cheap)
+    m.position.y += p.vy * step;
+
+    // Lateral motion: sway for light motes, gentle bob for bubbles/dust.
+    const sway = Math.sin(t * 1.5 + p.phase) * p.drift;
+    m.position.x = p.x + sway;
+    m.position.z = p.z + Math.cos(t * 1.2 + p.phase) * p.drift * 0.6;
+
+    const climbed = m.position.y - p.baseY;
+    const k = Math.min(1, climbed / p.ceiling);
+    if (m.material) m.material.opacity = Math.max(0, (1 - k) * 0.85);
+
+    if (kind === "shards") {
+      m.rotation.x += p.spin * step;
+      m.rotation.y += p.spin * step * 0.7;
+    } else if (kind === "embers") {
+      // Embers shrink as they cool.
+      m.scale.setScalar(Math.max(0.15, 1 - k));
+    }
+
+    // Recycle once it reaches the ceiling.
+    if (climbed >= p.ceiling) {
+      m.position.y = p.baseY;
+      m.scale.setScalar(1);
+      if (m.material) m.material.opacity = 0.85;
+    }
+  }
+}
+
 // Back-compat aliases (older callers / any external refs).
 export function buildLava(size, y) {
   return buildHazard(size, y, getArenaHazard(CFG.DEFAULT_ARENA_WORLD));

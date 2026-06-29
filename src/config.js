@@ -24,12 +24,22 @@ export const CFG = {
   // animation recipe in voxel.js; `glow` tints the under-light + scene fog so
   // every map reads as its own place. `fog` is the horizon/atmosphere color.
   DEFAULT_ARENA_HAZARD: "lava",
+  // Each hazard also carries a `detail` descriptor: ambient animated props
+  // (embers, spray, bubbles, dust motes, arcane shards) that float over the
+  // surface to sell the environment. `kind` selects the motion recipe in
+  // voxel.js (buildHazardDetails/animateHazardDetails); `count` is capped for
+  // performance and `rise`/`size` tune the look.
   ARENA_HAZARDS: {
-    lava: { id: "lava", name: "Lava Sea", style: "lava", color: 0xff3a1e, glow: 0xff3a1e, fog: 0x1a0b08, amp: 0.4, speed: 1.5 },
-    ocean: { id: "ocean", name: "Ocean", style: "ocean", color: 0x1f7fd6, glow: 0x2a6fd0, fog: 0x0a1622, amp: 0.6, speed: 1.1 },
-    swamp: { id: "swamp", name: "Toxic Swamp", style: "swamp", color: 0x4f7a2a, glow: 0x86d040, fog: 0x121a0c, amp: 0.22, speed: 0.6 },
-    rocks: { id: "rocks", name: "Sharp Rocks", style: "rocks", color: 0x6a5a52, glow: 0x3a2a2a, fog: 0x130f12, amp: 0.05, speed: 0.25, jagged: true },
-    void: { id: "void", name: "Arcane Abyss", style: "void", color: 0xb24cff, glow: 0xc04cff, fog: 0x140a22, amp: 0.5, speed: 0.9 },
+    lava: { id: "lava", name: "Lava Sea", style: "lava", color: 0xff3a1e, glow: 0xff3a1e, fog: 0x1a0b08, amp: 0.4, speed: 1.5,
+      detail: { kind: "embers", count: 70, color: 0xff8a3c, size: 0.3, rise: 7 } },
+    ocean: { id: "ocean", name: "Ocean", style: "ocean", color: 0x1f7fd6, glow: 0x2a6fd0, fog: 0x0a1622, amp: 0.6, speed: 1.1,
+      detail: { kind: "spray", count: 60, color: 0xbfe8ff, size: 0.26, rise: 5 } },
+    swamp: { id: "swamp", name: "Toxic Swamp", style: "swamp", color: 0x4f7a2a, glow: 0x86d040, fog: 0x121a0c, amp: 0.22, speed: 0.6,
+      detail: { kind: "bubbles", count: 45, color: 0xb6f05a, size: 0.34, rise: 2.6 } },
+    rocks: { id: "rocks", name: "Sharp Rocks", style: "rocks", color: 0x6a5a52, glow: 0x3a2a2a, fog: 0x130f12, amp: 0.05, speed: 0.25, jagged: true,
+      detail: { kind: "dust", count: 40, color: 0x9a8a7a, size: 0.18, rise: 1.4 } },
+    void: { id: "void", name: "Arcane Abyss", style: "void", color: 0xb24cff, glow: 0xc04cff, fog: 0x140a22, amp: 0.5, speed: 0.9,
+      detail: { kind: "shards", count: 55, color: 0xd79cff, size: 0.32, rise: 3.4 } },
   },
   VOXEL: 1,                  // voxel size
   LAVA_Y: -4,                // height of the lava plane (death below platform top)
