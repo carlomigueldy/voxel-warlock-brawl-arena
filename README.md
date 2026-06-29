@@ -65,39 +65,50 @@ Any static HTTP server works because the app uses browser-native ES modules and 
 Click any slot on the on-screen **ability bar** to select it; the bar also shows
 live cooldown sweeps. Toggle **SFX** and **Music** with the buttons top-right.
 
-## Spellbook (full Warlock Brawl handbook)
+## Skills (spellbook — full Warlock Brawl handbook)
 
-Every ability and item from the [official handbook](https://www.warlockbrawl.com/handbook)
-is implemented:
+Every skill (ability/spell) and item from the
+[official handbook](https://www.warlockbrawl.com/handbook) is implemented. Each
+skill is bound to a hotkey, has its own cooldown shown on the ability bar, and
+ships with bespoke SFX/VFX. Cast a skill by pressing its key while aiming at the
+cursor, or select it on the ability bar and right-click to place it.
 
-| Key | Spell | Effect |
-| --- | --- | --- |
-| `1` | Fireball | Core knockback projectile |
-| `2` | Lightning | Instant chain-lightning to nearby foes |
-| `3` | Boomerang | Projectile that flies out and curves back |
-| `4` | Homing | Projectile that steers toward enemies |
-| `5` | Fire Spray | Cone of fireballs |
-| `6` | Bouncer | Projectile that ricochets off the rim |
-| `7` | Splitter | Projectile that bursts into shards |
-| `8` | Meteor | Telegraphed AoE slam at a target point |
-| `Q` | Teleport | Blink toward the cursor |
-| `E` | Thrust | Launch yourself along your aim |
-| `R` | Swap | Trade places with the nearest enemy |
-| `F` | Wind Walk | Brief stealth + speed |
-| `C` | Rush | Speed + knockback resistance |
-| `V` | Drain | Pull a foe and steal their charge |
-| `X` | Gravity | Pull field at a target point |
-| `Z` | Link | Bind to a foe |
-| `T` | Disable | Silencing projectile |
-| `G` | Shield | Block the next incoming hit |
-| `B` | Time Shift | Rewind to your past position |
-| `H` | Pocket Watch | Reset all your cooldowns |
+### Active skills
 
-**Items / passives** (`config.js` → `ITEMS`): Aegis, Cape, Helmet, Warden,
-Shield (knockback resist); Boots of Speed, Stone of Jordan (speed); Blood Sword,
-Mask of Death (lifesteal); Cursed Pendant (glass cannon); Pendant, Stone of
-Jordan (cooldown reduction); Lava Treads (lava grace); Staff of Fireball
-(empowered fireball).
+| Key | Skill | Type | Effect |
+| --- | --- | --- | --- |
+| `1` | Fireball | Projectile | Core knockback projectile |
+| `2` | Lightning | Instant | Chain-lightning to nearby foes |
+| `3` | Boomerang | Projectile | Flies out and curves back |
+| `4` | Homing | Projectile | Steers toward enemies |
+| `5` | Fire Spray | Projectile | Cone of fireballs |
+| `6` | Bouncer | Projectile | Ricochets off the rim |
+| `7` | Splitter | Projectile | Bursts into shards |
+| `8` | Meteor | AoE | Telegraphed slam at a target point |
+| `Q` | Teleport | Mobility | Blink toward the cursor |
+| `E` | Thrust | Mobility | Launch yourself along your aim |
+| `R` | Swap | Utility | Trade places with the nearest enemy |
+| `F` | Wind Walk | Buff | Brief stealth + speed |
+| `C` | Rush | Buff | Speed + knockback resistance |
+| `V` | Drain | Utility | Pull a foe and steal their charge |
+| `X` | Gravity | Control | Pull field at a target point |
+| `Z` | Link | Control | Bind to a foe |
+| `T` | Disable | Control | Silencing projectile |
+| `G` | Shield | Defense | Block the next incoming hit |
+| `B` | Time Shift | Defense | Rewind to your past position |
+| `H` | Pocket Watch | Utility | Reset all your cooldowns |
+
+### Item / passive skills
+
+Defined in `config.js` → `ITEMS` and applied as persistent modifiers:
+
+- **Knockback resist:** Aegis, Cape, Helmet, Warden, Shield
+- **Speed:** Boots of Speed, Stone of Jordan
+- **Lifesteal:** Blood Sword, Mask of Death
+- **Glass cannon:** Cursed Pendant
+- **Cooldown reduction:** Pendant, Stone of Jordan
+- **Lava grace:** Lava Treads
+- **Empowered Fireball:** Staff of Fireball
 
 ## Audio & visual effects
 
