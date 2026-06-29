@@ -473,6 +473,7 @@ html, body {
   padding: 3px; transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
 }
 .ability-slot:hover { transform: translateY(-2px); }
+.ability-slot:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; transform: translateY(-2px); }
 .ability-slot.ready { box-shadow: 0 0 8px rgba(124,255,90,0.35); border-color: rgba(124,255,90,0.6); }
 .ability-slot.locked { opacity: 0.35; filter: grayscale(1); }
 .ability-slot.empty { border-style: dashed; }
@@ -495,6 +496,66 @@ html, body {
   font-size: 10px; line-height: 16px; color: #fff; background: rgba(108,76,255,0.65);
 }
 
+/* ===== Spell tooltip ===== */
+.spell-tooltip {
+  position: fixed;
+  z-index: 9000;
+  pointer-events: none;
+  padding: 10px 13px;
+  max-width: 220px;
+  background: rgba(22, 17, 46, 0.97);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-panel), 0 0 16px rgba(108, 76, 255, 0.35);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0;
+  transform: translateY(5px) scale(0.96);
+  transition: opacity 0.14s ease, transform 0.18s var(--ease-spring), visibility 0s 0.18s;
+  visibility: hidden;
+  display: block;
+}
+.spell-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.14s ease, transform 0.18s var(--ease-spring);
+  visibility: visible;
+}
+.spell-tooltip-title {
+  font-family: var(--font-display);
+  font-size: 9px;
+  margin-bottom: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  line-height: 1.3;
+}
+.spell-tooltip-key {
+  font-family: var(--font-display);
+  font-size: 7px;
+  background: rgba(108, 76, 255, 0.25);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  padding: 2px 5px;
+  color: var(--muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.spell-tooltip-desc {
+  color: var(--text);
+  line-height: 1.45;
+  margin-bottom: 7px;
+}
+.spell-tooltip-stats {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+
 /* ===== Audio controls ===== */
 #audio-controls { position: fixed; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 6; }
 #audio-controls button {
@@ -504,7 +565,7 @@ html, body {
 }
 #audio-controls button.off { color: var(--muted); border-color: var(--line); }
 
-/* ---------- Responsive ---------- */
+/* ---------- Responsive (lobby / HUD panels) ---------- */
 @media (max-width: 760px) {
   .panel { padding: 24px 20px; }
   .menu-body { grid-template-columns: 1fr; gap: 18px; }
@@ -515,10 +576,344 @@ html, body {
   .char-cards { grid-template-columns: repeat(2, 1fr); }
   .ability-slot { width: 50px; height: 50px; }
   .ability-name { display: none; }
+  .spell-tooltip { max-width: 180px; font-size: 11px; }
 }
 
 /* ---------- Reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
   .ember-field { display: none; }
+}
+
+
+/* ============================================================
+   LOADING SCREEN
+   ============================================================ */
+.loader-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--void);
+  display: flex; align-items: center; justify-content: center;
+  /* Subtle voxel-grid background — same as the menu overlay ::after */
+  background-image:
+    linear-gradient(rgba(108, 76, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(108, 76, 255, 0.04) 1px, transparent 1px);
+  background-size: 44px 44px;
+  background-color: var(--void);
+}
+
+.loader-inner {
+  display: flex; flex-direction: column; align-items: center; gap: 22px;
+  text-align: center;
+}
+
+.loader-title {
+  font-family: var(--font-display);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  line-height: 1.05;
+}
+.loader-line:nth-child(1) {
+  font-size: clamp(18px, 3.5vw, 36px);
+  color: var(--text);
+  animation: titleDrop 0.55s var(--ease-spring) both 0.1s;
+}
+.loader-line:nth-child(2) {
+  font-size: clamp(22px, 4.5vw, 48px);
+  color: var(--ember);
+  text-shadow: 0 0 28px rgba(255, 90, 60, 0.65), 0 4px 0 rgba(0,0,0,0.5);
+  animation: titleDrop 0.55s var(--ease-spring) both 0.25s;
+}
+.loader-line:nth-child(3) {
+  font-size: clamp(18px, 3.5vw, 36px);
+  color: var(--arcane);
+  text-shadow: 0 0 28px rgba(108, 76, 255, 0.65), 0 4px 0 rgba(0,0,0,0.5);
+  animation: titleDrop 0.55s var(--ease-spring) both 0.4s;
+}
+
+.loader-bar-wrap {
+  width: min(400px, 82vw); height: 6px;
+  background: rgba(108, 76, 255, 0.12);
+  border: 1px solid var(--line);
+  border-radius: 999px; overflow: hidden;
+  animation: fadeDown 0.4s ease both 0.6s;
+}
+.loader-bar {
+  width: 0%; height: 100%;
+  background: linear-gradient(90deg, var(--arcane), var(--ember));
+  border-radius: 999px;
+  box-shadow: 0 0 14px rgba(255, 90, 60, 0.55);
+  transition: width 0.28s ease;
+}
+
+.loader-pct {
+  font-family: var(--font-ui); font-size: 12px; letter-spacing: 3px;
+  color: var(--muted);
+  animation: fadeDown 0.4s ease both 0.7s;
+}
+
+.loader-enter {
+  font-family: var(--font-display);
+  font-size: clamp(10px, 1.8vw, 14px);
+  color: var(--text); letter-spacing: 5px;
+  animation: enterPulse 1.5s ease-in-out infinite;
+  margin-top: 6px;
+}
+@keyframes enterPulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; text-shadow: 0 0 18px rgba(255,90,60,0.7); }
+}
+
+/* Fade the loader out when dismissed. */
+.loader-fade-out {
+  opacity: 0 !important;
+  pointer-events: none;
+  transition: opacity 0.52s ease !important;
+}
+
+
+/* ============================================================
+   CINEMATIC MAIN MENU
+   ============================================================ */
+
+/* Override overlay defaults to create a full-bleed horizontal layout. */
+.menu-cinematic {
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
+  background: none; /* background handled by stage canvas + vignette */
+}
+/* Suppress the voxel-grid ::after on the cinematic overlay (the grid is on
+   the loader instead; the stage canvas provides all the visual interest here). */
+.menu-cinematic::after { display: none; }
+
+/* ---- Full-bleed 3D stage canvas ---- */
+/* Selector is intentionally ID + class so it outranks the legacy `#char-preview`
+   rule above (a bare ID selector), whose `position: relative` would otherwise
+   pull the canvas into flex flow and shove the spine off-screen. */
+#char-preview.stage-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block; z-index: 0;
+}
+
+/* ---- Atmospheric depth layers ---- */
+.stage-vignette {
+  position: absolute; inset: 0; z-index: 1;
+  pointer-events: none;
+  background:
+    /* Heavy dark gradient sweeps left where the spine lives */
+    linear-gradient(
+      108deg,
+      rgba(8, 6, 20, 0.97) 0%,
+      rgba(8, 6, 20, 0.82) 26%,
+      rgba(8, 6, 20, 0.38) 48%,
+      rgba(8, 6, 20, 0.08) 66%,
+      transparent 100%
+    ),
+    /* Ember floor glow — lava atmosphere from below */
+    radial-gradient(ellipse 90% 55% at 50% 110%, rgba(255, 90, 60, 0.13), transparent 60%),
+    /* Arcane crown — magic aura from above */
+    radial-gradient(ellipse 100% 45% at 60% -15%, rgba(108, 76, 255, 0.22), transparent 60%),
+    /* Edge vignette */
+    radial-gradient(ellipse 120% 120% at 50% 50%, transparent 55%, rgba(4, 3, 12, 0.55) 100%);
+}
+
+/* ---- Left spine ---- */
+.menu-spine {
+  position: relative; z-index: 3;
+  width: 360px; flex-shrink: 0;
+  min-height: 100vh;
+  padding: 44px 40px 36px;
+  display: flex; flex-direction: column;
+  /* Subtle left-edge separator */
+  border-right: 1px solid rgba(108, 76, 255, 0.08);
+}
+
+/* Override brand alignment for left-flush layout. */
+.menu-cinematic .brand { margin-bottom: 0; text-align: left; }
+.menu-cinematic .title { align-items: flex-start; margin: 14px 0 8px; }
+.menu-cinematic .eyebrow { display: block; text-align: left; }
+.menu-cinematic .tag { text-align: left; max-width: 280px; font-size: 13px; margin: 0; }
+
+/* Name input — persistent in spine, shared by Host and Join flows. */
+.name-field { margin: 22px 0 6px; }
+
+/* ---- Spine vertical nav ---- */
+.spine-nav {
+  list-style: none;
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 10px 0 18px;
+}
+
+.spine-btn {
+  display: flex; align-items: center; gap: 18px;
+  width: 100%; padding: 14px 18px;
+  border-radius: 10px; border: none;
+  background: none; cursor: pointer; text-align: left;
+  font-family: var(--font-display); font-size: 11px; letter-spacing: 3px;
+  color: var(--muted);
+  position: relative;
+  transition: color 0.18s, background 0.18s, transform 0.14s var(--ease-spring);
+}
+.spine-btn:hover {
+  color: var(--text);
+  background: rgba(108, 76, 255, 0.1);
+  transform: translateX(5px);
+}
+.spine-btn:focus-visible {
+  outline: 2px solid var(--arcane); outline-offset: 3px; border-radius: 10px;
+}
+
+/* Ember accent bar on the left edge of the active button. */
+.spine-btn::before {
+  content: ""; position: absolute; left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 0;
+  background: var(--ember); border-radius: 0 3px 3px 0;
+  transition: height 0.28s var(--ease-spring);
+}
+.spine-btn.is-active {
+  color: var(--ember);
+  background: rgba(255, 90, 60, 0.07);
+}
+.spine-btn.is-active::before { height: 58%; }
+
+/* Play button is the hero action — slightly larger, ember glow. */
+.spine-btn-play { font-size: 13px; letter-spacing: 4px; padding: 16px 18px; }
+.spine-btn-play.is-active {
+  color: var(--ember);
+  text-shadow: 0 0 16px rgba(255, 90, 60, 0.55);
+}
+
+.spine-play-arrow,
+.spine-icon { width: 18px; text-align: center; font-size: 14px; flex-shrink: 0; }
+
+/* Push controls-hint to bottom of spine. */
+.menu-cinematic .controls-hint { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
+
+/* ---- Right content zone ---- */
+.menu-right {
+  position: relative; z-index: 3;
+  flex: 1;
+  display: flex; align-items: center;
+  /* Don't receive pointer events on the transparent area — sub-screens handle their own. */
+  pointer-events: none;
+}
+
+/* ---- Sub-screens ---- */
+.sub-screen {
+  position: absolute;
+  /* Vertically centered with slight upward offset for optical balance. */
+  top: 50%; transform: translateY(-50%) translateX(0);
+  left: 40px; right: 40px; max-width: 500px;
+  display: flex; flex-direction: column; gap: 22px;
+  pointer-events: auto;
+  opacity: 1;
+  transition: transform 0.38s var(--ease-spring), opacity 0.22s ease;
+}
+.sub-screen.sub-screen-hidden {
+  opacity: 0;
+  transform: translateY(-50%) translateX(36px);
+  pointer-events: none;
+}
+
+.sub-screen-title {
+  font-family: var(--font-display);
+  font-size: clamp(13px, 2.2vw, 20px); letter-spacing: 4px;
+  color: var(--text);
+}
+.sub-screen-desc {
+  color: var(--muted); font-size: 14px;
+  margin-top: -14px; /* tighten gap after title */
+}
+
+/* Hero "Host Game" CTA — the centrepiece of the PLAY sub-screen. */
+.btn-hero {
+  font-size: 17px; padding: 18px 32px; letter-spacing: 2px;
+  width: 100%; max-width: 340px;
+}
+
+/* Character preview name in CHARACTERS sub-screen. */
+.menu-cinematic .char-preview-name {
+  font-size: 13px; font-weight: 800; letter-spacing: 2px;
+  color: var(--text); text-transform: uppercase;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.85);
+  position: static; text-align: left;
+  margin-bottom: -10px;
+}
+
+/* Abilities toggle sits below the char-cards with a bit of breathing room. */
+.abilities-field { margin-top: 2px; }
+
+/* Arena-cards in SETTINGS at a slightly smaller size to fit better. */
+.arena-cards-sm .arena-card { padding: 10px 12px 9px; }
+.arena-cards-sm .arena-card-orb { width: 26px; height: 26px; border-radius: 7px; margin-bottom: 7px; }
+.arena-cards-sm .arena-card-name { font-size: 13px; }
+.settings-arena-field { gap: 10px; }
+
+/* Join box in JOIN sub-screen — existing .join-box styles apply,
+   just ensure it stretches to fill the sub-screen width. */
+.sub-screen .join-box { flex-wrap: nowrap; }
+.sub-screen .rune-code { flex: 1 1 auto; }
+.sub-screen .btn-ghost { flex-shrink: 0; padding-left: 26px; padding-right: 26px; }
+
+
+/* ============================================================
+   CINEMATIC MENU — RESPONSIVE
+   ============================================================ */
+@media (max-width: 800px) {
+  /* Stack spine above the sub-screens on small screens. */
+  .menu-cinematic { flex-direction: column; }
+  .menu-spine {
+    width: 100%; min-height: auto;
+    padding: 28px 24px 16px;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .menu-cinematic .title { flex-direction: row; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .menu-cinematic .title .title-line { display: inline; }
+  .menu-cinematic .tag { display: none; }
+  .spine-nav { flex-direction: row; gap: 2px; margin: 10px 0 6px; }
+  .spine-btn { padding: 10px 12px; font-size: 9px; letter-spacing: 1.5px; }
+  .spine-btn::before { display: none; }
+  .spine-btn.is-active { background: rgba(255, 90, 60, 0.15); }
+  .spine-play-arrow, .spine-icon { display: none; }
+  .name-field { margin: 10px 0 4px; }
+  .menu-right { min-height: 340px; pointer-events: auto; }
+  .sub-screen { position: relative; top: auto; transform: none; left: 0; right: 0; max-width: 100%; padding: 20px 24px; }
+  .sub-screen.sub-screen-hidden { display: none; }
+  .menu-cinematic .controls-hint { display: none; }
+  .stage-vignette {
+    background:
+      linear-gradient(180deg, rgba(8,6,20,0.85) 0%, rgba(8,6,20,0.4) 30%, rgba(8,6,20,0.2) 70%, rgba(8,6,20,0.7) 100%);
+  }
+}
+
+@media (max-width: 480px) {
+  .spine-nav { overflow-x: auto; }
+  .spine-btn { white-space: nowrap; flex-shrink: 0; }
+  .btn-hero { max-width: 100%; }
+}
+
+
+/* ============================================================
+   REDUCED MOTION — Cinematic menu + loader overrides
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  /* Loader: instant bar fill, no pulsing enter prompt. */
+  .loader-bar { transition: none !important; }
+  /* Entrance animations use opacity:0 `from` states with delays — neutralize so
+     reduced-motion users see the loader UI immediately, not after a blank beat. */
+  .loader-line, .loader-bar-wrap, .loader-pct {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  .loader-enter { animation: none !important; opacity: 1; }
+  .loader-fade-out { transition: none !important; opacity: 0 !important; }
+  /* Sub-screen transitions: instant swap instead of slide. */
+  .sub-screen, .sub-screen.sub-screen-hidden {
+    transition: none !important;
+    transform: translateY(-50%) translateX(0) !important;
+  }
+  /* Spine button hover: no translate. */
+  .spine-btn:hover { transform: none !important; }
 }

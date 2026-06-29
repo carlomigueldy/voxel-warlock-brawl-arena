@@ -20,26 +20,42 @@ export class CharacterPreview {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
-    this.camera.position.set(0, 1.1, 4.2);
-    this.camera.lookAt(0, 0.95, 0);
 
-    const hemi = new THREE.HemisphereLight(0x8a7bff, 0x2a1a3a, 1.0);
+    // Telephoto framing: low FOV + camera pulled back gives cinematic compression.
+    // Camera is offset slightly to the left so the character sits in the right
+    // half of the full-bleed canvas (the spine nav occupies the left third).
+    this.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
+    this.camera.position.set(-2.0, 1.7, 5.8);
+    this.camera.lookAt(0.2, 0.95, 0);
+
+    // Sky/fill hemisphere: cool arcane blue from above, ember warmth from below.
+    const hemi = new THREE.HemisphereLight(0x8a7bff, 0x3a1a0a, 1.1);
     this.scene.add(hemi);
-    const key = new THREE.DirectionalLight(0xfff0e0, 1.4);
-    key.position.set(3, 6, 4);
+
+    // Key light — angled from front-right for classic heroic three-point setup.
+    const key = new THREE.DirectionalLight(0xfff4e0, 1.6);
+    key.position.set(4, 8, 5);
     key.castShadow = true;
+    key.shadow.mapSize.set(512, 512);
     this.scene.add(key);
-    const rim = new THREE.PointLight(0x6c4cff, 0.8, 20);
-    rim.position.set(-3, 2, -3);
+
+    // Rim light — arcane purple from behind/left to separate the character from
+    // the dark background and give the silhouette a magical edge.
+    const rim = new THREE.PointLight(0x6c4cff, 1.8, 22);
+    rim.position.set(-4, 3, -4);
     this.scene.add(rim);
 
-    // A subtle turntable disc so the model isn't floating in the void.
+    // Ember foot glow — warm red from below, selling the lava-world atmosphere.
+    const foot = new THREE.PointLight(0xff5a1e, 1.2, 10);
+    foot.position.set(0, -0.5, 2.5);
+    this.scene.add(foot);
+
+    // Subtle ground disc — gives the character something to stand on visually.
     const disc = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.1, 1.2, 0.18, 24),
-      new THREE.MeshStandardMaterial({ color: 0x181433, roughness: 0.8, metalness: 0.1 })
+      new THREE.CylinderGeometry(1.3, 1.4, 0.14, 32),
+      new THREE.MeshStandardMaterial({ color: 0x16112e, roughness: 0.85, metalness: 0.18 }),
     );
-    disc.position.y = -0.09;
+    disc.position.y = -0.07;
     disc.receiveShadow = true;
     this.scene.add(disc);
 
@@ -99,6 +115,7 @@ export class CharacterPreview {
   start() {
     if (this.running) return;
     this.running = true;
+    this._resize(); // Ensure canvas dimensions are current before first frame.
     this.clock.getDelta(); // reset delta so we don't jump
     const loop = () => {
       if (!this.running) return;

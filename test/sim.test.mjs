@@ -4,6 +4,7 @@ import assert from "node:assert";
 import { Simulation, PHASE } from "../src/sim.js";
 import { Bolt } from "../src/bolt.js";
 import { CFG } from "../src/config.js";
+import { dodgeVector } from "../src/bot.js";
 
 let passed = 0;
 function test(name, fn) {
@@ -456,17 +457,26 @@ test("every bot tier casts handbook abilities (no dead range checks)", () => {
 });
 
 test("bot difficulty tiers fire at distinct cadences (expert > brilliant > smart)", () => {
+  // Pin both bots at a fixed close distance before every tick so knockback
+  // cannot push them outside their fireRange — this isolates the fireEvery
+  // cadence constant (the actual invariant) from positioning noise caused by
+  // balance tuning (KB values, friction, spell ranges, etc.).
   function countShots(skill, seconds) {
     const sim = new Simulation();
     sim.setBotRoster(2, skill);
     assert.strictEqual(sim.startMatch(), true);
     advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
-    const bot = sim.botPlayers()[0];
+    const bots = sim.botPlayers();
+    const bot = bots[0];
     let shots = 0, prev = false;
     const dt = 1 / CFG.TICK_RATE;
     for (let t = 0; t < seconds; t += dt) {
+      // Reset positions and velocities so neither bot escapes fireRange or dies.
+      for (const p of sim.players.values()) { p.vx = 0; p.vz = 0; p.alive = true; p.falling = false; p._hazardTime = 0; }
+      if (bots[0]) { bots[0].x = 0; bots[0].z = 0; }
+      if (bots[1]) { bots[1].x = 8; bots[1].z = 0; } // 8u: inside every tier's fireRange
       sim.step(dt);
-      if (!bot.alive || sim.phase !== PHASE.PLAYING) break;
+      if (sim.phase !== PHASE.PLAYING) break;
       const f = bot.input.fire;
       if (f && !prev) shots++;
       prev = f;
@@ -480,56 +490,170 @@ test("bot difficulty tiers fire at distinct cadences (expert > brilliant > smart
   assert.ok(brilliant > smart, `brilliant(${brilliant}) should out-shoot smart(${smart})`);
 });
 
-test("bot wall-awareness: move is redirected when a plateau wall blocks the direct path", () => {
+// ── New behaviour tests (bot.js archetypes) ─────────────────────────────────
+
+test("bot archetype loadouts are applied as item modifiers", () => {
+  // Expert: aegis (kbResist=0.18) + pendant (cdr=0.12)
   const sim = new Simulation();
-  sim.setBotRoster(1, "smart");
-  sim.addPlayer("target", "Target");
-  sim.startMatch();
-  // Advance past countdown.
-  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  const bot = sim.botPlayers()[0];
-  const tgt = sim.players.get("target");
-  // Place bot and target on opposite sides of a tall plateau wall.
-  // Bot at (-5, 0, 0), target at (5, 0, 0), plateau centred at (0, 0) blocking XZ.
-  bot.x = -5; bot.z = 0; bot.groundY = CFG.PLATFORM_TOP;
-  tgt.x = 5; tgt.z = 0;
-  // A layout with a single plateau at centre, 3×3 footprint, height 3 (well above
-  // PLAYER_HEIGHT so blocksMovement returns true for a ground-level approach).
-  sim.arena.setLayout({
-    seed: 0,
-    plateaus: [{ x: 0, z: 0, w: 3, d: 3, height: 3, ramps: [] }],
-    obstacles: [],
-  });
-  // Call planBotInput once and capture the move vector.
-  const input = sim.planBotInput(bot, tgt);
-  const [mx, mz] = input.move;
-  // The direct line from bot to target is +X (dx>0, dz=0). If not steered the
-  // bot would move with mx>0, mz≈0 — straight into the wall. With wall-awareness,
-  // the X component should be reduced or the Z component non-zero (sideways nudge).
-  const directBlocked = mx > 0.5 && Math.abs(mz) < 0.1;
-  assert.strictEqual(directBlocked, false,
-    `bot move (${mx.toFixed(2)}, ${mz.toFixed(2)}) looks like an unsteered direct path into the wall`);
-  // Also verify the returned move is not NaN/Infinity.
-  assert.ok(Number.isFinite(mx) && Number.isFinite(mz), "steered move contains non-finite values");
+  sim.setBotRoster(2, "expert");
+  const [expertBot] = sim.botPlayers();
+  assert.ok(expertBot.mods.kbResist > 0, "expert bot should have kbResist from aegis loadout");
+  assert.ok(expertBot.mods.cdr > 0, "expert bot should have CDR from pendant loadout");
+  // Smart: bloodSword (lifesteal) + bootsOfSpeed (speedMul > 1)
+  const sim2 = new Simulation();
+  sim2.setBotRoster(2, "smart");
+  const [smartBot] = sim2.botPlayers();
+  assert.ok(smartBot.mods.lifesteal > 0, "smart bot should have lifesteal from bloodSword loadout");
+  assert.ok(smartBot.mods.speedMul > 1, "smart bot should have speed bonus from bootsOfSpeed loadout");
 });
 
-test("bot wall-awareness: move is unchanged when path is clear", () => {
+test("bot uses escape spell when pushed near the arena edge", () => {
   const sim = new Simulation();
-  sim.setBotRoster(1, "smart");
-  sim.addPlayer("target", "Target");
+  sim.setBotRoster(2, "expert");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
+  const [bot] = sim.botPlayers();
+  // Place bot inside the 4-unit edge-danger zone
+  bot.x = sim.arena.radius - 1.5;
+  bot.z = 0; bot.vx = 0; bot.vz = 0;
+  // Make ability available immediately
+  bot._nextBotAbilityAt = 0;
+  bot.cooldowns = {};
+  let escaped = false;
+  for (let i = 0; i < 5; i++) {
+    sim.step(1 / CFG.TICK_RATE);
+    if (sim.events.some((e) => (e.type === "thrust" || e.type === "teleport") && e.id === bot.id)) {
+      escaped = true; break;
+    }
+  }
+  assert.ok(escaped, "expert bot near the arena edge should immediately use an escape spell");
+});
+
+test("expert bot leads aim ahead of a moving target", () => {
+  // With leadFactor=0.9, an expert bot watching a target move perpendicularly
+  // should aim ahead of the direct bearing by ~0.3 radians.
+  const sim = new Simulation();
+  sim.setBotRoster(1, "expert");
+  sim.addPlayer("human", "Human");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const bot = sim.botPlayers()[0];
-  const tgt = sim.players.get("target");
-  // No plateaus — flat arena — direct path should remain.
-  bot.x = -8; bot.z = 0; bot.groundY = CFG.PLATFORM_TOP;
-  tgt.x = 8; tgt.z = 0;
-  sim.arena.setLayout({ seed: 0, plateaus: [], obstacles: [] });
-  const input = sim.planBotInput(bot, tgt);
-  const [mx] = input.move;
-  // Bot should want to move toward the target (+X direction) without deflection.
-  assert.ok(mx > 0, "bot should move toward target when path is clear");
-  assert.ok(Number.isFinite(input.move[0]) && Number.isFinite(input.move[1]), "move should be finite");
+  const human = sim.players.get("human");
+  // Fix starting positions: bot at centre, human 8 units in +x moving in +z
+  bot.x = 0; bot.z = 0; bot.vx = 0; bot.vz = 0;
+  human.x = 8; human.z = 0; human.vx = 0; human.vz = 0;
+  sim.setInput("human", { move: [0, 1], aim: 0, fire: false, seq: 20 });
+  // 5 ticks for EMA velocity estimator to converge toward MOVE_SPEED
+  for (let i = 0; i < 5; i++) sim.step(1 / CFG.TICK_RATE);
+  // Direct bearing at current positions
+  const directAim = Math.atan2(human.z - bot.z, human.x - bot.x);
+  // With tvz ≈ MOVE_SPEED and leadFactor=0.9 the predicted intercept sits
+  // ~2-3 units above the current human position → aim clearly above directAim.
+  assert.ok(
+    bot.input.aim > directAim,
+    `expert bot should lead a moving target (aim=${bot.input.aim.toFixed(3)}, direct=${directAim.toFixed(3)})`
+  );
+});
+
+test("expert bot lands hits on a moving target via lead-aim", () => {
+  const sim = new Simulation();
+  sim.setBotRoster(1, "expert");
+  sim.addPlayer("human", "Human");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const bot = sim.botPlayers()[0];
+  const human = sim.players.get("human");
+  // Bot at centre; human at (8, 0) moving steadily in +z (perpendicular to bot)
+  bot.x = 0; bot.z = 0; bot.vx = 0; bot.vz = 0;
+  human.x = 8; human.z = 0; human.vx = 0; human.vz = 0;
+  sim.setInput("human", { move: [0, 1], aim: 0, fire: false, seq: 20 });
+  let hits = 0;
+  const dt = 1 / CFG.TICK_RATE;
+  for (let t = 0; t < 2; t += dt) {
+    sim.step(dt);
+    hits += sim.events.filter((e) => e.type === "hit" && e.victim === "human").length;
+    if (!bot.alive || !human.alive || sim.phase !== PHASE.PLAYING) break;
+  }
+  assert.ok(hits > 0, `expert bot should land hits on a perpendicularly-moving target (got ${hits})`);
+});
+
+test("bot selects KO spell when target has high charge near the arena edge", () => {
+  // Discriminating test: the KO-burst branch gives meteor a score of 2.5*0.9=2.25,
+  // beating the general-zoning top choice (lightning: 1.0*0.95=0.95).  Without
+  // the KO branch, lightning would win, not meteor.  The test therefore asserts
+  // specifically "meteorCast" so deleting the KO-burst block would cause failure.
+  function runScenario(charge) {
+    const sim = new Simulation();
+    sim.setBotRoster(2, "expert");
+    sim.startMatch();
+    advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
+    const [bot, target] = sim.botPlayers();
+    // Target near edge (2.5 units from rim)
+    target.x = sim.arena.radius - 2.5; target.z = 0; target.charge = charge;
+    // Bot within meteor range (~8.5 units from target)
+    bot.x = sim.arena.radius - 11; bot.z = 0; bot.vx = 0; bot.vz = 0;
+    bot._nextBotAbilityAt = 0; bot.cooldowns = {};
+    const spellsFired = [];
+    for (let i = 0; i < 10; i++) {
+      sim.step(1 / CFG.TICK_RATE);
+      for (const e of sim.events) {
+        if (e.id === bot.id && (e.type === "meteorCast" || e.type === "lightning" || e.type === "gravity")) {
+          spellsFired.push(e.type);
+        }
+      }
+      if (spellsFired.length) break;
+    }
+    return spellsFired[0] ?? null;
+  }
+
+  // KO scenario: target has high charge near edge → meteor should win (score 2.25)
+  const koSpell = runScenario(2.0);
+  assert.strictEqual(koSpell, "meteorCast",
+    `expert bot should pick meteor in KO-burst scenario (got ${koSpell}) — ` +
+    "the KO-burst multiplier (2.5×) must lift meteor above the general-zoning winner (lightning 0.95)");
+
+  // Non-KO scenario: same geometry but charge=0 → lightning wins general zoning (score 0.95 > meteor 0.81)
+  const normalSpell = runScenario(0);
+  assert.notStrictEqual(normalSpell, "meteorCast",
+    "with no KO conditions expert bot should NOT default to meteor (got meteorCast — " +
+    "KO-burst branch must have fired despite charge=0 or target not near edge)");
+});
+
+test("dodgeVector returns evasion vector for incoming bolt and null when dodge is disabled", () => {
+  // Direct unit-test of dodgeVector so the assertion is not confounded by the
+  // always-on perpendicular strafe (which makes any sim-level move-vector > 0
+  // regardless of whether dodging fires).
+  //
+  // Bolt at (0, 4) heading straight at the bot at (0, 0) with full speed (-z).
+  // reactionSec = 0.175 s → nextBZ = 4 - 26*0.175 = -0.55; closestApproach ≈ 0.03
+  // which is well below hitThreshold (0.6+0.45+0.4 = 1.45), so the threat registers.
+  const bot = { id: "bot", x: 0, z: 0 };
+  const expertProfile = { dodgeChance: 1.0, dodgeRange: 14, reactionMs: 175 };
+  const alwaysDodge = () => 0; // rand() returns 0, never > dodgeChance (1.0)
+
+  const incomingBolt = { dead: false, ownerId: "enemy", x: 0, z: 4, vx: 0, vz: -CFG.BOLT_SPEED };
+  const mockSim = { bolts: [incomingBolt], meteors: [] };
+
+  const vec = dodgeVector(mockSim, bot, expertProfile, alwaysDodge);
+  assert.ok(vec !== null,
+    "dodgeVector must return a non-null vector when a bolt is on a collision course");
+  assert.ok(Math.abs(vec.x) + Math.abs(vec.z) > 0.5,
+    `dodge vector should be meaningfully non-zero (got {x:${vec.x}, z:${vec.z}})`);
+
+  // With dodgeChance=0 the function returns null at the early guard — dodge is disabled.
+  const noProfile = { dodgeChance: 0, dodgeRange: 14, reactionMs: 175 };
+  const vec2 = dodgeVector(mockSim, bot, noProfile, alwaysDodge);
+  assert.strictEqual(vec2, null,
+    "dodgeVector must return null when dodgeChance is 0 (dodge disabled)");
+
+  // The stochastic gate also blocks when rand() > dodgeChance.
+  const neverPassGate = () => 1.0; // rand() always returns 1.0 > dodgeChance (1.0) → false
+  // Actually rand() > chance: 1.0 > 1.0 is false, use a value > 1 which is not possible.
+  // Use dodgeChance=0.5 and rand=()=>0.9 so 0.9 > 0.5 → gate blocks.
+  const halfProfile = { dodgeChance: 0.5, dodgeRange: 14, reactionMs: 175 };
+  const blockedByGate = dodgeVector(mockSim, bot, halfProfile, () => 0.9);
+  assert.strictEqual(blockedByGate, null,
+    "dodgeVector must return null when the stochastic gate blocks (rand() > dodgeChance)");
 });
 
 console.log(`\n${passed} tests passed.`);

@@ -147,11 +147,15 @@ const HANDLERS = {
     const dx = tx - c.x, dz = tz - c.z;
     const d = Math.hypot(dx, dz);
     if (d > s.range) { tx = c.x + (dx / d) * s.range; tz = c.z + (dz / d) * s.range; }
+    // Effective blast radius scales with caster charge — rewarding combos.
+    // Coefficient 0.08 keeps max-charge radius near ~9.5u (was 0.12 → 10.8u),
+    // preserving a meaningful escape lane even on medium arenas.
+    const effRadius = s.radius * (1 + Math.min(c.charge, CFG.CHARGE_MAX) * 0.08);
     sim.meteors.push({
       id: sim._meteorId++, ownerId: c.id, x: tx, z: tz,
-      t: s.fall, fall: s.fall, radius: s.radius, kb: s.kb * c.mods.dmgMul,
+      t: s.fall, fall: s.fall, radius: s.radius, effRadius, kb: s.kb * c.mods.dmgMul,
     });
-    emit(sim, { type: "meteorCast", id: c.id, x: tx, z: tz, fall: s.fall, radius: s.radius });
+    emit(sim, { type: "meteorCast", id: c.id, x: tx, z: tz, fall: s.fall, radius: effRadius });
   },
 
   teleport(sim, c, cast) {
@@ -170,6 +174,24 @@ const HANDLERS = {
     const dir = aimToward(c, cast.tx, cast.tz);
     c.vx += Math.cos(dir) * s.power;
     c.vz += Math.sin(dir) * s.power;
+    // Shockwave: knock nearby enemies away from the dash end point.
+    // Estimated end position is ~1.2 units along the dash direction so the
+    // check is meaningful even before the velocity fully resolves.
+    const shockwaveRadius = 3;
+    const shockwaveKb = 10;
+    const ex = c.x + Math.cos(dir) * 1.2;
+    const ez = c.z + Math.sin(dir) * 1.2;
+    for (const p of sim.players.values()) {
+      if (p.id === c.id || !p.alive || p.falling || p.spectating) continue;
+      const dx = p.x - ex, dz = p.z - ez;
+      if (Math.hypot(dx, dz) <= shockwaveRadius) {
+        // Guard the hit event on the return value — applyHit returns false when
+        // the shield absorbs the blow, matching the pattern used by lightning
+        // and other hit-event emitters to avoid spurious VFX/SFX on a block.
+        const hit = p.applyHit(dx, dz, shockwaveKb);
+        if (hit) emit(sim, { type: "hit", x: p.x, z: p.z, victim: p.id, by: c.id });
+      }
+    }
     emit(sim, { type: "thrust", id: c.id, x: c.x, z: c.z, dir });
   },
 
@@ -188,10 +210,12 @@ const HANDLERS = {
     const tgt = nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!tgt) return;
     // Pull the target toward the caster and steal some of their charge.
+    // Charged targets are yanked harder — rewards draining a high-% opponent.
     const dx = c.x - tgt.x, dz = c.z - tgt.z;
     const l = Math.hypot(dx, dz) || 1;
-    tgt.vx += (dx / l) * s.pull;
-    tgt.vz += (dz / l) * s.pull;
+    const effectivePull = s.pull * (1 + tgt.charge * 0.1);
+    tgt.vx += (dx / l) * effectivePull;
+    tgt.vz += (dz / l) * effectivePull;
     const stolen = tgt.charge * s.steal;
     tgt.charge = Math.max(0, tgt.charge - stolen);
     c.charge = Math.max(0, c.charge - stolen * 0.5); // drain heals the caster's %
@@ -211,7 +235,7 @@ const HANDLERS = {
       const pd = Math.hypot(p.x - tx, p.z - tz);
       if (pd <= s.radius) {
         p.status.gravity = s.duration;
-        p.status.gravX = tx; p.status.gravZ = tz; p.status.gravPull = s.pull;
+        p.status.gravX = tx; p.status.gravZ = tz; p.status.gravPull = s.pull; p.status.gravBy = c.id;
       }
     }
     emit(sim, { type: "gravity", id: c.id, x: tx, z: tz, radius: s.radius, duration: s.duration });

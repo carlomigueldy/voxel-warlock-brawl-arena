@@ -434,10 +434,67 @@ test("reacquiring a consumed rune ability clears its stale cooldown", () => {
   assert.strictEqual(a.canCast("teleport"), true, "reacquired teleport should be ready");
 });
 
-// --- Phase 4: projectile/spell height + cover ---
+test("meteor effRadius increases with caster charge", () => {
+  // At zero charge the effective radius equals the base radius.
+  const sim0 = playingSim();
+  const a0 = sim0.players.get("a");
+  a0.x = 0; a0.z = 0; a0.charge = 0;
+  cast(sim0, "a", "meteor", 5, 0);
+  const baseR = sim0.meteors[0].effRadius;
+  assert.ok(Math.abs(baseR - SPELLS.meteor.radius) < 0.001, "effRadius at zero charge should equal base radius");
 
-// Helper: step a bolt directly for `seconds` without going through sim.step().
-// Uses the provided arena for cover/obstruction checks.
+  // At non-zero charge the effective radius must be strictly larger.
+  const sim1 = playingSim();
+  const a1 = sim1.players.get("a");
+  a1.x = 0; a1.z = 0; a1.charge = 2.0;
+  cast(sim1, "a", "meteor", 5, 0);
+  const chargedR = sim1.meteors[0].effRadius;
+  // Expected: radius * (1 + min(charge, CHARGE_MAX) * 0.08) = 7 * (1 + 2.0 * 0.08) = 7 * 1.16 = 8.12
+  const expected = SPELLS.meteor.radius * (1 + Math.min(2.0, CFG.CHARGE_MAX) * 0.08);
+  assert.ok(Math.abs(chargedR - expected) < 0.001, `effRadius mismatch: got ${chargedR}, expected ${expected}`);
+  assert.ok(chargedR > baseR, "charged meteor effRadius should exceed base radius");
+});
+
+test("gravity status expiry applies an outward impulse to a player still inside the field", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  // Cast the gravity field centred at origin, b is inside the radius (8 u).
+  a.x = 0; a.z = 0; b.x = 3; b.z = 0; b.vx = 0; b.vz = 0;
+  cast(sim, "a", "gravity", 0, 0);
+  assert.ok(b.status.gravity > 0, "gravity status not applied");
+  // Manually wind the status down to just one tick so it expires on the very
+  // next step — this keeps b close to its starting position (still inside the
+  // radius) and avoids the full-duration pull dragging b past the field centre.
+  b.status.gravity = 0.01;
+  const vxBefore = b.vx;
+  sim.step(1 / CFG.TICK_RATE);
+  // The outward impulse from applyHit should push b away from the field centre
+  // (positive vx, since b is on the +x side).
+  assert.ok(b.vx > vxBefore, "gravity expiry did not apply an outward impulse");
+  // The collapse should surface a feedback "hit" event (spark + SFX) credited
+  // to the field's caster, so the client payoff matches the authoritative fling.
+  const burst = sim.events.find((e) => e.type === "hit" && e.victim === "b" && e.by === "a");
+  assert.ok(burst, "gravity collapse did not emit a feedback hit event");
+});
+
+test("drain pull is larger against a high-charge target than a zero-charge target", () => {
+  // Zero-charge target.
+  const sim0 = playingSim();
+  const a0 = sim0.players.get("a"), b0 = sim0.players.get("b");
+  a0.x = 0; a0.z = 0; b0.x = 3; b0.z = 0; b0.vx = 0; b0.vz = 0; b0.charge = 0;
+  cast(sim0, "a", "drain");
+  const pullZero = Math.abs(b0.vx);
+
+  // High-charge target.
+  const sim1 = playingSim();
+  const a1 = sim1.players.get("a"), b1 = sim1.players.get("b");
+  a1.x = 0; a1.z = 0; b1.x = 3; b1.z = 0; b1.vx = 0; b1.vz = 0; b1.charge = 3.0;
+  cast(sim1, "a", "drain");
+  const pullHigh = Math.abs(b1.vx);
+
+  assert.ok(pullHigh > pullZero, `drain pull on high-charge (${pullHigh}) should exceed low-charge (${pullZero})`);
+});
+
 function stepBolt(bolt, playerArr, arena, seconds) {
   const dt = 1 / CFG.TICK_RATE;
   for (let t = 0; t < seconds; t += dt) {
