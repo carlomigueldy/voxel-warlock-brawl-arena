@@ -117,6 +117,32 @@ test("a bolt hit applies knockback velocity to the victim", () => {
   assert.ok(b.vx > 0, "victim was not knocked in +x direction (vx=" + b.vx + ")");
 });
 
+test("opposing projectiles cancel each other without damaging players", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  const b = sim.players.get("b");
+  a.x = -4; a.z = 0; a.aim = 0; a.cooldown = 0;
+  b.x = 4; b.z = 0; b.aim = Math.PI; b.cooldown = 0;
+  a.vx = 0; a.vz = 0; b.vx = 0; b.vz = 0;
+  sim.setInput("a", { move: [0, 0], aim: 0, fire: true, seq: 1 });
+  sim.setInput("b", { move: [0, 0], aim: Math.PI, fire: true, seq: 1 });
+  sim.step(1 / CFG.TICK_RATE);
+  sim.setInput("a", { move: [0, 0], aim: 0, fire: false, seq: 2 });
+  sim.setInput("b", { move: [0, 0], aim: Math.PI, fire: false, seq: 2 });
+  let sawClash = false;
+  for (let t = 0; t < 0.35; t += 1 / CFG.TICK_RATE) {
+    sim.step(1 / CFG.TICK_RATE);
+    sawClash ||= sim.events.some((ev) => ev.type === "projectileClash");
+  }
+  assert.strictEqual(sim.bolts.length, 0, "colliding projectiles should be destroyed");
+  assert.strictEqual(a.vx, 0, "caster A should not receive knockback");
+  assert.strictEqual(b.vx, 0, "caster B should not receive knockback");
+  assert.ok(sawClash, "missing projectile clash event");
+});
+
 test("charge increases knockback on subsequent hits (Smash-style)", () => {
   const sim = new Simulation();
   const b = sim.addPlayer("b", "B");

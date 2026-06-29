@@ -372,8 +372,13 @@ export class Simulation {
     const playerArr = [...this.players.values()];
     const spawned = [];
     for (const b of this.bolts) {
-      const res = b.step(dt, playerArr, this.arena);
+      b.step(dt, playerArr, this.arena, { movementOnly: true });
       if (b._spawn && b._spawn.length) spawned.push(...b._spawn);
+    }
+    this.resolveProjectileClashes();
+    for (const b of this.bolts) {
+      if (b.dead) continue;
+      const res = b.step(0, playerArr, this.arena);
       if (res && res.hit != null) {
         const shooter = this.players.get(b.ownerId);
         const victim = this.players.get(res.hit);
@@ -426,6 +431,26 @@ export class Simulation {
     }
 
     this.resolveRoundIfNeeded();
+  }
+
+  resolveProjectileClashes() {
+    if (this.bolts.length < 2) return;
+    for (let i = 0; i < this.bolts.length; i++) {
+      const a = this.bolts[i];
+      if (a.dead) continue;
+      for (let j = i + 1; j < this.bolts.length; j++) {
+        const b = this.bolts[j];
+        if (b.dead || a.ownerId === b.ownerId) continue;
+        const r = CFG.BOLT_RADIUS * 2;
+        const d = (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
+        if (d <= r * r) {
+          a.dead = true;
+          b.dead = true;
+          this.events.push({ type: "projectileClash", x: +((a.x + b.x) * 0.5).toFixed(2), z: +((a.z + b.z) * 0.5).toFixed(2) });
+          break;
+        }
+      }
+    }
   }
 
   // Players can shoot a rune to destroy it, denying the ability to rivals.

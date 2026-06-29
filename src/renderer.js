@@ -336,6 +336,12 @@ export class GameRenderer {
           this.audio?.play("hit", this._panFor(ev.x));
           this._shake = Math.min(0.6, this._shake + 0.15);
           break;
+        case "projectileClash":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0x9fe6ff, { count: 26, speed: 10, life: 0.45 }));
+          this._addEffect(this._ringPulse(ev.x, ev.z, 2.2, 0xffffff));
+          this.audio?.play("projectileClash", this._panFor(ev.x));
+          this._shake = Math.min(0.7, this._shake + 0.2);
+          break;
         case "death":
           this.audio?.play("death");
           this._shake = Math.min(0.8, this._shake + 0.3);
