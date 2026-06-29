@@ -16,11 +16,14 @@ function advance(sim, seconds, dt = 1 / CFG.TICK_RATE) {
 }
 
 // Build a 2-player sim already in the PLAYING phase with both at the centre.
+// The procedural map layout is cleared so existing tests run in a flat, obstacle-
+// free arena — Phase 4 cover/LoS tests set their own layouts explicitly.
 function playingSim() {
   const sim = new Simulation();
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  sim.arena.setLayout(null);
   return sim;
 }
 
@@ -429,6 +432,156 @@ test("reacquiring a consumed rune ability clears its stale cooldown", () => {
   cast(sim, "a", "teleport", 5, 0);
   a.acquireSpell("teleport");
   assert.strictEqual(a.canCast("teleport"), true, "reacquired teleport should be ready");
+});
+
+// --- Phase 4: projectile/spell height + cover ---
+
+// Helper: step a bolt directly for `seconds` without going through sim.step().
+// Uses the provided arena for cover/obstruction checks.
+function stepBolt(bolt, playerArr, arena, seconds) {
+  const dt = 1 / CFG.TICK_RATE;
+  for (let t = 0; t < seconds; t += dt) {
+    bolt.step(dt, playerArr, arena, { movementOnly: true });
+    if (bolt.dead) break;
+    bolt.step(0, playerArr, arena);
+    if (bolt.dead) break;
+  }
+}
+
+test("cover: obstacle blocks bolt before it reaches the target behind it", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  b.x = 6; b.z = 0; b.vx = 0;
+  // Stone obstacle directly between origin and the target.
+  sim.arena.setLayout({
+    plateaus: [],
+    obstacles: [{ id: 1, type: "stone", x: 3, z: 0, r: 1.0, height: 2.0, rot: 0 }],
+  });
+  // Ground-level bolt aimed at the target (y = PLATFORM_TOP + 1.1 = 1.1 < 2.0).
+  const bolt = new Bolt("a", 1.2, 0, 0, 0xffffff, { groundY: CFG.PLATFORM_TOP });
+  stepBolt(bolt, [a, b], sim.arena, 1.0);
+  assert.strictEqual(b.vx, 0, "bolt passed through cover and hit the shielded target");
+  assert.ok(bolt.dead, "bolt was not killed by the obstacle");
+  sim.arena.setLayout(null);
+});
+
+test("height gate: bolt from ground does not hit a player standing on a tall plateau", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  b.x = 3; b.z = 0; b.vx = 0;
+  // Place target above the FALL_STUN_MIN_HEIGHT threshold so clearly elevated.
+  b.groundY = CFG.FALL_STUN_MIN_HEIGHT + 0.5; // 2.0
+  // Empty layout: no terrain to cover-block; only the height gate matters.
+  sim.arena.setLayout({ plateaus: [], obstacles: [] });
+  // Bolt at ground level (y = 1.1), target body starts at 2.0 - 0.1 = 1.9 → miss.
+  const bolt = new Bolt("a", 1.2, 0, 0, 0xffffff, { groundY: CFG.PLATFORM_TOP });
+  stepBolt(bolt, [a, b], sim.arena, 0.5);
+  assert.strictEqual(b.vx, 0, "ground bolt hit a player on a tall plateau (height gate missed)");
+  sim.arena.setLayout(null);
+});
+
+test("height gate: bolt from a plateau hits a co-elevation target", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  const plateau = 2.0;
+  b.x = 3; b.z = 0; b.vx = 0; b.groundY = plateau;
+  // Empty layout: no obstructions, height gate should allow the hit.
+  sim.arena.setLayout({ plateaus: [], obstacles: [] });
+  // Bolt from the same plateau height (y = 2.0 + 1.1 = 3.1), within body [1.9, 3.9].
+  const bolt = new Bolt("a", 1.2, 0, 0, 0xffffff, { groundY: plateau });
+  stepBolt(bolt, [a, b], sim.arena, 0.5);
+  assert.ok(b.vx !== 0, "plateau bolt did not hit a co-elevation target");
+  sim.arena.setLayout(null);
+});
+
+test("height gate (asymmetric): bolt from plateau HITS ground-level target (down-shot)", () => {
+  // BLOCKER fix verification: shooting DOWN from elevation must connect.
+  // Old symmetric gate rejected this because bolt.y > tGroundY + PLAYER_HEIGHT + 0.1.
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  const plateauH = 2.0;
+  b.x = 3; b.z = 0; b.vx = 0; b.groundY = CFG.PLATFORM_TOP; // target on ground
+  sim.arena.setLayout({ plateaus: [], obstacles: [] });
+  // Bolt spawned from plateau height: y = plateauH + 1.1 = 3.1
+  const bolt = new Bolt("a", 1.2, 0, 0, 0xffffff, { groundY: plateauH });
+  stepBolt(bolt, [a, b], sim.arena, 0.5);
+  assert.ok(b.vx !== 0, "down-shot from plateau must hit a ground-level target");
+  sim.arena.setLayout(null);
+});
+
+test("height gate (asymmetric): bolt from ground MISSES target on tall plateau (hard up-shot)", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  b.x = 3; b.z = 0; b.vx = 0;
+  b.groundY = 2.0; // clearly above FALL_STUN_MIN_HEIGHT (1.5) — tall plateau
+  sim.arena.setLayout({ plateaus: [], obstacles: [] });
+  const bolt = new Bolt("a", 1.2, 0, 0, 0xffffff, { groundY: CFG.PLATFORM_TOP });
+  stepBolt(bolt, [a, b], sim.arena, 0.5);
+  assert.strictEqual(b.vx, 0, "ground bolt must not hit a player standing on a tall plateau (hard up-shot)");
+  sim.arena.setLayout(null);
+});
+
+test("height gate (asymmetric): same-level ground hit registers", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  b.x = 3; b.z = 0; b.vx = 0; b.groundY = CFG.PLATFORM_TOP;
+  sim.arena.setLayout({ plateaus: [], obstacles: [] });
+  const bolt = new Bolt("a", 1.2, 0, 0, 0xffffff, { groundY: CFG.PLATFORM_TOP });
+  stepBolt(bolt, [a, b], sim.arena, 0.5);
+  assert.ok(b.vx !== 0, "same-level bolt must hit a co-elevation target");
+  sim.arena.setLayout(null);
+});
+
+test("height gate (asymmetric): both-on-plateau shot hits", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  const plateauH = 2.0;
+  b.x = 3; b.z = 0; b.vx = 0; b.groundY = plateauH;
+  sim.arena.setLayout({ plateaus: [], obstacles: [] });
+  const bolt = new Bolt("a", 1.2, 0, 0, 0xffffff, { groundY: plateauH });
+  stepBolt(bolt, [a, b], sim.arena, 0.5);
+  assert.ok(b.vx !== 0, "plateau-to-plateau bolt must hit co-elevation target");
+  sim.arena.setLayout(null);
+});
+
+test("lightning LoS: obstacle between caster and target blocks the spell", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; a.aim = 0;
+  b.x = 6; b.z = 0; b.vx = 0;
+  // Tall stone obstacle directly between them at (3, 0).
+  sim.arena.setLayout({
+    plateaus: [],
+    obstacles: [{ id: 1, type: "stone", x: 3, z: 0, r: 1.0, height: 2.0, rot: 0 }],
+  });
+  cast(sim, "a", "lightning", 6, 0);
+  assert.strictEqual(b.vx, 0, "lightning hit through obstacle cover");
+  sim.arena.setLayout(null);
+});
+
+test("lightning LoS: still hits the target when no layout is set", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; b.x = 4; b.z = 0; b.vx = 0;
+  // No setLayout call — arena query returns false (no obstacles).
+  cast(sim, "a", "lightning", 4, 0);
+  assert.ok(b.vx > 0, "lightning failed to hit when no obstacle is present");
+});
+
+test("meteor AoE is unaffected by cover obstacles (rains from above)", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; b.x = 2; b.z = 0;
+  sim.arena.setLayout({
+    plateaus: [],
+    obstacles: [{ id: 1, type: "stone", x: 1, z: 0, r: 0.8, height: 2.0, rot: 0 }],
+  });
+  cast(sim, "a", "meteor", 2, 0);
+  // Advance just past fall time so the AoE resolves but friction hasn't zeroed vx.
+  advance(sim, SPELLS.meteor.fall + 0.05);
+  assert.ok(Math.abs(b.vx) > 0 || Math.abs(b.vz) > 0,
+    "meteor was cover-blocked when it should rain down unimpeded");
+  sim.arena.setLayout(null);
 });
 
 console.log(`\n${passed} spellbook tests passed.`);

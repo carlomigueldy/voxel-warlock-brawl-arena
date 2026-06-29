@@ -73,7 +73,16 @@ function startHosting(name, options = {}) {
       if (sim.phase === PHASE.LOBBY) applyBotSettings();
       // Tell everyone the full meta table so labels/colors match.
       pushLobby();
-      if (sim.phase !== PHASE.LOBBY) host.sendTo(peerId, { type: MSG.STATE, ...sim.snapshot() });
+      if (sim.phase !== PHASE.LOBBY) {
+        // Late-joining peers always receive the full map layout so they can
+        // build the correct geometry immediately.  Pass { trackSend: false } so
+        // this out-of-band snapshot does NOT consume the broadcast bandwidth gate
+        // (otherwise it could starve already-connected peers of a new layout);
+        // it always carries the full layout. The explicit mapLayout override is
+        // belt-and-suspenders.
+        const welcomeSnap = sim.snapshot({ trackSend: false });
+        host.sendTo(peerId, { type: MSG.STATE, ...welcomeSnap, mapLayout: sim.mapLayout });
+      }
       ui.setLobbyStatus(`${pname} joined.`);
     },
     onPlayerLeave: (peerId) => {

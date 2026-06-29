@@ -16,7 +16,15 @@ export class Bolt {
     this.z = z;
     this.prevX = x;
     this.prevZ = z;
-    this.y = CFG.PLATFORM_TOP + 1.1;
+    // Spawn height above the owner's ground surface so high-ground shots start
+    // at the correct elevation.  Defaults to PLATFORM_TOP when no groundY is
+    // given (backwards-compatible with spawnBolt in sim.js).
+    this.y = (opts.groundY ?? CFG.PLATFORM_TOP) + 1.1;
+    // Cover checking is opt-in: only bolts spawned through the normal spell
+    // pipeline (spawnProjectile passes groundY) check terrain.  Test bolts
+    // created directly with new Bolt() do not, so they are unaffected by
+    // procedural map obstacles that may happen to coincide with test positions.
+    this.coverEnabled = (opts.groundY !== undefined);
     this.dir = dir; // radians
     this.proj = opts.proj || "fireball";
     this.speed = opts.speed || CFG.BOLT_SPEED;
@@ -102,6 +110,23 @@ export class Bolt {
       this.bounces--;
     }
 
+    // Cover / obstacle blocking: fizzle when the bolt MOVES INTO a map feature
+    // (plateau wall or obstacle) whose top exceeds the bolt's Y.  Uses a point
+    // test so the check is independent of timestep size.
+    // Only applies to bolts spawned through the normal spell pipeline
+    // (this.coverEnabled); test bolts placed directly are unaffected.
+    // "prevX was clear, newX blocked" guards against bolts that start inside a
+    // feature footprint (e.g. a player who fired while overlapping geometry).
+    // fromY = this.y - 0.3 → blocks when featureHeight > this.y.
+    if (!skipMove && this.coverEnabled &&
+        arena && typeof arena.blocksMovement === "function") {
+      if (arena.blocksMovement(this.x, this.z, this.y - 0.3) &&
+          !arena.blocksMovement(this.prevX, this.prevZ, this.y - 0.3)) {
+        this.dead = true;
+        return { hit: null };
+      }
+    }
+
     // Splitter: after travelling its split distance, fan out into shards.
     if (this.proj === "splitter" && !this._splitDone && this.shards > 0) {
       this.distance += this.speed * dt;
@@ -126,6 +151,17 @@ export class Bolt {
     // Collision with players (skip owner).
     for (const p of players) {
       if (p.id === this.ownerId || !p.alive || p.falling) continue;
+      // Asymmetric height gate — elevation affects hit registration in one
+      // direction only, matching the design intent "shooting up is hard, shooting
+      // down clears cover / always connects":
+      //   • Reject ONLY when the target's ground is meaningfully ABOVE the bolt
+      //     (hard up-shot: the bolt skims below the target's feet).
+      //   • Allow when the bolt is at or above the target level (down-shots from
+      //     high ground, same-level shots, and ramp transitions all connect).
+      // band ≈ 0.6 lets a bolt hugging the plateau edge still register without
+      // reaching all the way up to a target two full heights above it.
+      const tGroundY = p.groundY ?? CFG.PLATFORM_TOP;
+      if (tGroundY > this.y + 0.6) continue;
       const dx = p.x - this.x;
       const dz = p.z - this.z;
       const r = CFG.PLAYER_RADIUS + CFG.BOLT_RADIUS;

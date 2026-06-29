@@ -1,6 +1,8 @@
 // Pure, authoritative game simulation. Deliberately free of Three.js so it can
 // run on the host and be unit-tested headlessly in Node.
 import { CFG, SPELLS, SPELL_ORDER, getArenaLandSize, getArenaWorld, isOnArenaWorld } from "./config.js";
+import { MapQuery } from "./arena-query.js";
+import { generateMap } from "./mapgen.js";
 import { Player } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
@@ -22,14 +24,24 @@ function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
 }
 
 // A lightweight logical arena (no rendering) used by the sim.
+// Holds a MapQuery so player.step() can call groundHeightAt/blocksMovement.
 class LogicArena {
   constructor(world, landSize) {
     this.world = world;
     this.landSize = landSize;
     this.radius = landSize.radius;
+    this._query = new MapQuery(null);
   }
   isOnPlatform(x, z) { return isOnArenaWorld(this.world.id, this.radius, x, z); }
-  reset() { this.radius = this.landSize.radius; }
+  groundHeightAt(x, z)             { return this._query.groundHeightAt(x, z); }
+  blocksMovement(x, z, fromY)      { return this._query.blocksMovement(x, z, fromY); }
+  obstaclesBlockingRay(x0,z0,y0,x1,z1,y1) { return this._query.obstaclesBlockingRay(x0,z0,y0,x1,z1,y1); }
+  onRamp(x, z)                     { return this._query.onRamp(x, z); }
+  setLayout(layout)                { this._query.setLayout(layout); }
+  reset() {
+    this.radius = this.landSize.radius;
+    this._query.setLayout(null); // clear layout; caller sets it again at round start
+  }
 }
 
 export const PHASE = {
@@ -77,6 +89,11 @@ export class Simulation {
     this.lastWinnerId = null;
     this.matchWinnerId = null;
     this.events = [];        // transient events for the renderer/sound (e.g. hits)
+    // Procedural map layout generated at each round start and broadcast to clients.
+    this.mapLayout = null;
+    this.mapVersion = 0;     // increments each round so clients detect new layouts
+    this._lastSentMapV = -1; // last mapVersion included in a snapshot (for bandwidth gate)
+    this._matchSeed = 0;     // re-randomised in startMatch(); base for per-round seeds
   }
 
   addPlayer(id, name, options = {}) {
@@ -170,6 +187,9 @@ export class Simulation {
     for (const p of this.players.values()) p.score = 0;
     this.matchWinnerId = null;
     this.round = 0;
+    // New random base seed for the whole match; each round mixes it with the
+    // round number so every round gets a distinct but reproducible layout.
+    this._matchSeed = Math.floor(Math.random() * 0xffffffff);
     this.beginRound();
     return true;
   }
@@ -195,10 +215,18 @@ export class Simulation {
     this.runes = [];
     this.runePool = [];
     this.runeSpawnTimer = 0;
-    this.arena.reset();
+    this.arena.reset(); // clears radius and layout
     this.playTime = 0;
     this.phase = PHASE.COUNTDOWN;
     this.phaseTimer = CFG.ROUND.COUNTDOWN;
+
+    // Generate a deterministic procedural layout for this round.
+    // Seed mixes the per-match base seed with the round number so each round
+    // has a distinct layout but is 100% reproducible from the same match seed.
+    const mapSeed = (this._matchSeed ^ (this.round * 0x9e3779b9)) >>> 0;
+    this.mapLayout = generateMap(this.world.id, this.landSize.radius, mapSeed);
+    this.mapVersion++;
+    this.arena.setLayout(this.mapLayout);
 
     // Spawn active players evenly around a ring; late joiners enter next round.
     const list = [...this.players.values()];
@@ -274,6 +302,7 @@ export class Simulation {
     this.runes = [];
     this.runePool = [];
     this.runeSpawnTimer = 0;
+    this.mapLayout = null;
     this.arena.reset();
     for (const p of this.players.values()) {
       p.alive = true;
@@ -554,6 +583,37 @@ export class Simulation {
     const side = bot.id.charCodeAt(bot.id.length - 1) % 2 === 0 ? 1 : -1;
     moveX += -towardZ * settings.strafe * side;
     moveZ += towardX * settings.strafe * side;
+
+    // Light wall-awareness: probe ahead and nudge around plateau walls/obstacles
+    // so bots don't wedge. Tries four steering alternatives in priority order
+    // (left 90°, right 90°, left 45°, right 45°) and zeroes the move only when
+    // all four probes are also blocked.
+    const moveLen = Math.hypot(moveX, moveZ);
+    if (moveLen > 0.01) {
+      const nx = moveX / moveLen, nz = moveZ / moveLen;
+      const probeStep = CFG.PLAYER_RADIUS + 0.3;
+      const fromY = bot.groundY ?? CFG.PLATFORM_TOP;
+      if (this.arena.blocksMovement(bot.x + nx * probeStep, bot.z + nz * probeStep, fromY)) {
+        // Candidates: 90° left, 90° right, 45° left, 45° right (all unit vectors).
+        const alts = [
+          [-nz, nx],
+          [nz, -nx],
+          [(nx - nz) * Math.SQRT1_2, (nx + nz) * Math.SQRT1_2],
+          [(nx + nz) * Math.SQRT1_2, (nz - nx) * Math.SQRT1_2],
+        ];
+        let steered = false;
+        for (const [ax, az] of alts) {
+          if (!this.arena.blocksMovement(bot.x + ax * probeStep, bot.z + az * probeStep, fromY)) {
+            moveX = ax * moveLen;
+            moveZ = az * moveLen;
+            steered = true;
+            break;
+          }
+        }
+        if (!steered) { moveX = 0; moveZ = 0; }
+      }
+    }
+
     const aim = Math.atan2(dz, dx) + settings.accuracy * Math.sin(this.playTime * 3 + bot.colorIndex);
     bot._botFireCooldown = settings.fireEvery;
     const fire = dist <= settings.fireRange && bot.canFire() && (bot._nextBotFireAt ?? 0) <= this.playTime;
@@ -606,7 +666,29 @@ export class Simulation {
   }
 
   // Full snapshot the host broadcasts to clients each tick.
-  snapshot() {
+  // mapLayout is included only when it changed since the last broadcast snapshot
+  // (identified by mapVersion) or when it is null (lobby / round reset) so
+  // clients know to clear their map meshes.  mapV is always present so clients
+  // can detect version changes even when the layout body is omitted.
+  //
+  // The broadcast loop calls snapshot() (trackSend defaults true) and is the
+  // SOLE consumer of the bandwidth gate (`_lastSentMapV`).  Out-of-band callers
+  // — e.g. the late-join welcome — MUST pass { trackSend: false } so they never
+  // consume the gate; otherwise a peer joining between a round's beginRound() and
+  // the next broadcast would flip the flag and the broadcast would omit the new
+  // layout, leaving already-connected peers without geometry.  A non-tracking
+  // snapshot always carries the full current layout (no override needed), but
+  // main.js also sets `mapLayout: sim.mapLayout` explicitly for clarity.
+  snapshot(opts = {}) {
+    const trackSend = opts.trackSend !== false;
+    const layoutChanged = this.mapVersion !== this._lastSentMapV;
+    // Include layout when: (a) this is an out-of-band welcome (always send the
+    // full layout), (b) version ticked (round start), OR (c) layout is null
+    // (lobby/reset) so the client clears stale meshes.
+    const includeLayout = !trackSend || layoutChanged || this.mapLayout === null;
+    // Only the broadcast path advances the gate; welcomes leave it untouched.
+    if (trackSend && includeLayout) this._lastSentMapV = this.mapVersion;
+
     return {
       t: Date.now(),
       phase: this.phase,
@@ -627,6 +709,9 @@ export class Simulation {
       runes: this.runes.map((r) => ({ id: r.id, spell: r.spell, x: r.x, z: r.z, c: SPELLS[r.spell]?.color || 0xffffff })),
       spellSlotsEnabled: !this.allAbilitiesAtStart,
       events: this.events,
+      // undefined is omitted by JSON.stringify, saving bandwidth on unchanged frames.
+      mapLayout: includeLayout ? this.mapLayout : undefined,
+      mapV: this.mapVersion,
     };
   }
 }

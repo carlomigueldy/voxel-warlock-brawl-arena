@@ -480,4 +480,56 @@ test("bot difficulty tiers fire at distinct cadences (expert > brilliant > smart
   assert.ok(brilliant > smart, `brilliant(${brilliant}) should out-shoot smart(${smart})`);
 });
 
+test("bot wall-awareness: move is redirected when a plateau wall blocks the direct path", () => {
+  const sim = new Simulation();
+  sim.setBotRoster(1, "smart");
+  sim.addPlayer("target", "Target");
+  sim.startMatch();
+  // Advance past countdown.
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const bot = sim.botPlayers()[0];
+  const tgt = sim.players.get("target");
+  // Place bot and target on opposite sides of a tall plateau wall.
+  // Bot at (-5, 0, 0), target at (5, 0, 0), plateau centred at (0, 0) blocking XZ.
+  bot.x = -5; bot.z = 0; bot.groundY = CFG.PLATFORM_TOP;
+  tgt.x = 5; tgt.z = 0;
+  // A layout with a single plateau at centre, 3×3 footprint, height 3 (well above
+  // PLAYER_HEIGHT so blocksMovement returns true for a ground-level approach).
+  sim.arena.setLayout({
+    seed: 0,
+    plateaus: [{ x: 0, z: 0, w: 3, d: 3, height: 3, ramps: [] }],
+    obstacles: [],
+  });
+  // Call planBotInput once and capture the move vector.
+  const input = sim.planBotInput(bot, tgt);
+  const [mx, mz] = input.move;
+  // The direct line from bot to target is +X (dx>0, dz=0). If not steered the
+  // bot would move with mx>0, mz≈0 — straight into the wall. With wall-awareness,
+  // the X component should be reduced or the Z component non-zero (sideways nudge).
+  const directBlocked = mx > 0.5 && Math.abs(mz) < 0.1;
+  assert.strictEqual(directBlocked, false,
+    `bot move (${mx.toFixed(2)}, ${mz.toFixed(2)}) looks like an unsteered direct path into the wall`);
+  // Also verify the returned move is not NaN/Infinity.
+  assert.ok(Number.isFinite(mx) && Number.isFinite(mz), "steered move contains non-finite values");
+});
+
+test("bot wall-awareness: move is unchanged when path is clear", () => {
+  const sim = new Simulation();
+  sim.setBotRoster(1, "smart");
+  sim.addPlayer("target", "Target");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const bot = sim.botPlayers()[0];
+  const tgt = sim.players.get("target");
+  // No plateaus — flat arena — direct path should remain.
+  bot.x = -8; bot.z = 0; bot.groundY = CFG.PLATFORM_TOP;
+  tgt.x = 8; tgt.z = 0;
+  sim.arena.setLayout({ seed: 0, plateaus: [], obstacles: [] });
+  const input = sim.planBotInput(bot, tgt);
+  const [mx] = input.move;
+  // Bot should want to move toward the target (+X direction) without deflection.
+  assert.ok(mx > 0, "bot should move toward target when path is clear");
+  assert.ok(Number.isFinite(input.move[0]) && Number.isFinite(input.move[1]), "move should be finite");
+});
+
 console.log(`\n${passed} tests passed.`);

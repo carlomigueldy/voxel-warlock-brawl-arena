@@ -16,6 +16,16 @@ function aimToward(caster, tx, tz) {
 
 function emit(sim, ev) { sim.events.push(ev); }
 
+// Line-of-sight check: returns true when there is an unobstructed path from
+// `from` to `to` at mid-body height.  Gracefully returns true when the arena
+// has no layout set (null) or the obstaclesBlockingRay method is absent.
+function hasLoS(sim, from, to) {
+  if (!sim.arena || typeof sim.arena.obstaclesBlockingRay !== "function") return true;
+  const y0 = (from.groundY ?? CFG.PLATFORM_TOP) + 1.0;
+  const y1 = (to.groundY   ?? CFG.PLATFORM_TOP) + 1.0;
+  return !sim.arena.obstaclesBlockingRay(from.x, from.z, y0, to.x, to.z, y1);
+}
+
 // Spawn a single projectile with the spell's tuning.
 function spawnProjectile(sim, caster, dir, spell, overrides = {}) {
   const ox = caster.x + Math.cos(dir) * (CFG.PLAYER_RADIUS + 0.6);
@@ -30,6 +40,7 @@ function spawnProjectile(sim, caster, dir, spell, overrides = {}) {
     bounces: spell.bounces,
     splitDist: spell.splitDist,
     shards: spell.shards,
+    groundY: caster.groundY,  // bolt spawns at caster's current elevation
     ...overrides,
   });
   sim.bolts.push(b);
@@ -87,8 +98,20 @@ const HANDLERS = {
   lightning(sim, c, cast) {
     const s = SPELLS.lightning;
     const dir = aimToward(c, cast.tx, cast.tz);
-    // Primary target: nearest enemy roughly along aim, else nearest in range.
-    let target = nearestEnemy(sim, c.id, c.x, c.z, s.range);
+    // Primary target: nearest enemy in range with line-of-sight.
+    // Cover (obstacles/plateau walls) blocks direct-hit spells; targets without
+    // LoS are skipped entirely.
+    let target = null;
+    {
+      let bestD = s.range * s.range;
+      for (const p of sim.players.values()) {
+        if (p.id === c.id || !p.alive || p.falling || p.spectating) continue;
+        const d = (p.x - c.x) ** 2 + (p.z - c.z) ** 2;
+        if (d > bestD) continue;
+        if (!hasLoS(sim, c, p)) continue;
+        bestD = d; target = p;
+      }
+    }
     if (!target) return; // fizzle but cooldown already consumed
     const chained = new Set([c.id]);
     const segs = [];
@@ -102,12 +125,14 @@ const HANDLERS = {
       if (hit) emit(sim, { type: "hit", x: target.x, z: target.z, victim: target.id, by: c.id });
       chained.add(target.id);
       kb *= 0.7;
-      // Find next chain target near the current one.
+      // Find next chain target near the current one with line-of-sight.
       let next = null, bestD = s.chainRange * s.chainRange;
       for (const p of sim.players.values()) {
         if (chained.has(p.id) || !p.alive || p.falling || p.spectating) continue;
         const d = (p.x - target.x) ** 2 + (p.z - target.z) ** 2;
-        if (d <= bestD) { bestD = d; next = p; }
+        if (d > bestD) continue;
+        if (!hasLoS(sim, target, p)) continue;
+        bestD = d; next = p;
       }
       from = target; target = next;
     }

@@ -54,6 +54,39 @@ export const CFG = {
   FRICTION: 6.0,             // knockback velocity decay per sec (exponential-ish)
   GRAVITY: 22,               // applied once off the platform edge
 
+  // --- Fall-stun ---
+  // A player who drops off a ledge of at least FALL_STUN_MIN_HEIGHT units is
+  // stunned on landing (FALL_STUN_DURATION seconds).  Small ramp steps never
+  // trigger it.  Falling into the hazard still kills (unchanged).
+  FALL_STUN_DURATION: 2,     // seconds of stun after a notable fall
+  FALL_STUN_MIN_HEIGHT: 1.5, // minimum drop (world units) required to trigger stun
+
+  // --- Map generation ---
+  // Procedural layout tunables.  All geometry centres must lie on the platform
+  // even at ARENA_MIN_RADIUS so shrinking never strands objects mid-air.
+  MAP: {
+    // Plateaus — elevated sub-platforms reachable via ramps.
+    PLATEAU_COUNT_MIN:  2,
+    PLATEAU_COUNT_MAX:  3,
+    PLATEAU_HEIGHT_MIN: 1.5,   // world units above PLATFORM_TOP
+    PLATEAU_HEIGHT_MAX: 2.5,
+    PLATEAU_W_MIN:      1.5,   // full width  (x extent)
+    PLATEAU_W_MAX:      2.5,
+    PLATEAU_D_MIN:      1.5,   // full depth  (z extent)
+    PLATEAU_D_MAX:      2.5,
+    PLATEAU_CLEARANCE:  0.5,   // minimum gap between plateau footprints
+
+    // Obstacle counts per type [min, max].
+    OBS_TREE_MIN:        2,  OBS_TREE_MAX:        3,
+    OBS_STONE_MIN:       2,  OBS_STONE_MAX:       3,
+    OBS_COLUMN_MIN:      1,  OBS_COLUMN_MAX:      2,
+    OBS_DEBRIS_MIN:      2,  OBS_DEBRIS_MAX:      4,
+    OBS_WALL_MIN:        1,  OBS_WALL_MAX:        2,
+    OBS_BOULDER_MIN:     1,  OBS_BOULDER_MAX:     2,
+    OBS_DEADGIANT_MIN:   0,  OBS_DEADGIANT_MAX:   1,
+    OBS_DRAGONBONES_MIN: 0,  OBS_DRAGONBONES_MAX: 1,
+  },
+
   // --- Bolt (the core weapon) ---
   BOLT_SPEED: 26,            // units/sec
   BOLT_RADIUS: 0.45,
@@ -78,8 +111,8 @@ export const CFG = {
   ROUND: {
     COUNTDOWN: 3,            // seconds before a round begins
     GRACE: 1.5,             // no-shrink grace period at round start
-    SHRINK_START_DELAY: 6,  // seconds before platform begins shrinking
-    SHRINK_RATE: 0.45,      // units/sec the radius shrinks once shrinking
+    SHRINK_START_DELAY: 8,  // seconds before platform begins shrinking (raised for elevation pacing)
+    SHRINK_RATE: 0.30,      // units/sec the radius shrinks once shrinking (slowed for elevation pacing)
     POINTS_FOR_WIN: 1,
     POINTS_TO_WIN_MATCH: 5, // first to this many round wins ends the match
     END_DELAY: 3.0,         // seconds to show the round result
@@ -214,8 +247,9 @@ export const MSG = {
   // host -> client
   WELCOME: "welcome",    // {id, players, hostName}
   LOBBY: "lobby",        // {players}
-  START: "start",        // {round}
+  START: "start",        // {round} — mapLayout travels in the first STATE packet, not here
   STATE: "state",        // {t, players[], bolts[], arenaR, phase, ...}
+  // snapshot player field `st` = stun remaining (seconds, like `hz`) added in player.js
   ROUND_END: "roundEnd", // {winnerId, scores}
   MATCH_END: "matchEnd", // {winnerId, scores}
   CHAT: "chat",          // reserved

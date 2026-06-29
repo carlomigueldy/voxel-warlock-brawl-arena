@@ -8,7 +8,9 @@ import { Arena } from "./arena.js";
 import {
   buildWarlock, buildBolt, animateWarlock,
   buildBurst, buildLightning, buildMeteor, buildRune,
+  buildPlateau, buildRamp,
 } from "./voxel.js";
+import { PROP_BUILDERS } from "./props.js";
 import {
   loadCharacterTemplate,
   characterReady,
@@ -74,6 +76,10 @@ export class GameRenderer {
     this.audio = null;             // set via setAudio()
     this._lastSnapT = -1;          // dedupe events per snapshot
     this._shake = 0;
+
+    // Map layout geometry (plateaus, ramps, obstacles) rebuilt once per round.
+    this._mapVersion = -1;   // last snapshot.mapV applied
+    this._mapMeshes  = [];   // Groups built from the current layout
 
     // Smoothed camera target.
     this._camTarget = new THREE.Vector3(0, 0, 0);
@@ -310,6 +316,22 @@ export class GameRenderer {
     this.arena.setRadius(snapshot.arenaR ?? CFG.ARENA_RADIUS);
     this._applyHazardTheme(this.arena.hazard);
 
+    // Rebuild map layout meshes (plateaus, ramps, obstacles) whenever the host
+    // generates a new layout (each round start). mapV is an incrementing integer;
+    // undefined during the lobby (treated as -1 → clear any existing meshes).
+    // Also clear when mapLayout is explicitly null (returnToLobby / round reset)
+    // even if mapV has not changed, so stale plateau/obstacle meshes don't linger
+    // in the lobby. Omitted mapLayout (undefined) means "no change this frame".
+    const snapMapV = snapshot.mapV ?? -1;
+    const layoutCleared = snapshot.mapLayout === null && this._mapMeshes.length > 0;
+    if (snapMapV !== this._mapVersion || layoutCleared) {
+      this._mapVersion = snapMapV;
+      this._rebuildMapMeshes(
+        snapshot.mapLayout ?? null,
+        snapshot.arenaWorld ?? CFG.DEFAULT_ARENA_WORLD
+      );
+    }
+
     const seen = new Set();
     for (const ps of snapshot.players) {
       seen.add(ps.id);
@@ -422,6 +444,32 @@ export class GameRenderer {
       e.group.add(bubble); e.shield = bubble;
     } else if (!ps.sh && e.shield) {
       e.group.remove(e.shield); e.shield = null;
+    }
+
+    // Stun VFX: spinning yellow stars orbiting the player's head when stunned.
+    // Keyed off the snapshot `st` field (stunned remaining seconds, like `hz`).
+    if (ps.st > 0 && !e.stunEffect) {
+      const stars = new THREE.Group();
+      // Position the halo just above the label / top of the model.
+      stars.position.y = e.usingGLB ? CFG.PLAYER_HEIGHT + 0.3 : 2.6;
+      for (let i = 0; i < 5; i++) {
+        const star = new THREE.Mesh(
+          new THREE.BoxGeometry(0.2, 0.2, 0.2),
+          new THREE.MeshBasicMaterial({ color: 0xffff44 })
+        );
+        const a = (i / 5) * Math.PI * 2;
+        star.position.set(Math.cos(a) * 0.6, 0, Math.sin(a) * 0.6);
+        stars.add(star);
+      }
+      e.group.add(stars);
+      e.stunEffect = stars;
+    } else if (ps.st <= 0 && e.stunEffect) {
+      e.group.remove(e.stunEffect);
+      e.stunEffect.traverse((o) => {
+        if (o.geometry) o.geometry.dispose?.();
+        if (o.material) o.material.dispose?.();
+      });
+      e.stunEffect = null;
     }
   }
 
@@ -618,6 +666,14 @@ export class GameRenderer {
           dt,
         });
       }
+
+      // Rotate stun-star halo and bob each star individually.
+      if (e.stunEffect) {
+        e.stunEffect.rotation.y += dt * 5;
+        for (let si = 0; si < e.stunEffect.children.length; si++) {
+          e.stunEffect.children[si].position.y = Math.sin(t * 8 + si * 1.26) * 0.18;
+        }
+      }
     }
 
     // Spin bolts for flair.
@@ -668,6 +724,47 @@ export class GameRenderer {
     this.camera.lookAt(this._camTarget.x, 0, this._camTarget.z);
   }
 
+  // Dispose the current map layout meshes and rebuild them from the new layout.
+  // Called whenever snapshot.mapV increments (each round start) or becomes -1
+  // (lobby / round end, layout = null → just dispose).
+  _rebuildMapMeshes(layout, worldId) {
+    for (const g of this._mapMeshes) {
+      this.scene.remove(g);
+      g.traverse((o) => {
+        if (o.geometry) o.geometry.dispose?.();
+        if (o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach((m) => m.dispose?.());
+        }
+      });
+    }
+    this._mapMeshes = [];
+    if (!layout) return;
+
+    // Plateaus and their ramps.
+    for (const pl of layout.plateaus) {
+      const pg = buildPlateau(pl, worldId);
+      this.scene.add(pg);
+      this._mapMeshes.push(pg);
+      for (const ramp of pl.ramps) {
+        const rg = buildRamp(ramp, pl.height, worldId);
+        this.scene.add(rg);
+        this._mapMeshes.push(rg);
+      }
+    }
+
+    // Obstacle props (trees, stones, columns, etc.).
+    for (const ob of layout.obstacles) {
+      const builder = PROP_BUILDERS[ob.type];
+      if (!builder) continue;
+      const og = builder(ob);
+      og.position.set(ob.x, CFG.PLATFORM_TOP, ob.z);
+      og.rotation.y = ob.rot;
+      this.scene.add(og);
+      this._mapMeshes.push(og);
+    }
+  }
+
   // Convert a screen point to a world aim angle from the local player.
   screenToAim(clientX, clientY) {
     const me = this.playerMeshes.get(this.localId);
@@ -714,6 +811,9 @@ export class GameRenderer {
     this.effects = [];
     for (const l of this.linkLines.values()) this.scene.remove(l);
     this.linkLines.clear();
+    // Clear map layout meshes (plateaus, ramps, obstacle props).
+    this._rebuildMapMeshes(null, CFG.DEFAULT_ARENA_WORLD);
+    this._mapVersion = -1;
     this.arena.reset();
   }
 }
