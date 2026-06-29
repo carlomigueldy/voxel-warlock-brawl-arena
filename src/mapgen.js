@@ -57,12 +57,16 @@ function shuffle(rng, arr) {
 /**
  * Generate a deterministic map layout.
  *
- * @param {string}  worldId  – arena world id (e.g. "circle", "islands")
- * @param {number}  radius   – starting arena radius for the round (world units)
- * @param {number}  seed     – integer seed supplied by the host; broadcast to clients
+ * @param {string}  worldId           – arena world id (e.g. "circle", "islands")
+ * @param {number}  radius            – starting arena radius for the round (world units)
+ * @param {number}  seed              – integer seed supplied by the host; broadcast to clients
+ * @param {Object}  [enabledObstacles={}] – map of obstacle type id -> boolean;
+ *   explicit `false` skips that type entirely (no RNG draws consumed for it so
+ *   other types' placement is unaffected).  Absent/undefined keys still spawn
+ *   (back-compat with callers that omit the argument).
  * @returns {{ seed:number, plateaus:object[], obstacles:object[] }}
  */
-export function generateMap(worldId, radius, seed) {
+export function generateMap(worldId, radius, seed, enabledObstacles = {}) {
   const rng = mulberry32(seed);
   const m   = CFG.MAP;
 
@@ -215,6 +219,14 @@ export function generateMap(worldId, radius, seed) {
   const circ_placed = []; // { x, z, r } — for obstacle-vs-obstacle clearance
 
   for (const spec of OBS_SPECS) {
+    // Skip disabled types before any RNG draw. NOTE: this means disabling a
+    // type DOES shift the RNG stream seen by every later type — enabled types
+    // will land at different positions than in a fully-enabled run. That is
+    // intentional and acceptable: the guarantee is only that identical
+    // seed + identical toggle set always produces an identical layout
+    // (intra-run determinism). Multiplayer is safe because every client
+    // renders the host-broadcast mapLayout rather than regenerating locally.
+    if (enabledObstacles[spec.type] === false) continue;
     const count = randInt(rng, spec.cLo, spec.cHi);
     for (let i = 0; i < count; i++) {
       placed: for (let t = 0; t < TRIES; t++) {

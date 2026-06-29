@@ -66,6 +66,13 @@ export class Simulation {
     this.allAbilitiesAtStart = options.allAbilitiesAtStart !== false;
     this.world = getArenaWorld(options.arenaWorld);
     this.landSize = getArenaLandSize(options.landSize);
+    // Sanitize enabledObstacles: only keep recognised type ids; map explicit false
+    // to false, everything else (true / absent) to true so the default is all-on.
+    const rawToggles = options.enabledObstacles || {};
+    this.enabledObstacles = {};
+    for (const { id } of CFG.OBSTACLE_TYPES) {
+      this.enabledObstacles[id] = rawToggles[id] !== false;
+    }
     this.players = new Map(); // id -> Player
     this.bolts = [];
     this.meteors = [];        // in-flight meteors (delayed AoE)
@@ -222,7 +229,7 @@ export class Simulation {
     // Seed mixes the per-match base seed with the round number so each round
     // has a distinct layout but is 100% reproducible from the same match seed.
     const mapSeed = (this._matchSeed ^ (this.round * 0x9e3779b9)) >>> 0;
-    this.mapLayout = generateMap(this.world.id, this.landSize.radius, mapSeed);
+    this.mapLayout = generateMap(this.world.id, this.landSize.radius, mapSeed, this.enabledObstacles);
     this.mapVersion++;
     this.arena.setLayout(this.mapLayout);
 
@@ -633,6 +640,7 @@ export class Simulation {
       arenaR: +this.arena.radius.toFixed(2),
       arenaWorld: this.world.id,
       landSize: this.landSize.id,
+      enabledObstacles: this.enabledObstacles,
       winner: this.lastWinnerId,
       matchWinner: this.matchWinnerId,
       players: [...this.players.values()].map((p) => p.snapshot()),

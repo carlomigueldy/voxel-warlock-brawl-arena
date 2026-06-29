@@ -51,6 +51,7 @@ function startHosting(name, options = {}) {
     allAbilitiesAtStart: options.allAbilitiesAtStart,
     arenaWorld: options.arenaWorld,
     landSize: options.landSize,
+    enabledObstacles: options.enabledObstacles,
   });
 
   host = new Host({
