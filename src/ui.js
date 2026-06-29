@@ -28,6 +28,8 @@ export class UI {
     this.handlers = {};
     this.audio = null;
     this._abilityEls = null;
+    this._abilityMode = null;
+    this.spellSlotHotkeys = [...CFG.DEFAULT_SPELL_SLOT_HOTKEYS];
     this._populateArenaControls();
     this._bind();
     this._prefillFromUrl();
@@ -54,40 +56,121 @@ export class UI {
     }
   }
 
+  setSpellSlotHotkeys(keys = CFG.DEFAULT_SPELL_SLOT_HOTKEYS) {
+    this.spellSlotHotkeys = CFG.DEFAULT_SPELL_SLOT_HOTKEYS.map((fallback, i) => keys[i] || fallback);
+    if (this._abilityMode === "slots") this._buildAbilityBar(true);
+  }
+
   // Build the ability bar once, then refresh cooldown overlays each frame.
-  _buildAbilityBar() {
-    if (!this.el.abilityBar || this._abilityEls) return;
+  _buildAbilityBar(force = false, mode = this._abilityMode || "spellbook") {
+    if (!this.el.abilityBar) return;
+    if (force || this._abilityMode !== mode) {
+      this._abilityEls = null;
+      this._abilityMode = mode;
+    }
+    if (this._abilityEls) return;
     this._abilityEls = {};
     this.el.abilityBar.replaceChildren();
-    for (const id of SPELL_ORDER) {
-      const s = SPELLS[id];
-      if (!s) continue;
-      const slot = document.createElement("div");
-      slot.className = "ability-slot";
-      slot.title = s.name;
-      const key = document.createElement("span");
-      key.className = "ability-key";
-      key.textContent = s.key;
-      const nm = document.createElement("span");
-      nm.className = "ability-name";
-      nm.textContent = s.name;
-      const cd = document.createElement("div");
-      cd.className = "ability-cd";
-      const swatch = document.createElement("span");
-      swatch.className = "ability-swatch";
-      swatch.style.background = "#" + ((s.color || 0x8888ff).toString(16).padStart(6, "0"));
-      slot.append(swatch, key, nm, cd);
-      slot.onclick = () => this.handlers.selectSpell?.(id);
-      this.el.abilityBar.appendChild(slot);
-      this._abilityEls[id] = { slot, cd };
+    if (mode === "slots") {
+      for (let i = 0; i < CFG.SPELL_SLOT_COUNT; i++) this._buildSpellSlot(i);
+      return;
     }
+    for (const id of SPELL_ORDER) this._buildSpellbookSlot(id);
+  }
+
+  _buildSpellbookSlot(id) {
+    const s = SPELLS[id];
+    if (!s) return;
+    const slot = this._slotShell(s.name, s.key, s.name, s.color || 0x8888ff);
+    slot.el.onclick = () => this.handlers.selectSpell?.(id);
+    this.el.abilityBar.appendChild(slot.el);
+    this._abilityEls[id] = { slot: slot.el, cd: slot.cd };
+  }
+
+  _buildSpellSlot(index) {
+    const key = this.spellSlotHotkeys[index] || CFG.DEFAULT_SPELL_SLOT_HOTKEYS[index];
+    const slot = this._slotShell(`Spell slot ${index + 1}`, key, "Empty", 0x444466);
+    slot.el.dataset.slot = String(index);
+    slot.el.classList.add("empty");
+    const picker = document.createElement("button");
+    picker.className = "hotkey-picker";
+    picker.type = "button";
+    picker.textContent = "↻";
+    picker.onclick = (e) => {
+      e.stopPropagation();
+      picker.textContent = "…";
+      const set = (ev) => {
+        ev.preventDefault();
+        const key = this._eventKey(ev);
+        if (key) {
+          this.handlers.spellSlotHotkey?.(index, key);
+          this.spellSlotHotkeys[index] = key;
+          slot.key.textContent = key;
+        }
+        picker.textContent = "↻";
+      };
+      addEventListener("keydown", set, { once: true });
+    };
+    slot.el.appendChild(picker);
+    slot.el.onclick = () => {
+      const spell = slot.el.dataset.spell;
+      if (spell) this.handlers.selectSpell?.(spell);
+    };
+    this.el.abilityBar.appendChild(slot.el);
+    this._abilityEls[index] = { slot: slot.el, cd: slot.cd, key: slot.key, nm: slot.nm, swatch: slot.swatch };
+  }
+
+  _slotShell(title, keyText, nameText, color) {
+    const el = document.createElement("div");
+    el.className = "ability-slot";
+    el.title = title;
+    const key = document.createElement("span");
+    key.className = "ability-key";
+    key.textContent = keyText;
+    const nm = document.createElement("span");
+    nm.className = "ability-name";
+    nm.textContent = nameText;
+    const cd = document.createElement("div");
+    cd.className = "ability-cd";
+    const swatch = document.createElement("span");
+    swatch.className = "ability-swatch";
+    swatch.style.background = "#" + (color.toString(16).padStart(6, "0"));
+    el.append(swatch, key, nm, cd);
+    return { el, key, nm, cd, swatch };
+  }
+
+  _eventKey(e) {
+    if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3);
+    if (/^Digit[0-9]$/.test(e.code)) return e.code.slice(5);
+    return null;
   }
 
   updateAbilityBar(snapshot, localId) {
-    this._buildAbilityBar();
-    if (!this._abilityEls) return;
     const me = snapshot.players.find((p) => p.id === localId);
+    const slotMode = snapshot.spellSlotsEnabled && Array.isArray(me?.spellSlots);
+    this._buildAbilityBar(false, slotMode ? "slots" : "spellbook");
+    if (!this._abilityEls) return;
     const cds = me?.cds || {};
+    if (slotMode) {
+      const spellSlots = me.spellSlots;
+      for (let i = 0; i < CFG.SPELL_SLOT_COUNT; i++) {
+        const id = spellSlots[i];
+        const { slot, cd, nm, swatch } = this._abilityEls[i];
+        const empty = !id || !SPELLS[id];
+        const remain = empty ? 0 : (cds[id] || 0);
+        const total = empty ? 1 : (SPELLS[id].cd || 1);
+        const pct = Math.max(0, Math.min(100, (remain / total) * 100));
+        slot.dataset.spell = empty ? "" : id;
+        slot.title = empty ? `Empty spell slot ${i + 1}` : SPELLS[id].name;
+        nm.textContent = empty ? "Empty" : SPELLS[id].name;
+        swatch.style.background = "#" + ((empty ? 0x444466 : (SPELLS[id].color || 0x8888ff)).toString(16).padStart(6, "0"));
+        cd.style.height = empty ? "100%" : pct + "%";
+        slot.classList.toggle("empty", empty);
+        slot.classList.toggle("locked", empty);
+        slot.classList.toggle("ready", !empty && remain <= 0);
+      }
+      return;
+    }
     const acquired = new Set(me?.spells || SPELL_ORDER);
     for (const id in this._abilityEls) {
       const { slot, cd } = this._abilityEls[id];

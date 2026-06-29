@@ -59,11 +59,13 @@ Any static HTTP server works because the app uses browser-native ES modules and 
 | Move | `WASD` / Arrow keys | Left joystick |
 | Aim | Mouse | Screen/movement direction |
 | Fire Fireball | Left click / `Space` | FIRE button |
-| Cast spell | Hotkey (see below) at cursor | Tap ability slot |
+| Cast spell | Spell-slot hotkey at cursor | Tap ability slot |
 | Cast selected spell | Right click | Tap ability slot |
 
 Click any slot on the on-screen **ability bar** to select it; the bar also shows
-live cooldown sweeps. Toggle **SFX** and **Music** with the buttons top-right.
+live cooldown sweeps. In rune mode, each warlock has 6 spell slots, looted runes
+fill the first empty slot, and each slot hotkey can be rebound with the slot's
+small rebind button. Toggle **SFX** and **Music** with the buttons top-right.
 
 ## Skills (spellbook — full Warlock Brawl handbook)
 

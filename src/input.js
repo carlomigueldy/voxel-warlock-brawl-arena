@@ -1,6 +1,31 @@
 // Local input collection (keyboard/mouse + touch). Produces an input object
 // that gets sent to the host (or applied directly if we are the host).
-import { SPELLS, SPELL_ORDER } from "./config.js";
+import { CFG, SPELLS, SPELL_ORDER } from "./config.js";
+
+export const SPELL_SLOT_HOTKEY_STORAGE_KEY = "vwb-spell-slot-hotkeys";
+
+export function keyToCode(key) {
+  const k = String(key || "").trim().toUpperCase();
+  if (/^[0-9]$/.test(k)) return "Digit" + k;
+  if (/^[A-Z]$/.test(k)) return "Key" + k;
+  return null;
+}
+
+export function normalizeSpellSlotHotkeys(value) {
+  const source = Array.isArray(value) ? value : [];
+  return CFG.DEFAULT_SPELL_SLOT_HOTKEYS.map((fallback, i) => {
+    const key = String(source[i] || fallback).trim().toUpperCase();
+    return keyToCode(key) ? key : fallback;
+  });
+}
+
+function loadSpellSlotHotkeys() {
+  try {
+    return normalizeSpellSlotHotkeys(JSON.parse(localStorage.getItem(SPELL_SLOT_HOTKEY_STORAGE_KEY) || "[]"));
+  } catch {
+    return normalizeSpellSlotHotkeys([]);
+  }
+}
 
 // Map keyboard codes to spell ids from the spellbook definition.
 function buildKeyMap() {
@@ -8,9 +33,8 @@ function buildKeyMap() {
   for (const id of SPELL_ORDER) {
     const s = SPELLS[id];
     if (!s) continue;
-    const k = s.key;
-    if (/^[0-9]$/.test(k)) map["Digit" + k] = id;
-    else if (/^[A-Z]$/.test(k)) map["Key" + k] = id;
+    const code = keyToCode(s.key);
+    if (code) map[code] = id;
   }
   return map;
 }
@@ -27,6 +51,8 @@ export class InputController {
     this.pendingCasts = [];     // queued {id, spell, tx, tz} awaiting send
     this._castWindow = [];      // resend buffer: [{c, ttl}]
     this.keyMap = buildKeyMap();
+    this.spellSlotHotkeys = loadSpellSlotHotkeys();
+    this.spellSlots = Array(CFG.SPELL_SLOT_COUNT).fill(null);
     this.touchMove = [0, 0];
     this.touchFire = false;
     this.onCast = null;          // optional callback (e.g. resume audio)
@@ -40,7 +66,7 @@ export class InputController {
       this.keys[e.code] = true;
       if (e.code === "Space") this.fire = true;
       // Ability hotkeys queue a cast at the current aim/target point.
-      const spell = this.keyMap[e.code];
+      const spell = this.spellForCode(e.code);
       if (spell && !e.repeat) this.queueCast(spell);
     });
     addEventListener("keyup", (e) => {
@@ -63,6 +89,24 @@ export class InputController {
   }
 
   setSelectedSpell(id) { if (SPELLS[id]) this.selectedSpell = id; }
+
+  setSpellSlots(slots = []) {
+    this.spellSlots = Array.from({ length: CFG.SPELL_SLOT_COUNT }, (_, i) => slots[i] || null);
+  }
+
+  setSpellSlotHotkey(index, key) {
+    if (index < 0 || index >= CFG.SPELL_SLOT_COUNT) return false;
+    const normalized = normalizeSpellSlotHotkeys(Object.assign([...this.spellSlotHotkeys], { [index]: key }));
+    this.spellSlotHotkeys = normalized;
+    localStorage.setItem(SPELL_SLOT_HOTKEY_STORAGE_KEY, JSON.stringify(normalized));
+    return true;
+  }
+
+  spellForCode(code) {
+    const slot = this.spellSlotHotkeys.findIndex((key) => keyToCode(key) === code);
+    if (slot >= 0) return this.spellSlots[slot] || null;
+    return this.keyMap[code];
+  }
 
   // Queue a spell cast aimed at the current cursor's ground point.
   queueCast(spell) {

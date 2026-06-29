@@ -276,7 +276,7 @@ test("players without all starting abilities cannot cast unacquired spells", () 
   assert.ok(Math.abs(a.x) < 0.001, "teleport fired before acquisition");
 });
 
-test("spell runes grant abilities on pickup", () => {
+test("spell runes occupy the first empty spell slot on pickup", () => {
   const sim = new Simulation({ allAbilitiesAtStart: false });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
@@ -285,17 +285,45 @@ test("spell runes grant abilities on pickup", () => {
   sim.runes = [{ id: 1, spell: "teleport", x: a.x, z: a.z }];
   sim.step(1 / CFG.TICK_RATE);
   assert.ok(a.hasSpell("teleport"), "teleport was not acquired");
+  assert.deepStrictEqual(a.spellSlots, ["teleport", null, null, null, null, null], "teleport did not occupy the first empty slot");
   assert.strictEqual(sim.runes.length, 0, "picked up rune was not removed");
 });
 
-test("snapshots include runes and acquired spell ids", () => {
+test("players with six filled spell slots cannot loot another spell rune", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  for (const spell of ["teleport", "thrust", "swap", "windWalk", "rush", "drain"]) a.acquireSpell(spell);
+  sim.runes = [{ id: 1, spell: "meteor", x: a.x, z: a.z }];
+  sim.step(1 / CFG.TICK_RATE);
+  assert.strictEqual(a.hasSpell("meteor"), false, "meteor should not be acquired when slots are full");
+  assert.strictEqual(sim.runes.length, 1, "full-slot pickup should leave the rune on the field");
+});
+
+test("consumed rune abilities clear their spell slot", () => {
+  const sim = new Simulation({ allAbilitiesAtStart: false });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  a.acquireSpell("teleport");
+  a.x = 0; a.z = 0;
+  cast(sim, "a", "teleport", 5, 0);
+  assert.deepStrictEqual(a.spellSlots, [null, null, null, null, null, null], "teleport slot was not cleared after cast");
+});
+
+test("snapshots include runes, acquired spell ids, and six spell slots", () => {
   const sim = new Simulation({ allAbilitiesAtStart: false });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   const snap = JSON.parse(JSON.stringify(sim.snapshot()));
   assert.ok(Array.isArray(snap.runes), "runes missing from snapshot");
+  assert.strictEqual(snap.spellSlotsEnabled, true, "rune mode flag missing from snapshot");
   const me = snap.players.find((p) => p.id === "a");
   assert.deepStrictEqual(me.spells, ["fireball"], "acquired spells missing from player snapshot");
+  assert.deepStrictEqual(me.spellSlots, [null, null, null, null, null, null], "six empty spell slots missing from player snapshot");
 });
 
 test("rune mode starts with at most two active runes", () => {
