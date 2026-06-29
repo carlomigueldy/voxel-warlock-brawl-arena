@@ -12,6 +12,7 @@ console.log("Source integration checks:");
 
 const main = fs.readFileSync("src/main.js", "utf8");
 const ui = fs.readFileSync("src/ui.js", "utf8");
+const input = fs.readFileSync("src/input.js", "utf8");
 const html = fs.readFileSync("index.html", "utf8");
 
 test("host start is gated by Simulation.startMatch result", () => {
@@ -98,6 +99,19 @@ test("host menu exposes all-abilities-at-start toggle", () => {
 test("ability bar filters slots by acquired spells from snapshots", () => {
   assert.match(ui, /me\?\.spells/);
   assert.match(ui, /slot\.classList\.toggle\("locked"/);
+});
+
+test("rune mode ability bar renders six spell slots", () => {
+  assert.match(ui, /CFG\.SPELL_SLOT_COUNT/);
+  assert.match(ui, /spellSlots/);
+  assert.match(ui, /empty/);
+});
+
+test("spell slot hotkeys are configurable and persisted locally", () => {
+  assert.match(input, /SPELL_SLOT_HOTKEY_STORAGE_KEY/);
+  assert.match(input, /localStorage\.setItem\(SPELL_SLOT_HOTKEY_STORAGE_KEY/);
+  assert.match(input, /setSpellSlotHotkey/);
+  assert.match(ui, /hotkey-picker/);
 });
 
 test("host lobby exposes bot count and difficulty controls", () => {

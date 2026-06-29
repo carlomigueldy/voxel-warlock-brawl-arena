@@ -504,8 +504,7 @@ export class Simulation {
       for (const p of this.players.values()) {
         if (!p.alive || p.falling || p.spectating || p.hasSpell(rune.spell)) continue;
         const d = Math.hypot(p.x - rune.x, p.z - rune.z);
-        if (d <= CFG.RUNE_RADIUS + CFG.PLAYER_RADIUS) {
-          p.acquireSpell(rune.spell);
+        if (d <= CFG.RUNE_RADIUS + CFG.PLAYER_RADIUS && p.acquireSpell(rune.spell)) {
           this.events.push({ type: "runePickup", id: p.id, spell: rune.spell, x: rune.x, z: rune.z });
           picked = true;
           break;
@@ -624,6 +623,7 @@ export class Simulation {
         t: +m.t.toFixed(2), fall: m.fall, r: m.radius,
       })),
       runes: this.runes.map((r) => ({ id: r.id, spell: r.spell, x: r.x, z: r.z, c: SPELLS[r.spell]?.color || 0xffffff })),
+      spellSlotsEnabled: !this.allAbilitiesAtStart,
       events: this.events,
     };
   }

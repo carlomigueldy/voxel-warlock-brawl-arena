@@ -157,13 +157,15 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 }
 
 /* ===== Ability bar ===== */
+/* Sits above #charge-wrap (bottom:30px + 14px tall = clears 44px) so the charge
+   bar never overlaps/underflows the spell slots. */
 #ability-bar {
-  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+  position: fixed; bottom: 54px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 7px; flex-wrap: wrap; justify-content: center;
   max-width: 96vw; z-index: 6; pointer-events: auto;
 }
 .ability-slot {
-  position: relative; width: 58px; height: 56px;
+  position: relative; width: 66px; height: 64px;
   background: rgba(24,20,51,0.85); border: 1px solid rgba(108,76,255,0.45);
   border-radius: 8px; overflow: hidden; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
@@ -171,21 +173,27 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 }
 .ability-slot.ready { box-shadow: 0 0 8px rgba(124,255,90,0.35); border-color: rgba(124,255,90,0.6); }
 .ability-slot.locked { opacity: 0.35; filter: grayscale(1); }
+.ability-slot.empty { border-style: dashed; }
 .ability-swatch {
-  position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
-  width: 16px; height: 16px; border-radius: 4px; box-shadow: 0 0 6px currentColor;
+  position: absolute; top: 5px; left: 50%; transform: translateX(-50%);
+  width: 18px; height: 18px; border-radius: 4px; box-shadow: 0 0 6px currentColor;
 }
 .ability-key {
-  position: absolute; top: 2px; left: 4px; font-size: 11px; font-weight: bold;
+  position: absolute; top: 2px; left: 5px; font-size: 12px; font-weight: bold;
   color: #fff; text-shadow: 0 1px 2px #000;
 }
 .ability-name {
-  font-size: 8px; line-height: 1.1; text-align: center; color: var(--muted);
+  font-size: 9px; line-height: 1.1; text-align: center; color: var(--muted);
   z-index: 2;
 }
 .ability-cd {
   position: absolute; bottom: 0; left: 0; width: 100%; height: 0%;
   background: rgba(0,0,0,0.62); transition: height 0.08s linear; z-index: 1;
+}
+.hotkey-picker {
+  position: absolute; top: 2px; right: 2px; z-index: 3;
+  width: 16px; height: 16px; padding: 0; border-radius: 4px;
+  font-size: 10px; line-height: 16px; background: rgba(108,76,255,0.65);
 }
 
 /* ===== Audio controls ===== */
@@ -202,6 +210,6 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 @media (max-width: 640px) {
   .lobby-grid { grid-template-columns: 1fr; }
   h1 { font-size: 30px; }
-  .ability-slot { width: 42px; height: 44px; }
+  .ability-slot { width: 50px; height: 50px; }
   .ability-name { display: none; }
 }
