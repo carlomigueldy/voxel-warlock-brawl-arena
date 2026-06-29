@@ -1,6 +1,7 @@
 // Low-poly voxel mesh builders. Everything is built from boxes for the
 // blocky aesthetic, merged where possible to keep draw calls down.
 import * as THREE from "three";
+import { CFG, getArenaWorld, getArenaHazard, isOnArenaWorld } from "./config.js";
 
 function box(w, h, d, color, x = 0, y = 0, z = 0, flat = true) {
   const geo = new THREE.BoxGeometry(w, h, d);
@@ -293,25 +294,23 @@ export function buildMeteor(x, z, fall, radius, color) {
 
 // Build the voxel platform mesh for a given radius using merged boxes.
 // We rebuild it when the radius changes (shrinking arena).
-export function buildPlatform(radius) {
+export function buildPlatform(radius, worldId = CFG.DEFAULT_ARENA_WORLD) {
   const g = new THREE.Group();
   const step = 2; // voxel block size for the floor
-  const top = 0x6c4cff;
-  const side = 0x3a2a7a;
-  const r2 = radius * radius;
+  const world = getArenaWorld(worldId);
 
   // Use instancing for performance.
   const cells = [];
   for (let x = -radius; x <= radius; x += step) {
     for (let z = -radius; z <= radius; z += step) {
-      if (x * x + z * z <= r2) cells.push([x, z]);
+      if (isOnArenaWorld(world.id, radius, x, z)) cells.push([x, z]);
     }
   }
 
   const topGeo = new THREE.BoxGeometry(step, 1, step);
   const sideGeo = new THREE.BoxGeometry(step, 3, step);
-  const topMat = new THREE.MeshLambertMaterial({ color: top, flatShading: true });
-  const sideMat = new THREE.MeshLambertMaterial({ color: side, flatShading: true });
+  const topMat = new THREE.MeshLambertMaterial({ color: world.top, flatShading: true });
+  const sideMat = new THREE.MeshLambertMaterial({ color: world.side, flatShading: true });
 
   const topMesh = new THREE.InstancedMesh(topGeo, topMat, cells.length);
   const sideMesh = new THREE.InstancedMesh(sideGeo, sideMat, cells.length);
@@ -335,28 +334,188 @@ export function buildPlatform(radius) {
 
   g.add(sideMesh, topMesh);
   g.userData.radius = radius;
+  g.userData.world = world.id;
   return g;
 }
 
-// Animated lava plane (cheap vertex wobble via a shader-free approach).
-export function buildLava(size, y) {
-  const geo = new THREE.PlaneGeometry(size, size, 24, 24);
+// Build the animated hazard surface that surrounds and underlies the platform.
+// `hazard` is an entry from CFG.ARENA_HAZARDS; its `style`/color/amp drive both
+// the look and the per-frame motion in animateHazard so each map reads as its
+// own environment (lava sea, ocean, toxic swamp, sharp rocks, arcane abyss).
+export function buildHazard(size, y, hazard) {
+  const theme = hazard || getArenaHazard(CFG.DEFAULT_ARENA_WORLD);
+  const segs = theme.jagged ? 40 : 24;
+  const geo = new THREE.PlaneGeometry(size, size, segs, segs);
   geo.rotateX(-Math.PI / 2);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xff3a1e });
+
+  // Sharp rocks read as opaque flat-shaded stone; liquids glow without lighting.
+  const mat = theme.jagged
+    ? new THREE.MeshLambertMaterial({ color: theme.color, flatShading: true })
+    : new THREE.MeshBasicMaterial({ color: theme.color });
+
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.y = y;
-  // store base positions for wobble
   mesh.userData.base = geo.attributes.position.array.slice();
+  mesh.userData.hazard = theme;
+
+  // Pre-bake jagged spikes once; animateHazard leaves these static (just a tiny
+  // shimmer) so the rocks feel solid rather than fluid.
+  if (theme.jagged) {
+    const pos = geo.attributes.position;
+    const base = mesh.userData.base;
+    for (let i = 0; i < pos.count; i++) {
+      const x = base[i * 3];
+      const z = base[i * 3 + 2];
+      const spike = (Math.abs(Math.sin(x * 1.7) * Math.cos(z * 1.3)) ** 2) * 3.2;
+      base[i * 3 + 1] = pos.array[i * 3 + 1] + spike;
+      pos.array[i * 3 + 1] = base[i * 3 + 1];
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  }
   return mesh;
 }
 
-export function animateLava(mesh, t) {
+// Per-frame motion. The style decides the wave shape: lava churns, ocean rolls
+// in clean swells, swamp oozes slowly, rocks barely shimmer, the void pulses.
+export function animateHazard(mesh, t) {
+  if (!mesh) return;
+  const theme = mesh.userData.hazard || {};
+  const style = theme.style || "lava";
+  const amp = theme.amp ?? 0.4;
+  const speed = theme.speed ?? 1.5;
   const pos = mesh.geometry.attributes.position;
   const base = mesh.userData.base;
+  const tt = t * speed;
   for (let i = 0; i < pos.count; i++) {
     const x = base[i * 3];
     const z = base[i * 3 + 2];
-    pos.array[i * 3 + 1] = base[i * 3 + 1] + Math.sin(x * 0.3 + t * 1.5) * 0.4 + Math.cos(z * 0.4 + t) * 0.4;
+    const baseY = base[i * 3 + 1];
+    let h = 0;
+    switch (style) {
+      case "ocean":
+        // Long directional swells layered with a cross-chop.
+        h = Math.sin(x * 0.18 + tt) * amp + Math.sin((x + z) * 0.12 + tt * 0.7) * amp * 0.6;
+        break;
+      case "swamp":
+        // Slow, sparse bubbling — mostly still with occasional rises.
+        h = Math.sin(x * 0.5 + tt) * Math.cos(z * 0.5 + tt * 0.8) * amp;
+        break;
+      case "rocks":
+        // Static jagged field, only a faint heat-haze shimmer.
+        h = Math.sin(x * 2.0 + tt * 2) * amp;
+        break;
+      case "void":
+        // Concentric arcane pulse radiating from the center.
+        h = Math.sin(Math.hypot(x, z) * 0.4 - tt * 1.6) * amp;
+        break;
+      case "lava":
+      default:
+        h = Math.sin(x * 0.3 + tt) * amp + Math.cos(z * 0.4 + tt * 0.66) * amp;
+        break;
+    }
+    pos.array[i * 3 + 1] = baseY + h;
   }
   pos.needsUpdate = true;
+}
+
+// Ambient detail props that float above the hazard surface (embers, spray,
+// bubbles, dust, arcane shards). Returns a Group of instanced-ish small meshes,
+// each carrying its own per-particle state. animateHazardDetails advances them
+// and recycles any that rise past their ceiling, so the field loops forever.
+export function buildHazardDetails(size, y, hazard) {
+  const theme = hazard || getArenaHazard(CFG.DEFAULT_ARENA_WORLD);
+  const detail = theme.detail;
+  const g = new THREE.Group();
+  if (!detail) return g;
+
+  const half = size * 0.5;
+  const kind = detail.kind;
+  const color = detail.color ?? theme.color;
+  const baseSize = detail.size ?? 0.25;
+  const rise = detail.rise ?? 4;
+  const ceiling = (detail.ceiling ?? 9);
+
+  // Shards (void) are opaque flat-shaded crystals; everything else is a soft
+  // additive-looking translucent mote.
+  const makeMesh = () => {
+    if (kind === "shards") {
+      return new THREE.Mesh(
+        new THREE.OctahedronGeometry(baseSize),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 })
+      );
+    }
+    return new THREE.Mesh(
+      new THREE.BoxGeometry(baseSize, baseSize, baseSize),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 })
+    );
+  };
+
+  for (let i = 0; i < detail.count; i++) {
+    const m = makeMesh();
+    const px = (Math.random() * 2 - 1) * half * 0.55;
+    const pz = (Math.random() * 2 - 1) * half * 0.55;
+    const startY = y + Math.random() * ceiling;
+    m.position.set(px, startY, pz);
+    m.userData.p = {
+      x: px, z: pz,
+      baseY: y,
+      ceiling,
+      vy: rise * (0.5 + Math.random()),
+      drift: (Math.random() * 2 - 1) * 0.6,
+      phase: Math.random() * Math.PI * 2,
+      spin: (Math.random() * 2 - 1) * 2,
+      size: baseSize,
+    };
+    g.add(m);
+  }
+  g.userData.detail = detail;
+  return g;
+}
+
+// Per-frame motion for the ambient detail props. Each particle rises, drifts,
+// fades near its ceiling, then recycles to the surface — an endless loop.
+export function animateHazardDetails(group, t, dt) {
+  if (!group || !group.children.length) return;
+  const detail = group.userData.detail || {};
+  const kind = detail.kind;
+  const step = Number.isFinite(dt) ? dt : 0.016;
+  for (const m of group.children) {
+    const p = m.userData.p;
+    if (!p) continue;
+    p.vy += 0; // constant rise (kept simple/cheap)
+    m.position.y += p.vy * step;
+
+    // Lateral motion: sway for light motes, gentle bob for bubbles/dust.
+    const sway = Math.sin(t * 1.5 + p.phase) * p.drift;
+    m.position.x = p.x + sway;
+    m.position.z = p.z + Math.cos(t * 1.2 + p.phase) * p.drift * 0.6;
+
+    const climbed = m.position.y - p.baseY;
+    const k = Math.min(1, climbed / p.ceiling);
+    if (m.material) m.material.opacity = Math.max(0, (1 - k) * 0.85);
+
+    if (kind === "shards") {
+      m.rotation.x += p.spin * step;
+      m.rotation.y += p.spin * step * 0.7;
+    } else if (kind === "embers") {
+      // Embers shrink as they cool.
+      m.scale.setScalar(Math.max(0.15, 1 - k));
+    }
+
+    // Recycle once it reaches the ceiling.
+    if (climbed >= p.ceiling) {
+      m.position.y = p.baseY;
+      m.scale.setScalar(1);
+      if (m.material) m.material.opacity = 0.85;
+    }
+  }
+}
+
+// Back-compat aliases (older callers / any external refs).
+export function buildLava(size, y) {
+  return buildHazard(size, y, getArenaHazard(CFG.DEFAULT_ARENA_WORLD));
+}
+export function animateLava(mesh, t) {
+  return animateHazard(mesh, t);
 }
