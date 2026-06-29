@@ -974,3 +974,223 @@ html, body {
   /* Spine button hover: no translate. */
   .spine-btn:hover { transform: none !important; }
 }
+
+
+/* ============================================================
+   TUTORIAL SUB-SCREEN
+   ============================================================ */
+
+/* The tutorial sub-screen is taller than the others (spellbook is long).
+   Cap its height so the inner scroll area kicks in. overflow:hidden is
+   required so the flex child with flex:1 actually constrains correctly. */
+#screen-tutorial {
+  max-height: min(720px, calc(100vh - 80px));
+  overflow: hidden;
+}
+
+/* ---- Tab bar — same visual language as .segmented ---- */
+.tut-tabs {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
+  background: var(--slot);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.tut-tab {
+  appearance: none; border: none; cursor: pointer;
+  background: transparent; color: var(--muted);
+  font-family: var(--font-ui); font-weight: 700; font-size: 11px; letter-spacing: 0.5px;
+  padding: 9px 4px; border-radius: 9px; text-transform: uppercase;
+  transition: color 0.2s, background 0.15s;
+  position: relative; z-index: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tut-tab:hover { color: var(--text); }
+.tut-tab.is-active { color: #fff; }
+.tut-tab.is-active::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 9px;
+  background: linear-gradient(135deg, var(--arcane), #4c2cdd);
+  box-shadow: 0 0 14px rgba(108, 76, 255, 0.5);
+  animation: segPop 0.3s var(--ease-spring);
+}
+.tut-tab:focus-visible {
+  outline: 2px solid var(--arcane); outline-offset: 2px; border-radius: 9px;
+}
+
+/* ---- Scroll area: grows to fill remaining sub-screen height ---- */
+.tut-scroll-area {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(108, 76, 255, 0.5) transparent;
+}
+.tut-scroll-area:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; border-radius: 10px; }
+.tut-scroll-area::-webkit-scrollbar { width: 4px; }
+.tut-scroll-area::-webkit-scrollbar-track { background: transparent; }
+.tut-scroll-area::-webkit-scrollbar-thumb { background: rgba(108, 76, 255, 0.5); border-radius: 2px; }
+
+/* ---- Tab panels ---- */
+.tut-panel { display: block; }
+.tut-panel-hidden { display: none; }
+
+/* ---- Fact list (Basics + Goal & Arena panels) ---- */
+.tut-facts { display: flex; flex-direction: column; gap: 8px; }
+.tut-fact {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--arcane);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.tut-fact dt {
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 2px;
+  color: var(--arcane); margin-bottom: 5px; text-transform: uppercase;
+  line-height: 1.4;
+}
+.tut-fact dd { font-size: 13px; color: var(--text); line-height: 1.55; margin: 0; }
+.tut-fact dd strong { color: var(--gold); }
+.tut-fact dd em { color: var(--muted); font-style: normal; }
+
+/* Arena-world colour dots inside the goal panel. */
+.tut-world-list { list-style: none; display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+.tut-world-list li { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.tut-world-list li strong { color: var(--text); }
+.tut-world-dot {
+  width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
+  background: var(--wc, var(--arcane));
+  box-shadow: 0 0 8px var(--wc, var(--arcane));
+}
+
+/* ---- Controls panel ---- */
+.tut-controls-grid { display: flex; flex-direction: column; gap: 6px; }
+.tut-control-row {
+  display: grid; grid-template-columns: auto 1fr;
+  align-items: center; gap: 12px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; padding: 8px 12px;
+}
+.tut-control-action {
+  font-size: 12px; font-weight: 700; color: var(--muted);
+  white-space: nowrap;
+}
+.tut-keys {
+  display: flex; flex-wrap: wrap; gap: 3px; align-items: center;
+  justify-content: flex-end;
+}
+.tut-key-or { font-size: 10px; color: var(--muted); padding: 0 1px; }
+
+/* Key-cap chips — used in Controls panel and inline text hints. */
+kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 7px; letter-spacing: 0.5px;
+  color: var(--text); background: var(--slot);
+  border: 1px solid var(--line-strong); border-radius: 5px;
+  padding: 3px 6px; min-width: 22px;
+  box-shadow: var(--bezel);
+  line-height: 1;
+}
+.tut-key-chip {
+  display: inline-flex; align-items: center;
+  font-family: var(--font-ui); font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  color: var(--text); background: var(--slot);
+  border: 1px solid var(--line-strong); border-radius: 5px;
+  padding: 3px 8px;
+  box-shadow: var(--bezel);
+}
+.tut-key-fire {
+  background: rgba(255, 90, 60, 0.2); border-color: var(--ember); color: var(--ember);
+}
+.tut-hint {
+  font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5;
+}
+
+/* ---- Spellbook panel ---- */
+.tut-spell-group { margin-bottom: 14px; }
+.tut-spell-group:last-child { margin-bottom: 0; }
+.tut-spell-group-title {
+  font-family: var(--font-display); font-size: 7px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--muted);
+  padding: 0 2px 5px; margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.tut-spell-row {
+  display: grid; grid-template-columns: 8px 28px 1fr;
+  gap: 8px; align-items: start;
+  padding: 7px 10px;
+  border-left: 2px solid var(--spell-color, var(--arcane));
+  border-radius: 0 8px 8px 0;
+  background: var(--panel-2);
+  margin-bottom: 3px;
+  transition: background 0.15s;
+}
+.tut-spell-row:hover { background: rgba(108, 76, 255, 0.08); }
+.tut-spell-swatch {
+  width: 8px; height: 8px; border-radius: 2px; margin-top: 5px; flex-shrink: 0;
+  box-shadow: 0 0 6px var(--spell-color, var(--arcane));
+}
+.tut-spell-key {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 7px;
+  color: #fff; background: var(--slot);
+  border: 1px solid var(--line-strong); border-radius: 5px;
+  padding: 3px 5px; height: fit-content; margin-top: 2px;
+  box-shadow: var(--bezel);
+}
+.tut-spell-info { display: flex; flex-direction: column; gap: 1px; }
+.tut-spell-name { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.2; }
+.tut-spell-cd   { font-size: 10px; color: var(--muted); letter-spacing: 0.3px; }
+.tut-spell-desc { font-size: 11px; color: rgba(236, 233, 255, 0.65); line-height: 1.4; }
+
+/* ---- Tips panel ---- */
+.tut-tips-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.tut-tips-list li {
+  font-size: 12px; color: var(--muted); line-height: 1.55;
+  padding: 8px 12px 8px 14px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-left: 3px solid var(--rune); border-radius: 9px;
+}
+.tut-tips-list li strong { color: var(--text); }
+
+/* ---- Practice CTA — pinned below the scroll area ---- */
+.tut-practice-cta {
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.tut-practice-cta .btn { min-width: 200px; }
+.tut-practice-hint { font-size: 12px; color: var(--muted); }
+
+
+/* ============================================================
+   TUTORIAL — RESPONSIVE
+   ============================================================ */
+@media (max-width: 800px) {
+  /* On stacked mobile layout the sub-screen is flow-positioned; let the scroll
+     area carry its own max-height instead. */
+  #screen-tutorial { max-height: none; overflow: visible; }
+  .tut-scroll-area  { max-height: 38vh; }
+
+  .tut-tab { font-size: 9px; padding: 8px 2px; }
+  .tut-control-row { grid-template-columns: 1fr; gap: 6px; }
+  .tut-keys { justify-content: flex-start; }
+}
+
+@media (max-width: 480px) {
+  .tut-tabs { gap: 2px; }
+  .tut-tab  { font-size: 8px; padding: 7px 1px; }
+  .tut-spell-row { grid-template-columns: 6px 24px 1fr; gap: 5px; }
+  .tut-practice-cta .btn { min-width: 0; width: 100%; }
+}
+
+/* ---- Tutorial reduced-motion overrides ---- */
+@media (prefers-reduced-motion: reduce) {
+  .tut-tab.is-active::before { animation: none !important; }
+  .tut-spell-row { transition: none !important; }
+}

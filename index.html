@@ -197,6 +197,12 @@
             <span>JOIN GAME</span>
           </button>
         </li>
+        <li>
+          <button class="spine-btn" data-screen="tutorial" aria-current="false">
+            <span class="spine-icon" aria-hidden="true">📖</span>
+            <span>TUTORIAL</span>
+          </button>
+        </li>
       </ul>
 
       <p id="menu-status" class="status"></p>
@@ -270,6 +276,140 @@
           <button id="btn-join" class="btn btn-ghost">Join</button>
         </div>
       </div>
+
+      <!-- TUTORIAL sub-screen -->
+      <div class="sub-screen sub-screen-hidden" id="screen-tutorial" role="region" aria-label="How to play" aria-hidden="true">
+        <h2 class="sub-screen-title">TUTORIAL</h2>
+        <p class="sub-screen-desc">Learn the rules, master your spells, last warlock wins.</p>
+
+        <div class="tut-tabs" role="tablist" aria-label="Tutorial sections">
+          <button class="tut-tab" role="tab" data-tab="basics"    aria-selected="true"  aria-controls="tut-basics"    id="ttab-basics">Basics</button>
+          <button class="tut-tab" role="tab" data-tab="goal"      aria-selected="false" aria-controls="tut-goal"      id="ttab-goal">Goal &amp; Arena</button>
+          <button class="tut-tab" role="tab" data-tab="controls"  aria-selected="false" aria-controls="tut-controls"  id="ttab-controls">Controls</button>
+          <button class="tut-tab" role="tab" data-tab="spellbook" aria-selected="false" aria-controls="tut-spellbook" id="ttab-spellbook">Spellbook</button>
+          <button class="tut-tab" role="tab" data-tab="tips"      aria-selected="false" aria-controls="tut-tips"      id="ttab-tips">Tips</button>
+        </div>
+
+        <div class="tut-scroll-area" tabindex="0" role="group" aria-label="Tutorial content">
+
+          <!-- BASICS panel -->
+          <div class="tut-panel" id="tut-basics" role="tabpanel" aria-labelledby="ttab-basics" aria-hidden="false">
+            <dl class="tut-facts">
+              <div class="tut-fact">
+                <dt>No health bars</dt>
+                <dd>Each hit adds <strong>charge</strong> to the target. The higher the charge, the farther they fly on the next hit — knock them off the platform to eliminate them.</dd>
+              </div>
+              <div class="tut-fact">
+                <dt>Charge mechanics</dt>
+                <dd>Base knockback <strong>8</strong>. Every hit adds <strong>+0.14</strong> charge (cap <strong>4.0</strong>). Extra impulse = charge × 11. Charge decays at <strong>0.05/s</strong> while you're alive.</dd>
+              </div>
+              <div class="tut-fact">
+                <dt>Hazard timer</dt>
+                <dd>Fall into the hazard below and you have <strong>3.5 s</strong> to return. Stay too long and you're eliminated for that round.</dd>
+              </div>
+              <div class="tut-fact">
+                <dt>Fall-stun</dt>
+                <dd>Drop off a ledge ≥ <strong>1.5 u</strong> tall and you're stunned <strong>2 s</strong> on landing — no movement, firing, or casting. Ramps never trigger it.</dd>
+              </div>
+              <div class="tut-fact">
+                <dt>High ground matters</dt>
+                <dd>Shots fired <em>downhill</em> always connect. Shots fired <em>uphill</em> often skim under targets. Tall obstacles also block projectiles — use cover.</dd>
+              </div>
+            </dl>
+          </div>
+
+          <!-- GOAL & ARENA panel -->
+          <div class="tut-panel tut-panel-hidden" id="tut-goal" role="tabpanel" aria-labelledby="ttab-goal" aria-hidden="true">
+            <dl class="tut-facts">
+              <div class="tut-fact">
+                <dt>Win condition</dt>
+                <dd>Last warlock standing wins the round. First to <strong>5 round wins</strong> wins the match. Supports up to <strong>6 warlocks</strong>.</dd>
+              </div>
+              <div class="tut-fact">
+                <dt>Arena shrink</dt>
+                <dd>Platform starts at radius <strong>18</strong> (medium). After <strong>8 s</strong> it shrinks at <strong>0.30 u/s</strong> until it reaches minimum radius <strong>6</strong>. Don't back into a shrinking edge.</dd>
+              </div>
+              <div class="tut-fact">
+                <dt>Round start</dt>
+                <dd>A <strong>3 s countdown</strong> precedes every round. Use it to orient yourself and plan your opening.</dd>
+              </div>
+              <div class="tut-fact">
+                <dt>5 arena worlds</dt>
+                <dd>
+                  <ul class="tut-world-list">
+                    <li><span class="tut-world-dot" style="--wc:#6c4cff" aria-hidden="true"></span><strong>Classic Circle</strong> — Lava Sea</li>
+                    <li><span class="tut-world-dot" style="--wc:#4cc9ff" aria-hidden="true"></span><strong>Twin Islands</strong> — Ocean</li>
+                    <li><span class="tut-world-dot" style="--wc:#ffd23c" aria-hidden="true"></span><strong>Narrow Bridge</strong> — Toxic Swamp</li>
+                    <li><span class="tut-world-dot" style="--wc:#7cff5a" aria-hidden="true"></span><strong>Arcane Cross</strong> — Sharp Rocks</li>
+                    <li><span class="tut-world-dot" style="--wc:#ff4ca8" aria-hidden="true"></span><strong>Outer Ring</strong> — Arcane Abyss</li>
+                  </ul>
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <!-- CONTROLS panel -->
+          <div class="tut-panel tut-panel-hidden" id="tut-controls" role="tabpanel" aria-labelledby="ttab-controls" aria-hidden="true">
+            <div class="tut-controls-grid">
+              <div class="tut-control-row">
+                <span class="tut-control-action">Move</span>
+                <div class="tut-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span class="tut-key-or">or</span> <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></div>
+              </div>
+              <div class="tut-control-row">
+                <span class="tut-control-action">Aim</span>
+                <div class="tut-keys"><span class="tut-key-chip">Mouse</span></div>
+              </div>
+              <div class="tut-control-row">
+                <span class="tut-control-action">Fire (auto-attack)</span>
+                <div class="tut-keys"><kbd>Space</kbd> <span class="tut-key-or">or</span> <span class="tut-key-chip">Left Click</span></div>
+              </div>
+              <div class="tut-control-row">
+                <span class="tut-control-action">Cast selected spell</span>
+                <div class="tut-keys"><span class="tut-key-chip">Right Click</span></div>
+              </div>
+              <div class="tut-control-row">
+                <span class="tut-control-action">Cast by hotkey</span>
+                <div class="tut-keys"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd><kbd>6</kbd><kbd>7</kbd><kbd>8</kbd><kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd><kbd>F</kbd><kbd>C</kbd><kbd>V</kbd><kbd>X</kbd><kbd>Z</kbd><kbd>T</kbd><kbd>G</kbd><kbd>B</kbd><kbd>H</kbd></div>
+              </div>
+              <div class="tut-control-row">
+                <span class="tut-control-action">Touch: move &amp; fire</span>
+                <div class="tut-keys"><span class="tut-key-chip">Joystick</span> <span class="tut-key-or">+</span> <span class="tut-key-chip tut-key-fire">FIRE</span></div>
+              </div>
+            </div>
+            <p class="tut-hint">Spell hotkeys 1–6 are rebindable — click the ↻ icon on any ability slot during a match.</p>
+          </div>
+
+          <!-- SPELLBOOK panel — JS populates #tut-spellbook-list -->
+          <div class="tut-panel tut-panel-hidden" id="tut-spellbook" role="tabpanel" aria-labelledby="ttab-spellbook" aria-hidden="true">
+            <div id="tut-spellbook-list"></div>
+          </div>
+
+          <!-- TIPS panel -->
+          <div class="tut-panel tut-panel-hidden" id="tut-tips" role="tabpanel" aria-labelledby="ttab-tips" aria-hidden="true">
+            <ul class="tut-tips-list">
+              <li><strong>Build charge first.</strong> Let Fireball stack charge on an enemy before throwing a high-knockback spell — a fully charged target can be launched off the platform in one hit.</li>
+              <li><strong>Hold the high ground.</strong> Plateaus let your shots connect downhill while incoming fire skims beneath you. Reach them via ramps — not ledges (fall-stun).</li>
+              <li><strong>Watch the shrink.</strong> The arena starts shrinking after <strong>8 s</strong>. Back-pedaling into a shrinking edge is a self-elimination.</li>
+              <li><strong>Counter with Shield.</strong> One Shield absorbs the next hit entirely — save it to eat a Meteor or Homing bolt at full charge and keep your position.</li>
+              <li><strong>Teleport off hazards.</strong> If you land in lava or ocean, Teleport back to the platform before the <strong>3.5 s</strong> death timer runs out.</li>
+              <li><strong>Drain + Gravity combo.</strong> Pull an enemy close with Drain, then drop a Gravity well — they can't escape and will sail off the edge.</li>
+              <li><strong>Time Shift safety valve.</strong> Activate before a risky dive; if things go wrong it rewinds your position 3 s back to safety.</li>
+              <li><strong>Pocket Watch on match point.</strong> Save this rare CD reset for round 5 — instantly clearing all cooldowns can flip the entire brawl.</li>
+              <li><strong>Stay mobile.</strong> Move speed is <strong>9 u/s</strong>. A stationary warlock is easy prey for Homing bolts and Meteor strikes.</li>
+              <li><strong>Rush through knockback.</strong> Activate Rush before a fight to shrug off knockback by <strong>45 %</strong> and sprint ahead — great for holding the centre when the arena shrinks.</li>
+            </ul>
+          </div>
+
+        </div><!-- .tut-scroll-area -->
+
+        <div class="tut-practice-cta">
+          <button id="btn-practice" class="btn btn-forge">
+            <span class="btn-label">Practice vs Bot</span>
+            <span class="btn-spark" aria-hidden="true"></span>
+          </button>
+          <p class="tut-practice-hint">Solo match vs one Smart bot — starts instantly, no lobby needed.</p>
+        </div>
+      </div><!-- #screen-tutorial -->
 
     </div><!-- .menu-right -->
   </div><!-- #menu -->
