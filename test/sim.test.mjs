@@ -176,4 +176,88 @@ test("malformed input is sanitized before the host simulation uses it", () => {
   assert.doesNotThrow(() => sim.step(1 / CFG.TICK_RATE));
 });
 
+test("host can configure brilliant bots up to open player slots", () => {
+  const sim = new Simulation();
+  sim.addPlayer("host", "Host");
+  sim.addPlayer("guest", "Guest");
+  const bots = sim.setBotRoster(5, "brilliant");
+  assert.strictEqual(bots.length, CFG.MAX_PLAYERS - 2);
+  assert.strictEqual(sim.players.size, CFG.MAX_PLAYERS);
+  assert.ok(bots.every((p) => p.isBot));
+  assert.ok(bots.every((p) => p.botSkill === "brilliant"));
+  assert.ok(bots.every((p) => /^Brilliant Bot/.test(p.name)));
+});
+
+test("smart expert bots produce combat input against each other", () => {
+  const sim = new Simulation();
+  sim.setBotRoster(2, "expert");
+  assert.strictEqual(sim.startMatch(), true);
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  sim.step(1 / CFG.TICK_RATE);
+  const bots = [...sim.players.values()].filter((p) => p.isBot);
+  assert.strictEqual(bots.length, 2);
+  assert.ok(bots.every((p) => p.input.seq > 0));
+  assert.ok(sim.bolts.length > 0 || sim.meteors.length > 0, "bot combat input should produce attacks");
+});
+
+test("expert bots use handbook abilities against targets", () => {
+  const sim = new Simulation();
+  sim.setBotRoster(2, "expert");
+  assert.strictEqual(sim.startMatch(), true);
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  let casts = 0;
+  const dt = 1 / CFG.TICK_RATE;
+  for (let t = 0; t < 0.4; t += dt) {
+    sim.step(dt);
+    casts += sim.events.filter((e) => e.type === "meteorCast" || e.type === "lightning" || e.type === "cast").length;
+  }
+  assert.ok(casts > 0 || sim.meteors.length > 0, "expert bots should cast abilities");
+});
+
+test("every bot tier casts handbook abilities (no dead range checks)", () => {
+  function countAbilityCasts(skill, seconds) {
+    const sim = new Simulation();
+    sim.setBotRoster(2, skill);
+    assert.strictEqual(sim.startMatch(), true);
+    advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
+    let casts = 0;
+    const dt = 1 / CFG.TICK_RATE;
+    for (let t = 0; t < seconds; t += dt) {
+      sim.step(dt);
+      const abilityTypes = ["cast", "lightning", "meteorCast", "gravity", "thrust", "shield", "swap", "drain", "link", "teleport"];
+      casts += sim.events.filter((e) => abilityTypes.includes(e.type)).length;
+      if (sim.phase !== PHASE.PLAYING) break;
+    }
+    return casts;
+  }
+  for (const skill of ["smart", "brilliant", "expert"]) {
+    assert.ok(countAbilityCasts(skill, 8) > 0, `${skill} bots should cast at least one ability`);
+  }
+});
+
+test("bot difficulty tiers fire at distinct cadences (expert > brilliant > smart)", () => {
+  function countShots(skill, seconds) {
+    const sim = new Simulation();
+    sim.setBotRoster(2, skill);
+    assert.strictEqual(sim.startMatch(), true);
+    advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
+    const bot = sim.botPlayers()[0];
+    let shots = 0, prev = false;
+    const dt = 1 / CFG.TICK_RATE;
+    for (let t = 0; t < seconds; t += dt) {
+      sim.step(dt);
+      if (!bot.alive || sim.phase !== PHASE.PLAYING) break;
+      const f = bot.input.fire;
+      if (f && !prev) shots++;
+      prev = f;
+    }
+    return shots;
+  }
+  const smart = countShots("smart", 3);
+  const brilliant = countShots("brilliant", 3);
+  const expert = countShots("expert", 3);
+  assert.ok(expert > brilliant, `expert(${expert}) should out-shoot brilliant(${brilliant})`);
+  assert.ok(brilliant > smart, `brilliant(${brilliant}) should out-shoot smart(${smart})`);
+});
+
 console.log(`\n${passed} tests passed.`);
