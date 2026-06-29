@@ -48,12 +48,12 @@ h1 span + span { color: var(--accent2); }
 h1 :nth-child(1) {}
 .tag { color: var(--muted); margin: 14px 0 22px; }
 
-input {
+input, select {
   background: #0f0c22; border: 2px solid rgba(154,147,199,0.3);
   color: var(--text); padding: 12px 14px; border-radius: 10px;
   font-size: 16px; text-align: center; outline: none; width: 100%;
 }
-input:focus { border-color: var(--accent2); }
+input:focus, select:focus { border-color: var(--accent2); }
 
 .menu-row { margin-bottom: 16px; }
 .menu-actions { display: flex; flex-direction: column; gap: 14px; align-items: center; }
@@ -93,6 +93,12 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 }
 .player-list .swatch { width: 16px; height: 16px; border-radius: 4px; }
 .player-list .host-badge { margin-left: auto; font-size: 11px; color: var(--accent); }
+.bot-controls {
+  background: #0f0c22; border-radius: 10px; padding: 12px; margin-bottom: 16px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.bot-controls label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+.bot-controls input, .bot-controls select { margin-top: 6px; padding: 8px; font-size: 14px; }
 
 /* HUD */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }

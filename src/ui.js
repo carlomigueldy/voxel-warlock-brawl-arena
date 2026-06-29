@@ -15,6 +15,7 @@ export class UI {
       roomCode: $("room-code"), btnCopyCode: $("btn-copy-code"),
       btnCopyLink: $("btn-copy-link"), qr: $("qr"),
       playerList: $("player-list"), btnStart: $("btn-start"),
+      botControls: $("bot-controls"), botCount: $("bot-count"), botSkill: $("bot-skill"),
       lobbyStatus: $("lobby-status"),
       roundInfo: $("round-info"), timer: $("timer"),
       scoreboard: $("scoreboard"), chargeBar: $("charge-bar"),
@@ -105,6 +106,8 @@ export class UI {
       if (e.key === "Enter") this._tryJoin();
     });
     this.el.btnStart.onclick = () => this.handlers.start?.();
+    this.el.botCount?.addEventListener("input", () => this.handlers.bots?.(this.getBotSettings()));
+    this.el.botSkill?.addEventListener("change", () => this.handlers.bots?.(this.getBotSettings()));
     this.el.btnCopyCode.onclick = () => this._copy(this.currentCode, this.el.btnCopyCode, "Copy Code");
     this.el.btnCopyLink.onclick = () => this._copy(this._inviteLink(), this.el.btnCopyLink, "Copy Invite Link");
   }
@@ -118,6 +121,13 @@ export class UI {
   }
 
   _name() { return this.el.nameInput.value.trim().slice(0, 14); }
+
+  getBotSettings() {
+    return {
+      count: Math.max(0, Math.min(CFG.MAX_PLAYERS - 1, Number.parseInt(this.el.botCount?.value, 10) || 0)),
+      skill: CFG.BOT_SKILLS.includes(this.el.botSkill?.value) ? this.el.botSkill.value : "smart",
+    };
+  }
 
   _prefillFromUrl() {
     const params = new URLSearchParams(location.search);
@@ -166,6 +176,7 @@ export class UI {
     this.el.lobby.classList.remove("hidden");
     this.el.roomCode.textContent = code;
     this.el.btnStart.classList.toggle("hidden", !isHost);
+    this.el.botControls?.classList.toggle("hidden", !isHost);
     this._renderQR(this._inviteLink());
   }
 
@@ -204,7 +215,11 @@ export class UI {
       const name = document.createElement("span");
       name.textContent = p.name;
       li.appendChild(sw); li.appendChild(name);
-      if (p.id === hostId) {
+      if (p.isBot) {
+        const b = document.createElement("span");
+        b.className = "host-badge"; b.textContent = "BOT";
+        li.appendChild(b);
+      } else if (p.id === hostId) {
         const b = document.createElement("span");
         b.className = "host-badge"; b.textContent = "HOST";
         li.appendChild(b);
