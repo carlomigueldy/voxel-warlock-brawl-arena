@@ -1,6 +1,6 @@
 // All DOM/UI wiring: menus, lobby, HUD, room code, invite link, QR code.
 // QRCode is loaded globally from a <script> tag (window.QRCode).
-import { CFG } from "./config.js";
+import { CFG, SPELLS, SPELL_ORDER } from "./config.js";
 
 const $ = (id) => document.getElementById(id);
 const escapeHTML = (value) => String(value).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -19,14 +19,80 @@ export class UI {
       roundInfo: $("round-info"), timer: $("timer"),
       scoreboard: $("scoreboard"), chargeBar: $("charge-bar"),
       centerMsg: $("center-msg"), touch: $("touch-controls"),
+      abilityBar: $("ability-bar"),
+      btnSfx: $("btn-sfx"), btnMusic: $("btn-music"),
     };
     this.handlers = {};
+    this.audio = null;
+    this._abilityEls = null;
     this._bind();
     this._prefillFromUrl();
     this._maybeShowTouch();
   }
 
   on(event, fn) { this.handlers[event] = fn; }
+
+  setAudio(audio) {
+    this.audio = audio;
+    if (this.el.btnSfx) {
+      this.el.btnSfx.onclick = () => {
+        const on = this.el.btnSfx.classList.toggle("off");
+        audio.setEnabled(!on);
+        this.el.btnSfx.textContent = on ? "SFX: Off" : "SFX: On";
+      };
+    }
+    if (this.el.btnMusic) {
+      this.el.btnMusic.onclick = () => {
+        const off = this.el.btnMusic.classList.toggle("off");
+        audio.setMusic(!off);
+        this.el.btnMusic.textContent = off ? "Music: Off" : "Music: On";
+      };
+    }
+  }
+
+  // Build the ability bar once, then refresh cooldown overlays each frame.
+  _buildAbilityBar() {
+    if (!this.el.abilityBar || this._abilityEls) return;
+    this._abilityEls = {};
+    this.el.abilityBar.replaceChildren();
+    for (const id of SPELL_ORDER) {
+      const s = SPELLS[id];
+      if (!s) continue;
+      const slot = document.createElement("div");
+      slot.className = "ability-slot";
+      slot.title = s.name;
+      const key = document.createElement("span");
+      key.className = "ability-key";
+      key.textContent = s.key;
+      const nm = document.createElement("span");
+      nm.className = "ability-name";
+      nm.textContent = s.name;
+      const cd = document.createElement("div");
+      cd.className = "ability-cd";
+      const swatch = document.createElement("span");
+      swatch.className = "ability-swatch";
+      swatch.style.background = "#" + ((s.color || 0x8888ff).toString(16).padStart(6, "0"));
+      slot.append(swatch, key, nm, cd);
+      slot.onclick = () => this.handlers.selectSpell?.(id);
+      this.el.abilityBar.appendChild(slot);
+      this._abilityEls[id] = { slot, cd };
+    }
+  }
+
+  updateAbilityBar(snapshot, localId) {
+    this._buildAbilityBar();
+    if (!this._abilityEls) return;
+    const me = snapshot.players.find((p) => p.id === localId);
+    const cds = me?.cds || {};
+    for (const id in this._abilityEls) {
+      const { cd } = this._abilityEls[id];
+      const remain = cds[id] || 0;
+      const total = SPELLS[id].cd || 1;
+      const pct = Math.max(0, Math.min(100, (remain / total) * 100));
+      cd.style.height = pct + "%";
+      this._abilityEls[id].slot.classList.toggle("ready", remain <= 0);
+    }
+  }
 
   _bind() {
     this.el.btnHost.onclick = () => {
@@ -107,6 +173,8 @@ export class UI {
     this.el.menu.classList.add("hidden");
     this.el.lobby.classList.add("hidden");
     this.el.hud.classList.remove("hidden");
+    this._buildAbilityBar();
+    if (this.el.abilityBar) this.el.abilityBar.classList.remove("hidden");
     if (this._touchEnabled && this.el.touch) this.el.touch.classList.remove("hidden");
   }
 
