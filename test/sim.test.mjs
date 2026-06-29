@@ -197,6 +197,43 @@ test("swap can recover a player from the hazard zone", () => {
   assert.strictEqual(b.alive, true);
 });
 
+test("projectiles can hit players recovering in the hazard zone", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  const b = sim.players.get("b");
+  a.x = CFG.ARENA_RADIUS - 2; a.z = 0; a.aim = 0; a.cooldown = 0;
+  b.x = CFG.ARENA_RADIUS + 0.7; b.z = 0; b.vx = 0; b.vz = 0;
+  sim.setInput("a", { move: [0, 0], aim: 0, fire: true, seq: 1 });
+  sim.step(1 / CFG.TICK_RATE);
+  let hit = sim.events.some((ev) => ev.type === "hit" && ev.victim === "b");
+  sim.setInput("a", { move: [0, 0], aim: 0, fire: false, seq: 2 });
+  for (let i = 0; i < 8; i++) {
+    sim.step(1 / CFG.TICK_RATE);
+    hit ||= sim.events.some((ev) => ev.type === "hit" && ev.victim === "b");
+  }
+  assert.ok(b.vx > 0, "hazard-zone victim should be hit and pushed farther out");
+  assert.ok(hit, "hit event should be emitted for hazard-zone victim");
+});
+
+test("players recovering in the hazard zone can fire back at players on land", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  const b = sim.players.get("b");
+  a.x = CFG.ARENA_RADIUS + 0.7; a.z = 0; a.aim = Math.PI; a.cooldown = 0;
+  b.x = CFG.ARENA_RADIUS - 2; b.z = 0; b.vx = 0; b.vz = 0;
+  sim.setInput("a", { move: [0, 0], aim: Math.PI, fire: true, seq: 1 });
+  sim.step(1 / CFG.TICK_RATE);
+  sim.setInput("a", { move: [0, 0], aim: Math.PI, fire: false, seq: 2 });
+  advance(sim, 0.2);
+  assert.ok(b.vx < 0, "land player should be hit by a hazard-zone caster firing back");
+});
+
 test("hazard zone movement is slowed but still allows spell recovery", () => {
   const sim = new Simulation();
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");

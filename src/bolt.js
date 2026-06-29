@@ -114,12 +114,6 @@ export class Bolt {
     }
 
     if (this.life <= 0) { this.dead = true; return { hit: null }; }
-    // Non-bouncer, non-boomerang projectiles die off the platform.
-    if (this.proj !== "bouncer" && this.proj !== "boomerang" &&
-        !arena.isOnPlatform(this.x, this.z)) {
-      this.dead = true;
-      return { hit: null };
-    }
 
     // Collision with players (skip owner).
     for (const p of players) {
