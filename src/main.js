@@ -40,7 +40,11 @@ function startHosting(name, options = {}) {
   role = "host";
   ui.setMenuStatus("Creating room…");
 
-  const sim = new Simulation({ allAbilitiesAtStart: options.allAbilitiesAtStart });
+  const sim = new Simulation({
+    allAbilitiesAtStart: options.allAbilitiesAtStart,
+    arenaWorld: options.arenaWorld,
+    landSize: options.landSize,
+  });
 
   host = new Host({
     name,

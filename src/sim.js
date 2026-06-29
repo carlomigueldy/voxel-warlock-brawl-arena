@@ -1,15 +1,19 @@
 // Pure, authoritative game simulation. Deliberately free of Three.js so it can
 // run on the host and be unit-tested headlessly in Node.
-import { CFG, SPELLS, SPELL_ORDER } from "./config.js";
+import { CFG, SPELLS, SPELL_ORDER, getArenaLandSize, getArenaWorld, isOnArenaWorld } from "./config.js";
 import { Player } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
 
 // A lightweight logical arena (no rendering) used by the sim.
 class LogicArena {
-  constructor() { this.radius = CFG.ARENA_RADIUS; }
-  isOnPlatform(x, z) { return x * x + z * z <= this.radius * this.radius; }
-  reset() { this.radius = CFG.ARENA_RADIUS; }
+  constructor(world, landSize) {
+    this.world = world;
+    this.landSize = landSize;
+    this.radius = landSize.radius;
+  }
+  isOnPlatform(x, z) { return isOnArenaWorld(this.world.id, this.radius, x, z); }
+  reset() { this.radius = this.landSize.radius; }
 }
 
 export const PHASE = {
@@ -39,6 +43,8 @@ function botDisplayName(skill, index) {
 export class Simulation {
   constructor(options = {}) {
     this.allAbilitiesAtStart = options.allAbilitiesAtStart !== false;
+    this.world = getArenaWorld(options.arenaWorld);
+    this.landSize = getArenaLandSize(options.landSize);
     this.players = new Map(); // id -> Player
     this.bolts = [];
     this.meteors = [];        // in-flight meteors (delayed AoE)
@@ -47,7 +53,7 @@ export class Simulation {
     this.runePool = [];       // remaining spell ids queued to drop as runes
     this._meteorId = 1;
     this._runeId = 1;
-    this.arena = new LogicArena();
+    this.arena = new LogicArena(this.world, this.landSize);
     this.phase = PHASE.LOBBY;
     this.round = 0;
     this.phaseTimer = 0;     // counts down within a phase
@@ -152,6 +158,20 @@ export class Simulation {
     return true;
   }
 
+  spawnPoint(angle) {
+    const offsets = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7, 8];
+    const startRadius = this.arena.radius > CFG.ARENA_RADIUS ? this.arena.radius * 0.78 : Math.min(this.arena.radius - 3, 12);
+    for (const offset of offsets) {
+      const a = angle + offset * (Math.PI / 16);
+      for (let r = startRadius; r >= 2; r -= 1) {
+        const x = Math.cos(a) * r;
+        const z = Math.sin(a) * r;
+        if (this.arena.isOnPlatform(x, z)) return { angle: a, radius: r };
+      }
+    }
+    return { angle, radius: 0 };
+  }
+
   beginRound() {
     this.round++;
     this.bolts = [];
@@ -167,9 +187,9 @@ export class Simulation {
     // Spawn active players evenly around a ring; late joiners enter next round.
     const list = [...this.players.values()];
     const n = Math.max(1, list.length);
-    const spawnR = Math.min(CFG.ARENA_RADIUS - 3, 12);
     list.forEach((p, i) => {
-      p.spawn((i / n) * Math.PI * 2, spawnR);
+      const spawn = this.spawnPoint((i / n) * Math.PI * 2);
+      p.spawn(spawn.angle, spawn.radius);
       if (this.allAbilitiesAtStart) p.setAllSpells();
       else p.setStarterSpells();
     });
@@ -192,7 +212,7 @@ export class Simulation {
     if (!this.runePool.length) return null;
     const spell = this.runePool.shift();
     const angle = Math.random() * Math.PI * 2;
-    const ring = CFG.RUNE_SPAWN_RADIUS * (0.5 + 0.4 * Math.random());
+    const ring = Math.min(CFG.RUNE_SPAWN_RADIUS, this.arena.radius * 0.72) * (0.5 + 0.4 * Math.random());
     const rune = {
       id: this._runeId++,
       spell,
@@ -547,6 +567,8 @@ export class Simulation {
       timer: +this.phaseTimer.toFixed(2),
       playTime: +this.playTime.toFixed(2),
       arenaR: +this.arena.radius.toFixed(2),
+      arenaWorld: this.world.id,
+      landSize: this.landSize.id,
       winner: this.lastWinnerId,
       matchWinner: this.matchWinnerId,
       players: [...this.players.values()].map((p) => p.snapshot()),

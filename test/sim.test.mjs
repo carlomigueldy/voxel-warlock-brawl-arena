@@ -35,6 +35,47 @@ test("startMatch spawns players on the platform and enters countdown", () => {
   }
 });
 
+test("simulation exposes five selectable arena worlds", () => {
+  assert.deepStrictEqual(CFG.ARENA_WORLDS.map((world) => world.id), ["circle", "islands", "bridge", "cross", "ring"]);
+});
+
+test("host arena world option changes playable land shape", () => {
+  const sim = new Simulation({ arenaWorld: "bridge" });
+  assert.strictEqual(sim.arena.world.id, "bridge");
+  assert.strictEqual(sim.arena.isOnPlatform(0, 0), true);
+  assert.strictEqual(sim.arena.isOnPlatform(10, 10), false);
+  assert.strictEqual(sim.snapshot().arenaWorld, "bridge");
+});
+
+test("host land size option sets starting arena radius and spawn ring", () => {
+  const sim = new Simulation({ landSize: "large" });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  assert.strictEqual(sim.arena.radius, CFG.ARENA_LAND_SIZES.large.radius);
+  for (const p of sim.players.values()) {
+    const d = Math.hypot(p.x, p.z);
+    assert.ok(d > CFG.ARENA_RADIUS, "large land size should spawn players farther out");
+    assert.ok(sim.arena.isOnPlatform(p.x, p.z), "spawned off large platform");
+  }
+});
+
+test("invalid arena world and land size options fall back to defaults", () => {
+  const sim = new Simulation({ arenaWorld: "bad", landSize: "huge" });
+  assert.strictEqual(sim.arena.world.id, CFG.DEFAULT_ARENA_WORLD);
+  assert.strictEqual(sim.landSize.id, CFG.DEFAULT_ARENA_LAND_SIZE);
+});
+
+test("every selectable arena world spawns players on playable land", () => {
+  for (const world of CFG.ARENA_WORLDS) {
+    const sim = new Simulation({ arenaWorld: world.id, landSize: "medium" });
+    for (let i = 0; i < CFG.MAX_PLAYERS; i++) sim.addPlayer(`p${i}`, `P${i}`);
+    sim.startMatch();
+    for (const p of sim.players.values()) {
+      assert.ok(sim.arena.isOnPlatform(p.x, p.z), `${world.id} spawned ${p.id} off platform at ${p.x},${p.z}`);
+    }
+  }
+});
+
 test("countdown transitions to playing", () => {
   const sim = new Simulation();
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
