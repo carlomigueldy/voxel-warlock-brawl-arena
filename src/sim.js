@@ -3,6 +3,7 @@
 import { CFG } from "./config.js";
 import { Player } from "./player.js";
 import { Bolt } from "./bolt.js";
+import { castSpell } from "./spells.js";
 
 // A lightweight logical arena (no rendering) used by the sim.
 class LogicArena {
@@ -23,6 +24,8 @@ export class Simulation {
   constructor() {
     this.players = new Map(); // id -> Player
     this.bolts = [];
+    this.meteors = [];        // in-flight meteors (delayed AoE)
+    this._meteorId = 1;
     this.arena = new LogicArena();
     this.phase = PHASE.LOBBY;
     this.round = 0;
@@ -60,11 +63,29 @@ export class Simulation {
     const move = Array.isArray(input.move) ? input.move : [0, 0];
     const mx = Number.isFinite(move[0]) ? Math.max(-1, Math.min(1, move[0])) : 0;
     const mz = Number.isFinite(move[1]) ? Math.max(-1, Math.min(1, move[1])) : 0;
+    // Sanitize cast requests (each: {id, spell, tx, tz}) and queue new ones,
+    // deduped by monotonically-increasing id so repeated input packets that
+    // still carry an old cast don't fire it twice.
+    if (Array.isArray(input.casts)) {
+      for (const c of input.casts) {
+        if (!c || typeof c.spell !== "string") continue;
+        const id = Number.isFinite(c.id) ? c.id : 0;
+        if (id <= p._castSeen) continue;
+        p._castSeen = id;
+        p.pendingCasts.push({
+          id,
+          spell: c.spell,
+          tx: Number.isFinite(c.tx) ? c.tx : NaN,
+          tz: Number.isFinite(c.tz) ? c.tz : NaN,
+        });
+      }
+    }
     p.input = {
       move: [mx, mz],
       aim: Number.isFinite(input.aim) ? input.aim : 0,
       fire: !!input.fire,
       seq,
+      casts: p.input.casts || [],
     };
   }
 
@@ -92,6 +113,7 @@ export class Simulation {
   beginRound() {
     this.round++;
     this.bolts = [];
+    this.meteors = [];
     this.arena.reset();
     this.playTime = 0;
     this.phase = PHASE.COUNTDOWN;
@@ -177,25 +199,82 @@ export class Simulation {
       );
     }
 
-    // Fire intents -> bolts.
+    // Fire intents -> default fireball (holding fire / Space).
     for (const p of this.players.values()) {
       if (p.input.fire && p.canFire()) this.spawnBolt(p);
+    }
+
+    // Resolve queued spell casts (one shot per cast id).
+    for (const p of this.players.values()) {
+      if (p.pendingCasts.length) {
+        for (const cast of p.pendingCasts) castSpell(this, p, cast);
+        p.pendingCasts = [];
+      }
     }
 
     // Step players.
     for (const p of this.players.values()) p.step(dt, this.arena);
 
-    // Step bolts + resolve hits.
-    const playerArr = [...this.players.values()];
-    for (const b of this.bolts) {
-      const hitId = b.step(dt, playerArr, this.arena);
-      if (hitId != null) {
-        const shooter = this.players.get(b.ownerId);
-        this.events.push({ type: "hit", x: b.x, z: b.z, victim: hitId, by: b.ownerId });
-        if (shooter) shooter.roundKills += 0; // kills credited on death below
+    // Resolve Time Shift rewinds.
+    for (const p of this.players.values()) {
+      if (p.timeshift) {
+        p.timeshift.t -= dt;
+        if (p.timeshift.t <= 0) {
+          if (p.alive) {
+            p.x = p.timeshift.x; p.z = p.timeshift.z;
+            p.charge = p.timeshift.charge;
+            p.vx = p.vz = 0; p.falling = false; p.vy = 0;
+            this.events.push({ type: "timeshiftReturn", id: p.id, x: p.x, z: p.z });
+          }
+          p.timeshift = null;
+        }
       }
     }
+
+    // Step bolts + resolve hits.
+    const playerArr = [...this.players.values()];
+    const spawned = [];
+    for (const b of this.bolts) {
+      const res = b.step(dt, playerArr, this.arena);
+      if (b._spawn && b._spawn.length) spawned.push(...b._spawn);
+      if (res && res.hit != null) {
+        const shooter = this.players.get(b.ownerId);
+        const victim = this.players.get(res.hit);
+        // Disable projectiles silence their victim.
+        if (b.disable && victim) victim.status.disabled = b.disable;
+        // Lifesteal items reduce the shooter's own charge on a landed hit.
+        if (shooter && shooter.mods.lifesteal > 0) {
+          shooter.charge = Math.max(0, shooter.charge - shooter.mods.lifesteal);
+        }
+        this.events.push({ type: "hit", x: b.x, z: b.z, victim: res.hit, by: b.ownerId });
+      }
+    }
+    if (spawned.length) this.bolts.push(...spawned);
     this.bolts = this.bolts.filter((b) => !b.dead);
+
+    // Step meteors (delayed AoE impacts).
+    for (const m of this.meteors) {
+      m.t -= dt;
+      if (m.t <= 0) {
+        for (const p of this.players.values()) {
+          if (!p.alive || p.falling || p.spectating) continue;
+          const dx = p.x - m.x, dz = p.z - m.z;
+          const d = Math.hypot(dx, dz);
+          if (d <= m.radius) {
+            const falloff = 1 - d / m.radius;
+            // Players caught dead-centre are flung in their current facing
+            // (or a default) so the impact always imparts knockback.
+            let ndx = dx, ndz = dz;
+            if (d < 0.001) { ndx = Math.cos(p.aim); ndz = Math.sin(p.aim); }
+            const l = Math.hypot(ndx, ndz) || 1;
+            p.applyHit((ndx / l), (ndz / l), m.kb * (0.4 + 0.6 * falloff));
+          }
+        }
+        this.events.push({ type: "meteorImpact", x: m.x, z: m.z, radius: m.radius, by: m.ownerId });
+        m.dead = true;
+      }
+    }
+    this.meteors = this.meteors.filter((m) => !m.dead);
 
     // Death detection (falling players that reached lava become !alive in step()).
     for (const p of this.players.values()) {
@@ -233,6 +312,10 @@ export class Simulation {
       matchWinner: this.matchWinnerId,
       players: [...this.players.values()].map((p) => p.snapshot()),
       bolts: this.bolts.map((b) => b.snapshot()),
+      meteors: this.meteors.map((m) => ({
+        id: m.id, x: +m.x.toFixed(2), z: +m.z.toFixed(2),
+        t: +m.t.toFixed(2), fall: m.fall, r: m.radius,
+      })),
       events: this.events,
     };
   }

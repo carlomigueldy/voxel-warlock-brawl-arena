@@ -6,10 +6,23 @@ import { GameRenderer } from "./renderer.js";
 import { InputController } from "./input.js";
 import { Host, Client } from "./net.js";
 import { UI } from "./ui.js";
+import { AudioEngine } from "./audio.js";
 
 const ui = new UI();
 const renderer = new GameRenderer(document.getElementById("game-canvas"));
 const input = new InputController(renderer);
+const audio = new AudioEngine();
+renderer.setAudio(audio);
+ui.setAudio(audio);
+
+// Browsers require a gesture to start audio; resume on first interaction.
+function unlockAudio() {
+  audio.resume();
+  audio.startMusic();
+}
+addEventListener("pointerdown", unlockAudio, { once: true });
+addEventListener("keydown", unlockAudio, { once: true });
+input.onCast = () => audio.resume();
 
 // Metadata about every player (id -> {name, colorIndex}) for labels/scoreboard,
 // kept in sync on both host and clients.
@@ -107,7 +120,11 @@ function startHosting(name) {
 
     // Render locally.
     renderer.apply(snap, playerMeta);
-    if (snap.phase !== PHASE.LOBBY) ui.updateHUD(snap, localId, playerMeta);
+    if (snap.phase !== PHASE.LOBBY) {
+      ui.updateHUD(snap, localId, playerMeta);
+      ui.updateAbilityBar(snap, localId);
+      playTransitionAudio(snap);
+    }
     renderer.update();
 
     requestAnimationFrame(hostLoop);
@@ -172,12 +189,37 @@ function startJoining(name, code) {
         if (!playerMeta.has(p.id)) playerMeta.set(p.id, { name: "warlock", colorIndex: 0 });
       }
       renderer.apply(latestSnapshot, playerMeta);
-      if (latestSnapshot.phase !== PHASE.LOBBY) ui.updateHUD(latestSnapshot, localId, playerMeta);
+      if (latestSnapshot.phase !== PHASE.LOBBY) {
+        ui.updateHUD(latestSnapshot, localId, playerMeta);
+        ui.updateAbilityBar(latestSnapshot, localId);
+        playTransitionAudio(latestSnapshot);
+      }
     }
     renderer.update();
     requestAnimationFrame(clientLoop);
   }
   requestAnimationFrame(clientLoop);
+}
+
+// Play transition cues (countdown beeps, round win/lose) by watching snapshots.
+let _lastPhase = null;
+let _lastCount = null;
+function playTransitionAudio(snap) {
+  if (!snap) return;
+  if (snap.phase === PHASE.COUNTDOWN) {
+    const c = Math.ceil(snap.timer);
+    if (c !== _lastCount && c > 0) { audio.play("countdown"); _lastCount = c; }
+  } else if (_lastPhase === PHASE.COUNTDOWN && snap.phase === PHASE.PLAYING) {
+    audio.play("go"); _lastCount = null;
+  }
+  if (snap.phase !== _lastPhase) {
+    if (snap.phase === PHASE.ROUND_END) {
+      audio.play(snap.winner === localId ? "win" : "lose");
+    } else if (snap.phase === PHASE.MATCH_END) {
+      audio.play(snap.matchWinner === localId ? "win" : "lose");
+    }
+    _lastPhase = snap.phase;
+  }
 }
 
 function metaToArray() {
@@ -186,5 +228,6 @@ function metaToArray() {
 
 ui.on("host", startHosting);
 ui.on("join", startJoining);
+ui.on("selectSpell", (id) => input.setSelectedSpell(id));
 
 ui.showMenu();

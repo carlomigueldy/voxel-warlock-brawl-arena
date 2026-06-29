@@ -140,7 +140,51 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   border-radius: 50%; background: var(--accent); pointer-events: auto; font-size: 18px;
 }
 
+/* ===== Ability bar ===== */
+#ability-bar {
+  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+  max-width: 96vw; z-index: 6; pointer-events: auto;
+}
+.ability-slot {
+  position: relative; width: 58px; height: 56px;
+  background: rgba(24,20,51,0.85); border: 1px solid rgba(108,76,255,0.45);
+  border-radius: 8px; overflow: hidden; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  padding: 3px; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ability-slot.ready { box-shadow: 0 0 8px rgba(124,255,90,0.35); border-color: rgba(124,255,90,0.6); }
+.ability-swatch {
+  position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+  width: 16px; height: 16px; border-radius: 4px; box-shadow: 0 0 6px currentColor;
+}
+.ability-key {
+  position: absolute; top: 2px; left: 4px; font-size: 11px; font-weight: bold;
+  color: #fff; text-shadow: 0 1px 2px #000;
+}
+.ability-name {
+  font-size: 8px; line-height: 1.1; text-align: center; color: var(--muted);
+  z-index: 2;
+}
+.ability-cd {
+  position: absolute; bottom: 0; left: 0; width: 100%; height: 0%;
+  background: rgba(0,0,0,0.62); transition: height 0.08s linear; z-index: 1;
+}
+
+/* ===== Audio controls ===== */
+#audio-controls {
+  position: fixed; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 6;
+}
+#audio-controls button {
+  font-size: 11px; padding: 5px 9px; border-radius: 6px;
+  background: rgba(24,20,51,0.85); color: var(--text);
+  border: 1px solid rgba(108,76,255,0.4); cursor: pointer; pointer-events: auto;
+}
+#audio-controls button.off { color: var(--muted); border-color: rgba(154,147,199,0.3); }
+
 @media (max-width: 640px) {
   .lobby-grid { grid-template-columns: 1fr; }
   h1 { font-size: 30px; }
+  .ability-slot { width: 42px; height: 44px; }
+  .ability-name { display: none; }
 }
