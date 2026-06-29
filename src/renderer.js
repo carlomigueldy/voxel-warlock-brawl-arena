@@ -3,12 +3,14 @@
 // camera that follows the local warlock.
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CFG, SPELLS } from "./config.js";
+import { CFG, SPELLS, isOnArenaWorld } from "./config.js";
 import { Arena } from "./arena.js";
 import {
   buildWarlock, buildBolt, animateWarlock,
   buildBurst, buildLightning, buildMeteor, buildRune,
+  buildPlateau, buildRamp,
 } from "./voxel.js";
+import { PROP_BUILDERS } from "./props.js";
 import {
   loadCharacterTemplate,
   characterReady,
@@ -74,6 +76,10 @@ export class GameRenderer {
     this.audio = null;             // set via setAudio()
     this._lastSnapT = -1;          // dedupe events per snapshot
     this._shake = 0;
+
+    // Map layout geometry (plateaus, ramps, obstacles) rebuilt once per round.
+    this._mapVersion = -1;   // last snapshot.mapV applied
+    this._mapMeshes  = [];   // Groups built from the current layout
 
     // Smoothed camera target.
     this._camTarget = new THREE.Vector3(0, 0, 0);
@@ -310,6 +316,27 @@ export class GameRenderer {
     this.arena.setRadius(snapshot.arenaR ?? CFG.ARENA_RADIUS);
     this._applyHazardTheme(this.arena.hazard);
 
+    // Rebuild map layout meshes (plateaus, ramps, obstacles) whenever the host
+    // generates a new layout (each round start). mapV is an incrementing integer;
+    // undefined during the lobby (treated as -1 → clear any existing meshes).
+    // Also clear when mapLayout is explicitly null (returnToLobby / round reset)
+    // even if mapV has not changed, so stale plateau/obstacle meshes don't linger
+    // in the lobby. Omitted mapLayout (undefined) means "no change this frame".
+    const snapMapV = snapshot.mapV ?? -1;
+    const layoutCleared = snapshot.mapLayout === null && this._mapMeshes.length > 0;
+    if (snapMapV !== this._mapVersion || layoutCleared) {
+      this._mapVersion = snapMapV;
+      this._rebuildMapMeshes(
+        snapshot.mapLayout ?? null,
+        snapshot.arenaWorld ?? CFG.DEFAULT_ARENA_WORLD
+      );
+    }
+    // Hide spread-out features the shrinking arena has dropped over the hazard.
+    this._cullMapMeshes(
+      snapshot.arenaR ?? CFG.ARENA_RADIUS,
+      snapshot.arenaWorld ?? CFG.DEFAULT_ARENA_WORLD
+    );
+
     const seen = new Set();
     for (const ps of snapshot.players) {
       seen.add(ps.id);
@@ -423,6 +450,32 @@ export class GameRenderer {
     } else if (!ps.sh && e.shield) {
       e.group.remove(e.shield); e.shield = null;
     }
+
+    // Stun VFX: spinning yellow stars orbiting the player's head when stunned.
+    // Keyed off the snapshot `st` field (stunned remaining seconds, like `hz`).
+    if (ps.st > 0 && !e.stunEffect) {
+      const stars = new THREE.Group();
+      // Position the halo just above the label / top of the model.
+      stars.position.y = e.usingGLB ? CFG.PLAYER_HEIGHT + 0.3 : 2.6;
+      for (let i = 0; i < 5; i++) {
+        const star = new THREE.Mesh(
+          new THREE.BoxGeometry(0.2, 0.2, 0.2),
+          new THREE.MeshBasicMaterial({ color: 0xffff44 })
+        );
+        const a = (i / 5) * Math.PI * 2;
+        star.position.set(Math.cos(a) * 0.6, 0, Math.sin(a) * 0.6);
+        stars.add(star);
+      }
+      e.group.add(stars);
+      e.stunEffect = stars;
+    } else if (ps.st <= 0 && e.stunEffect) {
+      e.group.remove(e.stunEffect);
+      e.stunEffect.traverse((o) => {
+        if (o.geometry) o.geometry.dispose?.();
+        if (o.material) o.material.dispose?.();
+      });
+      e.stunEffect = null;
+    }
   }
 
   _updateLinks(snapshot) {
@@ -473,6 +526,13 @@ export class GameRenderer {
           this._addEffect(this._burstAt(ev.x, ev.z, 0xffcc44, { count: 16, speed: 7 }));
           this.audio?.play("hit", this._panFor(ev.x));
           this._shake = Math.min(0.6, this._shake + 0.15);
+          break;
+        case "boltFizzle":
+          // Projectile dispersed against cover — burst at the impact point,
+          // tinted to the projectile colour, at the bolt's height (y).
+          this._addEffect(this._burstAt(ev.x, ev.z, ev.c || 0xffcc44, { count: 14, speed: 6, life: 0.4 }, ev.y ?? 1.0));
+          this.audio?.play("hit", this._panFor(ev.x));
+          this._shake = Math.min(0.4, this._shake + 0.08);
           break;
         case "projectileClash":
           this._addEffect(this._burstAt(ev.x, ev.z, 0x9fe6ff, { count: 26, speed: 10, life: 0.45 }));
@@ -539,9 +599,9 @@ export class GameRenderer {
     }
   }
 
-  _burstAt(x, z, color, opts) {
+  _burstAt(x, z, color, opts, y = 1.0) {
     const g = buildBurst(color, opts);
-    g.position.set(x, 1.0, z);
+    g.position.set(x, y, z);
     return g;
   }
 
@@ -618,6 +678,14 @@ export class GameRenderer {
           dt,
         });
       }
+
+      // Rotate stun-star halo and bob each star individually.
+      if (e.stunEffect) {
+        e.stunEffect.rotation.y += dt * 5;
+        for (let si = 0; si < e.stunEffect.children.length; si++) {
+          e.stunEffect.children[si].position.y = Math.sin(t * 8 + si * 1.26) * 0.18;
+        }
+      }
     }
 
     // Spin bolts for flair.
@@ -668,6 +736,59 @@ export class GameRenderer {
     this.camera.lookAt(this._camTarget.x, 0, this._camTarget.z);
   }
 
+  // Dispose the current map layout meshes and rebuild them from the new layout.
+  // Called whenever snapshot.mapV increments (each round start) or becomes -1
+  // (lobby / round end, layout = null → just dispose).
+  _rebuildMapMeshes(layout, worldId) {
+    for (const e of this._mapMeshes) {
+      const g = e.g;
+      this.scene.remove(g);
+      g.traverse((o) => {
+        if (o.geometry) o.geometry.dispose?.();
+        if (o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach((m) => m.dispose?.());
+        }
+      });
+    }
+    this._mapMeshes = [];
+    if (!layout) return;
+
+    // Each entry stores its footprint CENTRE (cx,cz) so we can hide features
+    // once the shrinking arena no longer covers them (see _cullMapMeshes).
+    // Plateaus and their ramps cull together by the plateau centre.
+    for (const pl of layout.plateaus) {
+      const pg = buildPlateau(pl, worldId);
+      this.scene.add(pg);
+      this._mapMeshes.push({ g: pg, cx: pl.x, cz: pl.z });
+      for (const ramp of pl.ramps) {
+        const rg = buildRamp(ramp, pl.height, worldId);
+        this.scene.add(rg);
+        this._mapMeshes.push({ g: rg, cx: pl.x, cz: pl.z });
+      }
+    }
+
+    // Obstacle props (trees, stones, columns, etc.).
+    for (const ob of layout.obstacles) {
+      const builder = PROP_BUILDERS[ob.type];
+      if (!builder) continue;
+      const og = builder(ob);
+      og.position.set(ob.x, CFG.PLATFORM_TOP, ob.z);
+      og.rotation.y = ob.rot;
+      this.scene.add(og);
+      this._mapMeshes.push({ g: og, cx: ob.x, cz: ob.z });
+    }
+  }
+
+  // Hide map features whose footprint centre has left the platform as the arena
+  // shrinks, so spread-out geometry never floats over the hazard. Matches the
+  // sim's query-layer culling (arena-query.js setActiveRadius) for visual parity.
+  _cullMapMeshes(radius, worldId) {
+    for (const e of this._mapMeshes) {
+      e.g.visible = isOnArenaWorld(worldId, radius, e.cx, e.cz);
+    }
+  }
+
   // Convert a screen point to a world aim angle from the local player.
   screenToAim(clientX, clientY) {
     const me = this.playerMeshes.get(this.localId);
@@ -714,6 +835,9 @@ export class GameRenderer {
     this.effects = [];
     for (const l of this.linkLines.values()) this.scene.remove(l);
     this.linkLines.clear();
+    // Clear map layout meshes (plateaus, ramps, obstacle props).
+    this._rebuildMapMeshes(null, CFG.DEFAULT_ARENA_WORLD);
+    this._mapVersion = -1;
     this.arena.reset();
   }
 }

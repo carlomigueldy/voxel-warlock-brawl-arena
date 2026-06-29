@@ -559,6 +559,118 @@ export function animateHazardDetails(group, t, dt) {
   }
 }
 
+// --- Map layout geometry builders -----------------------------------------
+// These are called by the renderer once per round when the host broadcasts a
+// new mapLayout.  They share the world top/side palette and flatShading style
+// of buildPlatform so the elevation layer feels like a seamless extension of
+// the existing arena tiles.
+
+/**
+ * Build the elevated body + top cap for one plateau footprint.
+ * Meshes are positioned in world-space so the Group can be added directly
+ * to the scene without an extra transform.
+ *
+ * @param {{ x:number, z:number, w:number, d:number, height:number }} pl
+ * @param {string} worldId
+ * @returns {THREE.Group}
+ */
+export function buildPlateau(pl, worldId = CFG.DEFAULT_ARENA_WORLD) {
+  const g     = new THREE.Group();
+  const world = getArenaWorld(worldId);
+
+  // Body: spans from PLATFORM_TOP to the plateau surface; uses world.side color
+  // to match the vertical edges of buildPlatform tiles.
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(pl.w, pl.height, pl.d),
+    new THREE.MeshLambertMaterial({ color: world.side, flatShading: true })
+  );
+  body.position.set(pl.x, CFG.PLATFORM_TOP + pl.height * 0.5, pl.z);
+  body.castShadow    = true;
+  body.receiveShadow = true;
+  g.add(body);
+
+  // Top cap: a thin slab proud of the surface so it reads as the walkable top
+  // (mirrors the single-step top tiles in buildPlatform).
+  const capH = 0.35;
+  const top  = new THREE.Mesh(
+    new THREE.BoxGeometry(pl.w, capH, pl.d),
+    new THREE.MeshLambertMaterial({ color: world.top, flatShading: true })
+  );
+  top.position.set(pl.x, CFG.PLATFORM_TOP + pl.height + capH * 0.5, pl.z);
+  top.castShadow    = true;
+  top.receiveShadow = true;
+  g.add(top);
+
+  return g;
+}
+
+/**
+ * Build the stacked-step ramp that connects ground level to a plateau face.
+ * Uses one box per step so the geometry reads as voxel blocks (same aesthetic
+ * as buildPlatform's grid tiles).  Positions are in world-space.
+ *
+ * Side conventions (from mapgen.js):
+ *   0 = +x face: ramp extends in +x; head (high) at ramp.x − ramp.w/2.
+ *   1 = −x face: ramp extends in −x; head (high) at ramp.x + ramp.w/2.
+ *   2 = +z face: ramp extends in +z; head (high) at ramp.z − ramp.d/2.
+ *   3 = −z face: ramp extends in −z; head (high) at ramp.z + ramp.d/2.
+ *
+ * @param {{ side:number, x:number, z:number, w:number, d:number }} ramp
+ * @param {number} plateauHeight  – height of the parent plateau above PLATFORM_TOP
+ * @param {string} worldId
+ * @returns {THREE.Group}
+ */
+export function buildRamp(ramp, plateauHeight, worldId = CFG.DEFAULT_ARENA_WORLD) {
+  const g     = new THREE.Group();
+  const world = getArenaWorld(worldId);
+
+  const isX    = ramp.side <= 1;         // slope direction: x-axis or z-axis
+  const rampLen = isX ? ramp.w : ramp.d; // length along the slope
+  const rampWid = isX ? ramp.d : ramp.w; // perpendicular width
+
+  // One step per world-unit; min 2 so even a short ramp reads as stairs.
+  const N       = Math.max(2, Math.ceil(rampLen));
+  const stepLen = rampLen / N;
+  const stepH   = plateauHeight / N;
+
+  const topMat  = new THREE.MeshLambertMaterial({ color: world.top,  flatShading: true });
+  const sideMat = new THREE.MeshLambertMaterial({ color: world.side, flatShading: true });
+
+  for (let i = 0; i < N; i++) {
+    // Each step grows taller toward the head (plateau edge).
+    const h   = (i + 1) * stepH;
+    // The topmost step uses world.top to blend into the plateau top cap.
+    const mat = (i === N - 1) ? topMat : sideMat;
+    const bw  = isX ? stepLen : rampWid;
+    const bd  = isX ? rampWid : stepLen;
+
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, h, bd), mat);
+
+    // Advance from the foot (low end) toward the head (plateau edge).
+    let px, pz;
+    if (ramp.side === 0) {        // foot at +x, head at −x
+      px = ramp.x + ramp.w * 0.5 - (i + 0.5) * stepLen;
+      pz = ramp.z;
+    } else if (ramp.side === 1) { // foot at −x, head at +x
+      px = ramp.x - ramp.w * 0.5 + (i + 0.5) * stepLen;
+      pz = ramp.z;
+    } else if (ramp.side === 2) { // foot at +z, head at −z
+      px = ramp.x;
+      pz = ramp.z + ramp.d * 0.5 - (i + 0.5) * stepLen;
+    } else {                      // side 3: foot at −z, head at +z
+      px = ramp.x;
+      pz = ramp.z - ramp.d * 0.5 + (i + 0.5) * stepLen;
+    }
+
+    mesh.position.set(px, CFG.PLATFORM_TOP + h * 0.5, pz);
+    mesh.castShadow    = true;
+    mesh.receiveShadow = true;
+    g.add(mesh);
+  }
+
+  return g;
+}
+
 // Back-compat aliases (older callers / any external refs).
 export function buildLava(size, y) {
   return buildHazard(size, y, getArenaHazard(CFG.DEFAULT_ARENA_WORLD));

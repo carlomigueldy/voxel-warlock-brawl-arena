@@ -54,6 +54,50 @@ export const CFG = {
   FRICTION: 5.5,             // knockback velocity decay per sec (exponential-ish)
   GRAVITY: 22,               // applied once off the platform edge
 
+  // --- Fall-stun ---
+  // A player who drops off a ledge of at least FALL_STUN_MIN_HEIGHT units is
+  // stunned on landing (FALL_STUN_DURATION seconds).  Small ramp steps never
+  // trigger it.  Falling into the hazard still kills (unchanged).
+  FALL_STUN_DURATION: 2,     // seconds of stun after a notable fall
+  FALL_STUN_MIN_HEIGHT: 1.5, // minimum drop (world units) required to trigger stun
+
+  // --- Map generation ---
+  // Procedural layout tunables.  Geometry is spread across the whole starting
+  // disc.  As the arena shrinks, any feature whose centre falls off the
+  // platform becomes inert (no collision, hidden by the renderer) — so spread
+  // placement never strands solid objects mid-air over the hazard.
+  MAP: {
+    // Placement spans out to this fraction of the round's STARTING radius, so
+    // high grounds and props populate the whole map rather than just the centre.
+    PLACEMENT_RADIUS_FRAC: 0.96,
+
+    // Plateaus — elevated sub-platforms (high ground) reachable via ramps.
+    // Usually a single big high ground; occasionally a second, placed far from
+    // the first so the two command opposite parts of the map.
+    PLATEAU_BASE_COUNT:    1,    // always at least this many
+    PLATEAU_SECOND_CHANCE: 0.2,  // probability of a 2nd plateau
+    PLATEAU_MIN_SEPARATION: 14,  // min distance between two plateau centres
+    PLATEAU_HEIGHT_MIN: 1.5,   // world units above PLATFORM_TOP
+    PLATEAU_HEIGHT_MAX: 2.5,
+    PLATEAU_W_MIN:      3.5,   // full width  (x extent)
+    PLATEAU_W_MAX:      6.0,
+    PLATEAU_D_MIN:      3.5,   // full depth  (z extent)
+    PLATEAU_D_MAX:      6.0,
+    PLATEAU_CLEARANCE:  1.0,   // minimum gap between plateau footprints
+
+    // Obstacle counts per type [min, max] — kept low and spaced out (OBS_MIN_GAP)
+    // so cover reads as scattered landmarks, not a dense maze.
+    OBS_MIN_GAP:         3.0,  // minimum gap between obstacle edges
+    OBS_TREE_MIN:        1,  OBS_TREE_MAX:        3,
+    OBS_STONE_MIN:       1,  OBS_STONE_MAX:       2,
+    OBS_COLUMN_MIN:      1,  OBS_COLUMN_MAX:      2,
+    OBS_DEBRIS_MIN:      1,  OBS_DEBRIS_MAX:      2,
+    OBS_WALL_MIN:        1,  OBS_WALL_MAX:        2,
+    OBS_BOULDER_MIN:     1,  OBS_BOULDER_MAX:     2,
+    OBS_DEADGIANT_MIN:   0,  OBS_DEADGIANT_MAX:   1,
+    OBS_DRAGONBONES_MIN: 0,  OBS_DRAGONBONES_MAX: 1,
+  },
+
   // --- Bolt (the core weapon) ---
   BOLT_SPEED: 26,            // units/sec
   BOLT_RADIUS: 0.45,
@@ -78,8 +122,8 @@ export const CFG = {
   ROUND: {
     COUNTDOWN: 3,            // seconds before a round begins
     GRACE: 1.5,             // no-shrink grace period at round start
-    SHRINK_START_DELAY: 6,  // seconds before platform begins shrinking
-    SHRINK_RATE: 0.45,      // units/sec the radius shrinks once shrinking
+    SHRINK_START_DELAY: 8,  // seconds before platform begins shrinking (raised for elevation pacing)
+    SHRINK_RATE: 0.30,      // units/sec the radius shrinks once shrinking (slowed for elevation pacing)
     POINTS_FOR_WIN: 1,
     POINTS_TO_WIN_MATCH: 5, // first to this many round wins ends the match
     END_DELAY: 3.0,         // seconds to show the round result
@@ -214,8 +258,9 @@ export const MSG = {
   // host -> client
   WELCOME: "welcome",    // {id, players, hostName}
   LOBBY: "lobby",        // {players}
-  START: "start",        // {round}
+  START: "start",        // {round} — mapLayout travels in the first STATE packet, not here
   STATE: "state",        // {t, players[], bolts[], arenaR, phase, ...}
+  // snapshot player field `st` = stun remaining (seconds, like `hz`) added in player.js
   ROUND_END: "roundEnd", // {winnerId, scores}
   MATCH_END: "matchEnd", // {winnerId, scores}
   CHAT: "chat",          // reserved

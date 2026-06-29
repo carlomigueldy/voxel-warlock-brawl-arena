@@ -329,12 +329,78 @@ test("renderer loads Meshy GLBs with procedural fallbacks", () => {
 });
 
 test("renderer labels ability runes with spell names", () => {
-  assert.match(renderer, /import \{ CFG, SPELLS \} from "\.\/config\.js";/);
+  assert.match(renderer, /import \{ CFG, SPELLS[^}]*\} from "\.\/config\.js";/);
   assert.match(renderer, /SPELLS\[r\.spell\]\?\.name/);
   assert.match(renderer, /_makeLabel\(name, r\.c \|\| 0xffffff, 1\.65\)/);
   assert.match(renderer, /userData\.label/);
   assert.match(renderer, /const label = group\.userData\.label/);
   assert.match(renderer, /if \(label\) group\.add\(label\)/);
+});
+
+// --- Phase 5: rendering map elevation + obstacle props + stun VFX ---
+
+test("voxel exports buildPlateau and buildRamp for map elevation rendering", () => {
+  const voxel = fs.readFileSync("src/voxel.js", "utf8");
+  assert.match(voxel, /export function buildPlateau/);
+  assert.match(voxel, /export function buildRamp/);
+  // Both builders follow buildPlatform's world top/side palette convention.
+  assert.match(voxel, /world\.top/);
+  assert.match(voxel, /world\.side/);
+});
+
+test("props.js exports PROP_BUILDERS registry with all eight obstacle types", () => {
+  const props = fs.readFileSync("src/props.js", "utf8");
+  assert.match(props, /export const PROP_BUILDERS/);
+  for (const type of ["tree", "stone", "column", "debris", "wall", "boulder", "deadGiant", "dragonBones"]) {
+    assert.match(props, new RegExp(type), `PROP_BUILDERS must include ${type}`);
+  }
+  // Confirm no GLB / Meshy imports — all props are procedural BoxGeometry.
+  assert.doesNotMatch(props, /GLTFLoader|\.glb/i);
+  assert.doesNotMatch(props, /meshy/i);
+});
+
+test("props.js builders use BoxGeometry and flat-shaded MeshLambertMaterial", () => {
+  const props = fs.readFileSync("src/props.js", "utf8");
+  assert.match(props, /BoxGeometry/);
+  assert.match(props, /MeshLambertMaterial/);
+  assert.match(props, /flatShading: true/);
+});
+
+test("renderer imports map elevation builders and PROP_BUILDERS from new modules", () => {
+  assert.match(renderer, /buildPlateau/);
+  assert.match(renderer, /buildRamp/);
+  assert.match(renderer, /PROP_BUILDERS/);
+  assert.match(renderer, /from "\.\/props\.js"/);
+});
+
+test("renderer rebuilds map layout meshes when snapshot mapV changes", () => {
+  assert.match(renderer, /snapshot\.mapV/);
+  assert.match(renderer, /_mapVersion/);
+  assert.match(renderer, /_rebuildMapMeshes/);
+  // Must dispose old meshes before creating new ones (no GPU leaks).
+  assert.match(renderer, /dispose/);
+});
+
+test("renderer instantiates plateaus, ramps and obstacle props from the layout", () => {
+  assert.match(renderer, /buildPlateau\(pl/);
+  assert.match(renderer, /buildRamp\(ramp/);
+  assert.match(renderer, /PROP_BUILDERS\[ob\.type\]/);
+  // Obstacle props are positioned and rotated from the layout data.
+  assert.match(renderer, /ob\.rot/);
+});
+
+test("renderer clears map meshes on reset", () => {
+  assert.match(renderer, /_rebuildMapMeshes\(null/);
+  assert.match(renderer, /_mapVersion = -1/);
+});
+
+test("renderer shows stun VFX keyed off the snapshot st field", () => {
+  // `st` is the snapshot field for stunned-remaining-seconds (mirrors `hz`).
+  assert.match(renderer, /ps\.st/);
+  // A visual effect group is attached to / removed from the player mesh.
+  assert.match(renderer, /stunEffect/);
+  // The halo spins every frame in the update loop.
+  assert.match(renderer, /stunEffect\.rotation\.y/);
 });
 
 console.log(`\n${passed} source checks passed.`);
