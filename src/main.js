@@ -14,6 +14,7 @@ const input = new InputController(renderer);
 const audio = new AudioEngine();
 renderer.setAudio(audio);
 ui.setAudio(audio);
+ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
 
 // Browsers require a gesture to start audio; resume on first interaction.
 function unlockAudio() {
@@ -149,6 +150,7 @@ function startHosting(name, options = {}) {
     renderer.apply(snap, playerMeta);
     if (snap.phase !== PHASE.LOBBY) {
       ui.updateHUD(snap, localId, playerMeta);
+      syncLocalSpellSlots(snap);
       ui.updateAbilityBar(snap, localId);
       playTransitionAudio(snap);
     }
@@ -253,8 +255,16 @@ function metaToArray() {
   return [...playerMeta.entries()].map(([id, m]) => ({ id, name: m.name, colorIndex: m.colorIndex, isBot: !!m.isBot }));
 }
 
+function syncLocalSpellSlots(snap) {
+  const me = snap.players.find((p) => p.id === localId);
+  if (me?.spellSlots) input.setSpellSlots(me.spellSlots);
+}
+
 ui.on("host", startHosting);
 ui.on("join", startJoining);
 ui.on("selectSpell", (id) => input.setSelectedSpell(id));
+ui.on("spellSlotHotkey", (index, key) => {
+  if (input.setSpellSlotHotkey(index, key)) ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
+});
 
 ui.showMenu();

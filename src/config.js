@@ -69,6 +69,8 @@ export const CFG = {
   RUNE_SPAWN_RADIUS: 13,
   RUNE_MAX_ACTIVE: 2,         // how many runes may exist on the field at once
   RUNE_SPAWN_INTERVAL: 8,     // seconds between timed rune spawns
+  SPELL_SLOT_COUNT: 6,
+  DEFAULT_SPELL_SLOT_HOTKEYS: ["1", "2", "3", "4", "5", "6"],
 
   // --- Rounds ---
   ROUND: {
