@@ -41,6 +41,7 @@ let client = null;
 let localId = null;
 let latestSnapshot = null;
 let inGame = false;
+let sessionGen = 0;    // bumped on leave/disconnect to stop stale rAF loops
 
 // ---------- HOST FLOW ----------
 function startHosting(name, options = {}) {
@@ -160,7 +161,11 @@ function startHosting(name, options = {}) {
   // ---- Host authoritative loop ----
   const tickMs = 1000 / CFG.TICK_RATE;
   let acc = 0, last = performance.now();
+  const mySession = ++sessionGen;
   function hostLoop(now) {
+    // Bail immediately once superseded (leaveMatch/disconnect) so the already-
+    // queued final frame never touches a torn-down host connection.
+    if (sessionGen !== mySession) return;
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
 
@@ -190,7 +195,7 @@ function startHosting(name, options = {}) {
     }
     renderer.update();
 
-    requestAnimationFrame(hostLoop);
+    if (sessionGen === mySession) requestAnimationFrame(hostLoop);
   }
   requestAnimationFrame(hostLoop);
 }
@@ -231,9 +236,11 @@ function startJoining(name, code, character) {
       if (t === "peer-unavailable") ui.setMenuStatus("Room not found. Check the code.");
       else if (t === "room-full") ui.setMenuStatus("Room is full.");
       else ui.setMenuStatus("Connection error: " + (t || err.message || err));
+      resetMatchState();
       ui.showMenu();
     },
     onClose: () => {
+      resetMatchState();
       ui.setMenuStatus("Disconnected from host.");
       ui.showMenu();
     },
@@ -242,7 +249,10 @@ function startJoining(name, code, character) {
   // ---- Client loop: send input, render last snapshot ----
   const inputMs = 1000 / CFG.INPUT_RATE;
   let lastInput = 0;
+  const mySession = ++sessionGen;
   function clientLoop(now) {
+    // Stop once superseded (leaveMatch/disconnect) before touching the client.
+    if (sessionGen !== mySession) return;
     if (now - lastInput >= inputMs) {
       client.sendInput(input.sample());
       lastInput = now;
@@ -260,7 +270,7 @@ function startJoining(name, code, character) {
       }
     }
     renderer.update();
-    requestAnimationFrame(clientLoop);
+    if (sessionGen === mySession) requestAnimationFrame(clientLoop);
   }
   requestAnimationFrame(clientLoop);
 }
@@ -295,9 +305,44 @@ function syncLocalSpellSlots(snap) {
   if (me?.spellSlots) input.setSpellSlots(me.spellSlots);
 }
 
+// Tear down all match/session state so the pause overlay, input gating, and the
+// running rAF loop can't leak into the menu. Shared by the deliberate Leave
+// Match action and by involuntary client disconnects (onClose/onError).
+function resetMatchState() {
+  ui.hidePause();
+  input.paused = false;
+  input.fire = false;
+  try { host?.destroy(); } catch { /* ignore */ }
+  try { client?.destroy(); } catch { /* ignore */ }
+  playerMeta.clear();
+  inGame = false;
+  role = null;
+  host = null;
+  client = null;
+  latestSnapshot = null;
+  sessionGen++; // stops the running rAF loop
+}
+
+function leaveMatch() {
+  resetMatchState();
+  ui.showMenu();
+}
+
+// ESC toggles the pause menu during active play (not in lobby/menu).
+addEventListener("keydown", (e) => {
+  if (e.code !== "Escape") return;
+  if (!inGame || !latestSnapshot || latestSnapshot.phase === PHASE.LOBBY) return;
+  e.preventDefault();
+  const paused = ui.togglePause();
+  input.paused = paused;
+  if (paused) input.fire = false;
+});
+
 ui.on("host", startHosting);
 ui.on("join", startJoining);
 ui.on("practice", (name, options) => startHosting(name, { ...options, practice: true }));
+ui.on("resume", () => { input.paused = false; });
+ui.on("leaveMatch", leaveMatch);
 ui.on("selectSpell", (id) => input.setSelectedSpell(id));
 ui.on("spellSlotHotkey", (index, key) => {
   if (input.setSpellSlotHotkey(index, key)) ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
