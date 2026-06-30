@@ -2,12 +2,36 @@
   "project": "Voxel Warlock Brawl Arena",
   "features": [
     {
+      "id": "ui-esc-pause-menu",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "review",
+      "priority": "P2",
+      "labels": [
+        "ui",
+        "gameplay"
+      ],
+      "summary": "In-match ESC pause menu overlay with Resume Game, Leave Match, SFX/Music toggles, and a How-to-Play controls reference. Local-only pause (neutralizes the local player's input while the host-authoritative match continues live for everyone).",
+      "acceptance_criteria": [
+        "Pressing ESC during an active match (not in lobby) opens a centered pause overlay; pressing ESC or Resume closes it.",
+        "While paused the local warlock stops moving and casting; the match keeps running for other players.",
+        "SFX and Music toggles in the pause menu stay in sync with the HUD audio controls.",
+        "How to Play shows an accurate keybind reference built from the live spellbook and slot hotkeys.",
+        "Leave Match disconnects (host or client) and returns cleanly to the main menu with no leaked render loop; re-host/re-join works afterward.",
+        "An involuntary disconnect resets match state so the pause overlay cannot appear over the main menu."
+      ]
+    },
+    {
       "id": "feat-region-matchmaking",
       "type": "epic",
       "phase": "v1",
       "status": "in_progress",
       "priority": "P1",
-      "labels": ["multiplayer", "leaderboard"],
+      "labels": [
+        "multiplayer",
+        "leaderboard"
+      ],
       "summary": "Region-based online matchmaking, persistent leaderboards, and account system backed by Supabase",
       "dependencies": [],
       "acceptance_criteria": [

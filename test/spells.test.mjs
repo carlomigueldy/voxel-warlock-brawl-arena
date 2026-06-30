@@ -24,6 +24,10 @@ function playingSim() {
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   sim.arena.setLayout(null);
+  // Reset groundY to flat-ground level so spawnBolt() places bolts at the
+  // expected height (CFG.PLATFORM_TOP + 1.1) regardless of whether a player
+  // happened to stand on a procedurally-generated plateau during advance().
+  for (const p of sim.players.values()) p.groundY = CFG.PLATFORM_TOP;
   return sim;
 }
 
@@ -293,6 +297,8 @@ test("spell runes occupy the first empty spell slot on pickup", () => {
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const a = sim.players.get("a");
+  // Clear any rune spells picked up during advance so slot 0 is free for teleport.
+  a.spellSlots.fill(null);
   sim.runes = [{ id: 1, spell: "teleport", x: a.x, z: a.z }];
   sim.step(1 / CFG.TICK_RATE);
   assert.ok(a.hasSpell("teleport"), "teleport was not acquired");
@@ -319,6 +325,9 @@ test("consumed rune abilities clear their spell slot", () => {
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const a = sim.players.get("a");
+  // Clear any rune spells picked up during advance so the assertion on six null
+  // slots only reflects what the test itself puts in, not random rune pickups.
+  a.spellSlots.fill(null);
   a.acquireSpell("teleport");
   a.x = 0; a.z = 0;
   cast(sim, "a", "teleport", 5, 0);
@@ -349,6 +358,10 @@ test("rune mode spawns new runes over time without exceeding active cap", () => 
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  // Park both players at the arena centre (runes spawn at ring ≥ 6.5 units out,
+  // pickup radius is 1.4 units) so a freshly-spawned rune is never immediately
+  // collected in the same tick that triggers the assertion.
+  for (const p of sim.players.values()) { p.x = 0; p.z = 0; }
   sim.runes = [];
   sim.runeSpawnTimer = 0;
   sim.step(1 / CFG.TICK_RATE);

@@ -9,6 +9,8 @@ import {
   buildWarlock, buildBolt, animateWarlock,
   buildBurst, buildLightning, buildMeteor, buildRune,
   buildPlateau, buildRamp,
+  buildMobByType, animateMob,
+  buildStormClouds,
 } from "./voxel.js";
 import { PROP_BUILDERS } from "./props.js";
 import {
@@ -69,6 +71,7 @@ export class GameRenderer {
     this.boltMeshes = new Map();   // id -> group
     this.meteorMeshes = new Map(); // id -> group
     this.runeMeshes = new Map();   // id -> group
+    this.mobMeshes = new Map();    // id -> { group, rx, rz, ry, ra, target, spd }
     this.effects = [];             // transient VFX groups with .userData.update
     this.linkLines = new Map();    // "a|b" -> line
     this.localId = null;
@@ -423,6 +426,31 @@ export class GameRenderer {
       }
     }
 
+    // Mobs — build-if-absent, position from snapshot, prune unseen.
+    const mobSeen = new Set();
+    for (const mob of snapshot.mobs || []) {
+      mobSeen.add(mob.id);
+      let e = this.mobMeshes.get(mob.id);
+      if (!e) {
+        const grp = buildMobByType(mob.type, mob.color || 0xaaaaaa);
+        this.scene.add(grp);
+        // baseScale captures the builder's own uniform scale (varies per mob type)
+        // so the entrance animation can lerp back to it after the window closes.
+        e = { group: grp, rx: mob.x, rz: mob.z, ry: mob.y ?? 0, ra: mob.a ?? 0, target: mob, spd: 0, baseScale: grp.scale.x };
+        this.mobMeshes.set(mob.id, e);
+      }
+      e.target = mob;
+      // Scale the foreground health bar to reflect remaining HP.
+      const hb = e.group.userData.healthBar;
+      if (hb && mob.max > 0) hb.scale.x = Math.max(0.001, mob.hp / mob.max);
+    }
+    for (const id of [...this.mobMeshes.keys()]) {
+      if (!mobSeen.has(id)) {
+        this.scene.remove(this.mobMeshes.get(id).group);
+        this.mobMeshes.delete(id);
+      }
+    }
+
     // Link lines between linked warlocks.
     this._updateLinks(snapshot);
 
@@ -595,6 +623,121 @@ export class GameRenderer {
         case "sfx":
           this.audio?.play(ev.sfx, this._panFor(ev.x || 0));
           break;
+        // "mobSpawn" is now emitted ONLY by minions (big mobs emit "mobIncoming"
+        // instead). This handler stays for the small burst+ring on minion spawn.
+        case "mobSpawn":
+          this._addEffect(this._burstAt(ev.x, ev.z, ev.color || 0xaaaaaa, { count: 16, speed: 7, life: 0.6 }));
+          this._addEffect(this._ringPulse(ev.x, ev.z, 2.0, ev.color || 0xaaaaaa));
+          this.audio?.play("whoosh", this._panFor(ev.x));
+          break;
+        // Big-mob cinematic entrance begins.  ev.entrance is the kind key from
+        // CFG.MOB_TYPES[type].entrance.kind.
+        case "mobIncoming": {
+          switch (ev.entrance) {
+            case "shatter": {
+              // Stone Giant: rocky debris burst in grey/brown + dust ring.
+              this._addEffect(this._burstAt(ev.x, ev.z, 0x888888, { count: 24, speed: 8, life: 0.9 }, 0.3));
+              this._addEffect(this._burstAt(ev.x, ev.z, 0x553322, { count: 14, speed: 5, life: 1.1 }, 0.1));
+              this._addEffect(this._ringPulse(ev.x, ev.z, 3.5, 0x888888));
+              this.audio?.play("hit", this._panFor(ev.x));
+              this._shake = Math.min(0.5, this._shake + 0.20);
+              break;
+            }
+            case "storm": {
+              // Storming Vortex: hovering storm clouds + two crossing lightning
+              // strikes + ground ring with a blue electric accent.
+              this._addEffect(buildStormClouds(ev.x, ev.z));
+              this._addEffect(buildLightning(ev.x - 2, ev.z - 1, ev.x, ev.z + 0.5, 0x7adfff));
+              this._addEffect(buildLightning(ev.x + 2, ev.z - 1, ev.x, ev.z + 0.5, 0x9fe6ff));
+              this._addEffect(this._ringPulse(ev.x, ev.z, 3.0, 0x7adfff));
+              this.audio?.play("lightning", this._panFor(ev.x));
+              this._shake = Math.min(0.4, this._shake + 0.12);
+              break;
+            }
+            case "summon": {
+              // Giant Dwarf: repeating expanding ground ring pulses timed to the
+              // entrance window, plus an initial debris burst.
+              const summonDuration = ev.duration || CFG.MOB_ENTRANCE || 2.5;
+              const pulseEff = new THREE.Group();
+              let pElapsed = 0;
+              let pNext = 0;
+              const pInterval = 0.55;
+              pulseEff.userData.done = false;
+              pulseEff.userData.update = (dt) => {
+                pElapsed += dt;
+                if (pElapsed >= pNext) {
+                  pNext += pInterval;
+                  this._addEffect(this._ringPulse(ev.x, ev.z, 4.5, 0xffd23c));
+                }
+                if (pElapsed >= summonDuration + 0.2) pulseEff.userData.done = true;
+              };
+              this._addEffect(pulseEff);
+              this._addEffect(this._burstAt(ev.x, ev.z, 0xc47a2e, { count: 18, speed: 6, life: 0.8 }, 0.1));
+              this.audio?.play("whoosh", this._panFor(ev.x));
+              this._shake = Math.min(0.45, this._shake + 0.15);
+              break;
+            }
+            case "meteor": {
+              // Fire Elemental: a falling flaming rock that descends toward the
+              // spawn point over the full entrance duration, driven by elapsed time.
+              const metDuration = ev.duration || CFG.MOB_ENTRANCE || 2.5;
+              const metEff = buildMeteor(ev.x, ev.z, metDuration, 4, 0xff5a1e);
+              let metElapsed = 0;
+              const origMetUpdate = metEff.userData.update;
+              metEff.userData.done = false;
+              metEff.userData.update = (dt) => {
+                metElapsed = Math.min(metElapsed + dt, metDuration);
+                origMetUpdate(dt, metDuration - metElapsed);
+                if (metElapsed >= metDuration) metEff.userData.done = true;
+              };
+              this._addEffect(metEff);
+              this.audio?.play("meteorImpact", this._panFor(ev.x));
+              this._shake = Math.min(0.3, this._shake + 0.10);
+              break;
+            }
+          }
+          break;
+        }
+        // Big-mob entrance window ends: shockwave impact at spawn point.
+        case "mobArrive": {
+          const arriveKind = CFG.MOB_TYPES?.[ev.mobType]?.entrance?.kind || "";
+          const bigImpact  = arriveKind === "meteor" || arriveKind === "summon";
+          const arriveColor =
+            ev.mobType === "stoneGiant"     ? 0x888888 :
+            ev.mobType === "stormingVortex" ? 0x7adfff :
+            ev.mobType === "giantDwarf"     ? 0xffd23c :
+            ev.mobType === "fireElemental"  ? 0xff5a1e : 0xaaaaaa;
+          this._addEffect(this._burstAt(
+            ev.x, ev.z, arriveColor,
+            { count: bigImpact ? 32 : 20, speed: bigImpact ? 11 : 8, life: 0.7 },
+            0.5
+          ));
+          this._addEffect(this._ringPulse(
+            ev.x, ev.z,
+            bigImpact ? Math.max(ev.radius || 0, 5) : 3.0,
+            arriveColor
+          ));
+          this._shake = Math.min(1.0, this._shake + (bigImpact ? 0.50 : 0.30));
+          this.audio?.play(bigImpact ? "meteorImpact" : "hit", this._panFor(ev.x));
+          break;
+        }
+        case "mobHit":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0xffaa44, { count: 10, speed: 5 }));
+          this.audio?.play("hit", this._panFor(ev.x));
+          this._shake = Math.min(0.4, this._shake + 0.07);
+          break;
+        case "mobAbility":
+          this._addEffect(this._burstAt(ev.x, ev.z, ev.color || 0xff3a1e, { count: 22, speed: 9, life: 0.65 }, 0.6));
+          this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius || 4, ev.color || 0xff3a1e));
+          this.audio?.play("meteorImpact", this._panFor(ev.x));
+          this._shake = Math.min(0.9, this._shake + 0.32);
+          break;
+        case "mobDeath":
+          this._addEffect(this._burstAt(ev.x, ev.z, ev.color || 0xaaaaaa, { count: 30, speed: 9, life: 0.8 }, 1.0));
+          this._addEffect(this._ringPulse(ev.x, ev.z, 3.0, ev.color || 0xffffff));
+          this.audio?.play("death", this._panFor(ev.x));
+          this._shake = Math.min(0.8, this._shake + 0.28);
+          break;
       }
     }
   }
@@ -697,6 +840,47 @@ export class GameRenderer {
     for (const g of this.runeMeshes.values()) {
       g.rotation.y += dt * 1.8;
       if (g.userData.core) g.userData.core.position.y = 0.55 + Math.sin(t * 4) * 0.08;
+    }
+
+    // Interpolate + animate mob meshes.
+    for (const [, e] of this.mobMeshes) {
+      if (!e.target) continue;
+      const prevX = e.rx, prevZ = e.rz;
+      e.rx += (e.target.x - e.rx) * lerp;
+      e.rz += (e.target.z - e.rz) * lerp;
+      e.ry += ((e.target.y ?? 0) - e.ry) * lerp;
+      let da = (e.target.a ?? 0) - e.ra;
+      while (da >  Math.PI) da -= Math.PI * 2;
+      while (da < -Math.PI) da += Math.PI * 2;
+      e.ra += da * lerp;
+
+      e.group.position.set(e.rx, e.ry, e.rz);
+      e.group.rotation.y = -e.ra + Math.PI / 2;
+
+      const inst = Math.hypot(e.rx - prevX, e.rz - prevZ) / dt;
+      e.spd = e.spd + (inst - e.spd) * (1 - Math.exp(-8 * dt));
+
+      // Entrance animation: big mobs rise from underground and scale up over
+      // CFG.MOB_ENTRANCE seconds. Walk/locomotion is suppressed during this window.
+      const ent = e.target.ent ?? 0;
+      if (ent > 0) {
+        const progress = Math.min(1, Math.max(0, 1 - ent / (CFG.MOB_ENTRANCE ?? 2.5)));
+        // Rise 3 world-units from below ground to normal floor level.
+        e.group.position.y = e.ry - (1 - progress) * 3.0;
+        e.group.scale.setScalar(Math.max(0.05, progress) * (e.baseScale || 1));
+        // No animateMob — mob is locked in its spawn pose during the cinematic.
+      } else {
+        // Restore full scale (needed in the first frame after entrance ends).
+        e.group.scale.setScalar(e.baseScale || 1);
+        animateMob(e.group, {
+          type:     e.target.type,
+          speed:    e.spd,
+          maxSpeed: 5.0,
+          falling:  !!e.target.f,
+          dt,
+          time:     t,
+        });
+      }
     }
 
     // Advance transient VFX and cull finished ones.
@@ -831,6 +1015,8 @@ export class GameRenderer {
     this.meteorMeshes.clear();
     for (const g of this.runeMeshes.values()) this.scene.remove(g);
     this.runeMeshes.clear();
+    for (const e of this.mobMeshes.values()) this.scene.remove(e.group);
+    this.mobMeshes.clear();
     for (const g of this.effects) this.scene.remove(g);
     this.effects = [];
     for (const l of this.linkLines.values()) this.scene.remove(l);

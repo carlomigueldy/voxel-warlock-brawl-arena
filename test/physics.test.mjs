@@ -27,8 +27,13 @@ test("player elevated above FALL_STUN_MIN_HEIGHT is stunned on landing", () => {
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  // Clear the procedural (Math.random-seeded) map layout so the centre is
+  // guaranteed flat ground (groundY = 0); otherwise an occasional plateau/prop
+  // near the origin raises groundY and shortens the drop below the stun
+  // threshold, making this test flaky.
+  sim.arena.setLayout(null);
   const p = sim.players.get("a");
-  // Place player in center-clear zone (no plateau spawns here) so groundY = 0.
+  // Place player in the now-flat centre so groundY = 0.
   p.x = 0.5; p.z = 0.5;
   // Manually elevate above the stun threshold.
   const dropHeight = CFG.FALL_STUN_MIN_HEIGHT + 0.5;
@@ -47,6 +52,9 @@ test("player dropping less than FALL_STUN_MIN_HEIGHT is not stunned", () => {
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  // Clear the procedural map layout so the centre is flat ground (see note in
+  // the stun-on-landing test above) — keeps this drop deterministic.
+  sim.arena.setLayout(null);
   const p = sim.players.get("a");
   p.x = 0.5; p.z = 0.5;
   const smallDrop = CFG.FALL_STUN_MIN_HEIGHT - 0.6; // well below threshold
@@ -307,9 +315,19 @@ test("arena.blocksMovement is wired through LogicArena after layout is set", () 
   const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
-  // Center-clear zone: no obstacles placed there, should not be blocked at y=0.
-  const blocked = sim.arena.blocksMovement(0.5, 0.5, 0);
-  assert.strictEqual(blocked, false, "center-clear zone should not be blocked");
+  // Inject a deterministic layout (the procedural Math.random() generator can
+  // legitimately place an obstacle near the origin, which would make a fixed
+  // "centre is clear" assertion flaky).  A single known boulder lets us assert
+  // the wiring both ways: the obstacle cell is blocked, an empty cell is not.
+  const layout = {
+    seed: 7,
+    plateaus: [],
+    obstacles: [{ id: 0, type: "boulder", x: 6, z: 0, r: 1.0, height: 3.0, rot: 0 }],
+  };
+  sim.mapLayout = layout;
+  sim.arena.setLayout(layout);
+  assert.strictEqual(sim.arena.blocksMovement(6, 0, 0), true, "obstacle cell should be blocked");
+  assert.strictEqual(sim.arena.blocksMovement(0, 0, 0), false, "empty cell should not be blocked");
 });
 
 test("returnToLobby clears mapLayout", () => {

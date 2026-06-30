@@ -47,6 +47,7 @@ let client          = null;
 let localId         = null;
 let latestSnapshot  = null;
 let inGame          = false;
+let sessionGen      = 0;       // bumped on leave/disconnect to stop stale rAF loops
 
 // --- Online state ---
 let _isOnline           = false;  // true when game was started via Online flow
@@ -63,6 +64,7 @@ function startHosting(name, options = {}) {
 
   const sim = new Simulation({
     allAbilitiesAtStart: options.allAbilitiesAtStart,
+    mobsEnabled: options.mobsEnabled,
     arenaWorld: options.arenaWorld,
     landSize: options.landSize,
     enabledObstacles: options.enabledObstacles,
@@ -80,10 +82,25 @@ function startHosting(name, options = {}) {
         character: options.character || CFG.DEFAULT_CHARACTER,
         userId: getUser()?.id || null,
       });
-      ui.showLobby(code, { isHost: true });
-      pushLobby();
-      // Let main.js do online setup (publish room, heartbeat) after host is ready.
-      options.onHostReady?.(code);
+      if (options.practice) {
+        // Practice mode: add one Smart bot and skip the lobby straight to the game.
+        sim.setBotRoster(1, "smart");
+        syncBotMeta();
+        if (sim.startMatch()) {
+          host.broadcast({ type: MSG.START, round: sim.round });
+          ui.showGame();
+          inGame = true;
+        } else {
+          // Fallback: show the lobby so practice never dead-ends.
+          ui.showLobby(code, { isHost: true });
+          pushLobby();
+        }
+      } else {
+        ui.showLobby(code, { isHost: true });
+        pushLobby();
+        // Let main.js do online setup (publish room, heartbeat) after host is ready.
+        options.onHostReady?.(code);
+      }
     },
     onPlayerJoin: (peerId, pname, character, extraMeta) => {
       const p = sim.addPlayer(peerId, pname);
@@ -165,7 +182,11 @@ function startHosting(name, options = {}) {
   // ---- Host authoritative loop ----
   const tickMs = 1000 / CFG.TICK_RATE;
   let acc = 0, last = performance.now();
+  const mySession = ++sessionGen;
   function hostLoop(now) {
+    // Bail immediately once superseded (leaveMatch/disconnect) so the already-
+    // queued final frame never touches a torn-down host connection.
+    if (sessionGen !== mySession) return;
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
 
@@ -186,6 +207,7 @@ function startHosting(name, options = {}) {
     renderer.apply(snap, playerMeta);
     if (snap.phase !== PHASE.LOBBY) {
       ui.updateHUD(snap, localId, playerMeta);
+      ui.handleEvents(snap.events, snap.t);
       syncLocalSpellSlots(snap);
       ui.updateAbilityBar(snap, localId);
       playTransitionAudio(snap);
@@ -198,7 +220,7 @@ function startHosting(name, options = {}) {
     }
     renderer.update();
 
-    requestAnimationFrame(hostLoop);
+    if (sessionGen === mySession) requestAnimationFrame(hostLoop);
   }
   requestAnimationFrame(hostLoop);
 }
@@ -245,9 +267,11 @@ function startJoining(name, code, character, { userId, region } = {}) {
       if (t === "peer-unavailable") ui.setMenuStatus("Room not found. Check the code.");
       else if (t === "room-full") ui.setMenuStatus("Room is full.");
       else ui.setMenuStatus("Connection error: " + (t || err.message || err));
+      resetMatchState();
       ui.showMenu();
     },
     onClose: () => {
+      resetMatchState();
       ui.setMenuStatus("Disconnected from host.");
       ui.showMenu();
     },
@@ -256,7 +280,10 @@ function startJoining(name, code, character, { userId, region } = {}) {
   // ---- Client loop: send input, render last snapshot ----
   const inputMs = 1000 / CFG.INPUT_RATE;
   let lastInput = 0;
+  const mySession = ++sessionGen;
   function clientLoop(now) {
+    // Stop once superseded (leaveMatch/disconnect) before touching the client.
+    if (sessionGen !== mySession) return;
     if (now - lastInput >= inputMs) {
       client.sendInput(input.sample());
       lastInput = now;
@@ -268,12 +295,13 @@ function startJoining(name, code, character, { userId, region } = {}) {
       renderer.apply(latestSnapshot, playerMeta);
       if (latestSnapshot.phase !== PHASE.LOBBY) {
         ui.updateHUD(latestSnapshot, localId, playerMeta);
+        ui.handleEvents(latestSnapshot.events, latestSnapshot.t);
         ui.updateAbilityBar(latestSnapshot, localId);
         playTransitionAudio(latestSnapshot);
       }
     }
     renderer.update();
-    requestAnimationFrame(clientLoop);
+    if (sessionGen === mySession) requestAnimationFrame(clientLoop);
   }
   requestAnimationFrame(clientLoop);
 }
@@ -517,7 +545,44 @@ ui.on("signOut", async () => {
   } catch { /* non-fatal */ }
 });
 
-// Spell bindings — unchanged.
+// Tear down all match/session state so the pause overlay, input gating, and the
+// running rAF loop can't leak into the menu. Shared by the deliberate Leave
+// Match action and by involuntary client disconnects (onClose/onError).
+function resetMatchState() {
+  ui.hidePause();
+  input.paused = false;
+  input.fire = false;
+  try { host?.destroy(); } catch { /* ignore */ }
+  try { client?.destroy(); } catch { /* ignore */ }
+  playerMeta.clear();
+  inGame = false;
+  role = null;
+  host = null;
+  client = null;
+  latestSnapshot = null;
+  sessionGen++; // stops the running rAF loop
+}
+
+function leaveMatch() {
+  resetMatchState();
+  ui.showMenu();
+}
+
+// ESC toggles the pause menu during active play (not in lobby/menu).
+addEventListener("keydown", (e) => {
+  if (e.code !== "Escape") return;
+  if (!inGame || !latestSnapshot || latestSnapshot.phase === PHASE.LOBBY) return;
+  e.preventDefault();
+  const paused = ui.togglePause();
+  input.paused = paused;
+  if (paused) input.fire = false;
+});
+
+ui.on("host", startHosting);
+ui.on("join", startJoining);
+ui.on("practice", (name, options) => startHosting(name, { ...options, practice: true }));
+ui.on("resume", () => { input.paused = false; });
+ui.on("leaveMatch", leaveMatch);
 ui.on("selectSpell", (id) => input.setSelectedSpell(id));
 ui.on("spellSlotHotkey", (index, key) => {
   if (input.setSpellSlotHotkey(index, key)) ui.setSpellSlotHotkeys(input.spellSlotHotkeys);

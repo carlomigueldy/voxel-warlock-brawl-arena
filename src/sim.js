@@ -8,6 +8,7 @@ import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
 import { BotBrain, BOT_PROFILES, closestApproach as _closestApproach } from "./bot.js";
 import { makePrng } from "./rng.js";
+import { makeMobPrng, stepMobPhysics, spawnMob } from "./mob.js";
 
 // Re-wrap so the local call sites keep their original shape (returns .x/.z midpoint too).
 function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
@@ -85,6 +86,17 @@ export class Simulation {
     this.runePool = [];       // remaining spell ids queued to drop as runes
     this._meteorId = 1;
     this._runeId = 1;
+    // Mob state
+    this.mobs = [];
+    this.mobSpawnTimer = 0;
+    this._mobId = 1;
+    this._mobRand = null;
+    this.mobsEnabled = options.mobsEnabled !== false;
+    // Big-mob roster for the current round (shuffled order; each type spawns once).
+    this._mobRoster = [];
+    this._mobRosterIdx = 0;
+    // Arena radius at the moment the PLAYING phase begins; used by _mobAliveCap().
+    this._arenaStartR = 0;
     this.arena = new LogicArena(this.world, this.landSize);
     this.phase = PHASE.LOBBY;
     this.round = 0;
@@ -230,6 +242,9 @@ export class Simulation {
     this.runes = [];
     this.runePool = [];
     this.runeSpawnTimer = 0;
+    this.mobs = [];
+    this.mobSpawnTimer = CFG.MOB_SPAWN_MIN; // grace window before first mob spawn
+    this._mobId = 1;
     this.arena.reset(); // clears radius and layout
     this.playTime = 0;
     this.phase = PHASE.COUNTDOWN;
@@ -242,6 +257,20 @@ export class Simulation {
     this.mapLayout = generateMap(this.world.id, this.landSize.radius, mapSeed, this.enabledObstacles);
     this.mapVersion++;
     this.arena.setLayout(this.mapLayout);
+    // Seed the per-round mob PRNG (mix matchSeed + round so every round differs).
+    const mobSeed = (this._matchSeed ^ (this.round * 0x517cc1b7)) >>> 0;
+    this._mobRand = makeMobPrng(mobSeed);
+
+    // Build a shuffled big-mob roster so each type appears exactly once per round
+    // in a deterministic but varied order (Fisher-Yates over the seeded PRNG).
+    this._mobRoster = ["stoneGiant", "stormingVortex", "giantDwarf", "fireElemental"];
+    for (let i = this._mobRoster.length - 1; i > 0; i--) {
+      const j = Math.floor(this._mobRand() * (i + 1));
+      const tmp = this._mobRoster[i]; this._mobRoster[i] = this._mobRoster[j]; this._mobRoster[j] = tmp;
+    }
+    this._mobRosterIdx = 0;
+    // Fallback start radius; true value is captured at the COUNTDOWN→PLAYING transition.
+    this._arenaStartR = this.arena.radius;
 
     // Spawn active players evenly around a ring; late joiners enter next round.
     const list = [...this.players.values()];
@@ -317,6 +346,8 @@ export class Simulation {
     this.runes = [];
     this.runePool = [];
     this.runeSpawnTimer = 0;
+    this.mobs = [];
+    this.mobSpawnTimer = 0;
     this.mapLayout = null;
     this.arena.reset();
     for (const p of this.players.values()) {
@@ -361,6 +392,9 @@ export class Simulation {
       if (this.phaseTimer <= 0) {
         this.phase = PHASE.PLAYING;
         this.playTime = 0;
+        // Capture the true start radius now that the round is live; used by
+        // _mobAliveCap() to track shrink progress for the dynamic mob cap.
+        this._arenaStartR = this.arena.radius;
       }
       return;
     }
@@ -448,6 +482,7 @@ export class Simulation {
       if (b._spawn && b._spawn.length) spawned.push(...b._spawn);
     }
     this.resolveProjectileClashes();
+    this.resolveMobHits(); // bolt hits mob OR player, not both
     for (const b of this.bolts) {
       if (b.dead) continue;
       const res = b.step(0, playerArr, this.arena);
@@ -520,6 +555,8 @@ export class Simulation {
     this.resolveRuneDestruction();
     this.resolveRunePickups();
 
+    if (this.mobsEnabled) this.stepMobs(dt);
+
     // Record the latest attacker for each victim from all hit events emitted this
     // frame — covers bolt hits, lightning, thrust, gravity implosion, and any
     // other spell that emits {type:"hit", victim, by}.  Meteor hits are recorded
@@ -550,6 +587,270 @@ export class Simulation {
     this.resolveRoundIfNeeded();
   }
 
+  // ── Mob system ──────────────────────────────────────────────────────────────
+
+  // How many big mobs may be alive simultaneously given the current shrink
+  // progress.  Increases in steps from 1 up to MOB_MAX_ALIVE as the arena
+  // contracts, so late-round fights become progressively more chaotic.
+  _mobAliveCap() {
+    const span = Math.max(0.001, this._arenaStartR - CFG.ARENA_MIN_RADIUS);
+    const s = Math.min(1, Math.max(0, (this._arenaStartR - this.arena.radius) / span));
+    let cap = 1;
+    for (const step of CFG.MOB_SHRINK_CAP_STEPS) if (s >= step.at) cap = step.cap;
+    return Math.min(cap, CFG.MOB_MAX_ALIVE);
+  }
+
+  // Pick a random on-platform position away from all players.
+  _mobSpawnPos() {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const angle = this._mobRand() * Math.PI * 2;
+      const ring = (0.5 + this._mobRand() * 0.45) * Math.min(this.arena.radius * 0.8, CFG.RUNE_SPAWN_RADIUS);
+      const x = Math.cos(angle) * ring;
+      const z = Math.sin(angle) * ring;
+      if (!this.arena.isOnPlatform(x, z)) continue;
+      // Keep away from players (at least 5 units).
+      const tooClose = this.alivePlayers().some(p => Math.hypot(p.x - x, p.z - z) < 5);
+      if (tooClose) continue;
+      return { x, z };
+    }
+    return null; // couldn't place this tick — skip
+  }
+
+  stepMobs(dt) {
+    if (this.phase !== PHASE.PLAYING) return;
+
+    // ── Spawn ────────────────────────────────────────────────────────────────
+    this.mobSpawnTimer -= dt;
+    const bigAlive = this.mobs.filter(m => m.alive && m.type !== "minion").length;
+    // Big mobs: roster-driven, one alive at a time (scaled by shrink cap).
+    // Each type from the shuffled roster spawns at most once per round.
+    // When the roster is exhausted no further big mobs spawn this round.
+    if (
+      this.mobSpawnTimer <= 0 &&
+      bigAlive < this._mobAliveCap() &&
+      this._mobRosterIdx < this._mobRoster.length &&
+      this.alivePlayers().length
+    ) {
+      const pos = this._mobSpawnPos();
+      if (pos) {
+        const type = this._mobRoster[this._mobRosterIdx++];
+        const id = "mob:" + this._mobId++;
+        const mob = spawnMob(id, type, pos.x, pos.z);
+        // Health scaling: base * (MIN_FACTOR + PER_PLAYER * max(0, players - 2)).
+        const n = this.alivePlayers().length;
+        const factor = CFG.MOB_HP_MIN_FACTOR + CFG.MOB_HP_PER_PLAYER * Math.max(0, n - 2);
+        mob.maxHits = mob.hitsRemaining = Math.max(1, Math.round(CFG.MOB_TYPES[type].maxHits * factor));
+        mob.entering = CFG.MOB_ENTRANCE; // already set by constructor; made explicit here
+        this.mobs.push(mob);
+        this.events.push({
+          type: "mobIncoming",
+          id: mob.id,
+          mobType: type,
+          x: pos.x,
+          z: pos.z,
+          color: CFG.MOB_TYPES[type].color,
+          entrance: CFG.MOB_TYPES[type].entrance.kind,
+          duration: CFG.MOB_ENTRANCE,
+        });
+      }
+      this.mobSpawnTimer = CFG.MOB_SPAWN_MIN + this._mobRand() * (CFG.MOB_SPAWN_MAX - CFG.MOB_SPAWN_MIN);
+    }
+
+    // ── AI + physics ─────────────────────────────────────────────────────────
+    const playerArr = [...this.players.values()];
+    for (const mob of this.mobs) {
+      if (!mob.alive) continue;
+
+      // Capture pre-think entering value so we can detect when the cinematic
+      // window transitions to zero (think() decrements mob.entering).
+      const wasEntering = mob.entering;
+      const action = mob._brain.think(mob, playerArr, dt);
+      stepMobPhysics(mob, dt, this.arena);
+
+      // Ring-out: fell to lava.
+      if (mob.falling && mob.y <= CFG.LAVA_Y) {
+        this.killMob(mob, "lava");
+        continue;
+      }
+
+      // Entrance completion: first tick where the cinematic window closes.
+      // Emit mobArrive, then apply AoE knockback for entrance kinds that have it.
+      if (wasEntering > 0 && mob.entering <= 0) {
+        const ec = CFG.MOB_TYPES[mob.type].entrance;
+        this.events.push({ type: "mobArrive", id: mob.id, mobType: mob.type, x: mob.x, z: mob.z, radius: ec.radius || 0 });
+        if (ec.kb) {
+          for (const p of this.players.values()) {
+            if (!p.alive || p.falling || p.spectating) continue;
+            const d = Math.hypot(p.x - mob.x, p.z - mob.z);
+            if (d <= ec.radius) {
+              const ndx = d < 0.001 ? Math.cos(mob.aim) : (p.x - mob.x) / d;
+              const ndz = d < 0.001 ? Math.sin(mob.aim) : (p.z - mob.z) / d;
+              p.applyHit(ndx, ndz, ec.kb);
+              this.events.push({ type: "hit", x: p.x, z: p.z, victim: p.id, by: mob.id });
+            }
+          }
+        }
+      }
+
+      // Apply action effects.
+      if (action.kind === "melee" && action.target) {
+        const victim = action.target;
+        if (victim.alive && !victim.falling) {
+          const dx = victim.x - mob.x, dz = victim.z - mob.z;
+          victim.applyHit(dx, dz, CFG.MOB_TYPES[mob.type].meleeKb);
+          this.events.push({ type: "hit", x: victim.x, z: victim.z, victim: victim.id, by: mob.id });
+        }
+      } else if (action.kind === "ranged" && action.target) {
+        const typeCfg = CFG.MOB_TYPES[mob.type];
+        const ox = mob.x + Math.cos(mob.aim) * (typeCfg.bodyR + 0.6);
+        const oz = mob.z + Math.sin(mob.aim) * (typeCfg.bodyR + 0.6);
+        const bolt = new Bolt(mob.id, ox, oz, mob.aim, typeCfg.color, { kb: typeCfg.rangedKb });
+        this.bolts.push(bolt);
+      } else if (action.kind === "ability" && action.target) {
+        this._fireMobAbility(mob, action.target);
+      } else if (action.kind === "spawnMinion") {
+        const totalMinions = this.mobs.filter(m => m.alive && m.parentId === mob.id).length;
+        if (totalMinions < CFG.MOB_MAX_CHILDREN) {
+          const minionId = "mob:" + this._mobId++;
+          const minion = spawnMob(minionId, "minion", action.x, action.z, mob.id);
+          // Ensure minion is on platform; if not, just don't spawn.
+          if (this.arena.isOnPlatform(action.x, action.z)) {
+            mob.childCount++;
+            this.mobs.push(minion);
+            this.events.push({ type: "mobSpawn", id: minion.id, mobType: "minion", x: action.x, z: action.z, parentId: mob.id, color: CFG.MOB_TYPES.minion.color });
+          }
+        }
+      }
+    }
+
+    // Remove dead mobs.
+    this.mobs = this.mobs.filter(m => m.alive);
+  }
+
+  _fireMobAbility(mob, target) {
+    const typeCfg = CFG.MOB_TYPES[mob.type];
+    const ability = typeCfg.ability;
+    if (!ability) return;
+
+    this.events.push({ type: "mobAbility", mobType: mob.type, ability, x: mob.x, z: mob.z, radius: typeCfg.abilityRadius, color: typeCfg.color });
+
+    if (ability === "groundSlam" || ability === "stomp") {
+      // Meteor-style AoE: immediate detonation (1 s telegraph via existing meteor pipeline).
+      this.meteors.push({
+        id: this._meteorId++,
+        ownerId: mob.id,
+        x: mob.x, z: mob.z,
+        t: 1.0, fall: 1.0,
+        radius: typeCfg.abilityRadius,
+        effRadius: typeCfg.abilityRadius,
+        kb: typeCfg.abilityKb,
+      });
+    } else if (ability === "cyclone") {
+      // Gravity-well pull then outward fling — applied instantly.
+      const r = typeCfg.abilityRadius;
+      const kb = typeCfg.abilityKb;
+      for (const p of this.players.values()) {
+        if (!p.alive || p.falling || p.spectating) continue;
+        const d = Math.hypot(p.x - mob.x, p.z - mob.z);
+        if (d <= r) {
+          // Pull in for 0.4 s (status), then schedule outward burst via velocity.
+          p.status.gravity = 0.4;
+          p.status.gravX = mob.x; p.status.gravZ = mob.z;
+          p.status.gravPull = 25; p.status.gravBy = mob.id;
+          // Also apply the outward fling now (mirrors gravity's gravKb).
+          const ndx = d < 0.001 ? Math.cos(mob.aim) : (p.x - mob.x) / d;
+          const ndz = d < 0.001 ? Math.sin(mob.aim) : (p.z - mob.z) / d;
+          p.applyHit(ndx, ndz, kb);
+          this.events.push({ type: "hit", x: p.x, z: p.z, victim: p.id, by: mob.id });
+        }
+      }
+    } else if (ability === "eruption") {
+      // Fan of 8 bolts + central blast.
+      const r = typeCfg.abilityRadius;
+      const kb = typeCfg.abilityKb;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const ox = mob.x + Math.cos(a) * 1.2;
+        const oz = mob.z + Math.sin(a) * 1.2;
+        this.bolts.push(new Bolt(mob.id, ox, oz, a, CFG.MOB_TYPES.fireElemental.color, { kb: kb * 0.5 }));
+      }
+      // Central burst.
+      for (const p of this.players.values()) {
+        if (!p.alive || p.falling || p.spectating) continue;
+        const d = Math.hypot(p.x - mob.x, p.z - mob.z);
+        if (d <= r) {
+          const ndx = d < 0.001 ? 1 : (p.x - mob.x) / d;
+          const ndz = d < 0.001 ? 0 : (p.z - mob.z) / d;
+          p.applyHit(ndx, ndz, kb);
+          this.events.push({ type: "hit", x: p.x, z: p.z, victim: p.id, by: mob.id });
+        }
+      }
+    }
+  }
+
+  // Bolt hits a mob OR a player — not both. Inserted BETWEEN resolveProjectileClashes
+  // and the player-hit bolt loop so mob bolts cannot farm players AND player bolts
+  // cannot double-dip a mob and a player on the same tick.
+  resolveMobHits() {
+    if (!this.mobs.length || !this.bolts.length) return;
+    for (const b of this.bolts) {
+      if (b.dead) continue;
+      // Mob-owned bolts never damage other mobs.
+      if (b.ownerId && b.ownerId.startsWith("mob:")) continue;
+      for (const mob of this.mobs) {
+        if (!mob.alive) continue;
+        // Honour the post-spawn invulnerability window — mob moves but cannot
+        // be damaged until spawnInvuln expires (mirrors plan §2 spec).
+        // Also guard the cinematic entrance window: mob cannot be hit while entering.
+        if (mob.spawnInvuln > 0 || mob.entering > 0) continue;
+        const d = Math.hypot(b.x - mob.x, b.z - mob.z);
+        if (d <= CFG.BOLT_RADIUS + CFG.MOB_TYPES[mob.type].bodyR) {
+          // Shove the mob slightly toward lava (boltToKb).
+          const boltToKb = CFG.MOB_TYPES[mob.type].boltToKb;
+          if (boltToKb > 0) {
+            const l = d < 0.001 ? 1 : d;
+            mob.vx += ((mob.x - b.x) / l) * boltToKb;
+            mob.vz += ((mob.z - b.z) / l) * boltToKb;
+          }
+          mob.hitsRemaining--;
+          b.dead = true;
+          this.events.push({ type: "mobHit", id: mob.id, hp: mob.hitsRemaining, max: mob.maxHits, x: mob.x, z: mob.z });
+          if (mob.hitsRemaining <= 0) this.killMob(mob, "hits");
+          break; // bolt consumed — stop checking mobs
+        }
+      }
+    }
+  }
+
+  killMob(mob, cause) {
+    mob.alive = false;
+    // Decrement parent's child count if this was a minion.
+    if (mob.parentId) {
+      const parent = this.mobs.find(m => m.id === mob.parentId);
+      if (parent) parent.childCount = Math.max(0, parent.childCount - 1);
+    }
+    // Only big mobs drop runes — minions are 3-hit helpers and grant no reward
+    // on their own; the parent big mob is the rewarded target.
+    if (mob.type !== "minion") this.dropRune(mob.x, mob.z);
+    this.events.push({ type: "mobDeath", id: mob.id, mobType: mob.type, cause, x: mob.x, z: mob.z, color: CFG.MOB_TYPES[mob.type].color });
+  }
+
+  // Drop a rune with a random spell from SPELL_ORDER (minus fireball), picked
+  // via the seeded _mobRand so drops are deterministic and testable.
+  dropRune(x, z) {
+    const eligible = SPELL_ORDER.filter(id => id !== "fireball");
+    const spell = eligible[Math.floor(this._mobRand() * eligible.length)];
+    const rune = {
+      id: this._runeId++,
+      spell,
+      x: +x.toFixed(3),
+      z: +z.toFixed(3),
+      _fromMob: true,  // marker so tests can identify mob drops
+    };
+    this.runes.push(rune);
+    return rune;
+  }
+
   resolveProjectileClashes() {
     if (this.bolts.length < 2) return;
     const r = CFG.BOLT_RADIUS * 2;
@@ -559,6 +860,11 @@ export class Simulation {
       for (let j = i + 1; j < this.bolts.length; j++) {
         const b = this.bolts[j];
         if (b.dead || a.ownerId === b.ownerId) continue;
+        // Mob bolts and player bolts never cancel each other — mob bolts are
+        // resolved separately in resolveMobHits() and must reach their targets.
+        const aMob = typeof a.ownerId === "string" && a.ownerId.startsWith("mob:");
+        const bMob = typeof b.ownerId === "string" && b.ownerId.startsWith("mob:");
+        if (aMob !== bMob) continue;
         // Swept test against this tick's travel segments so fast projectiles
         // that cross between ticks still clash instead of tunneling through.
         const hit = closestApproach(
@@ -577,7 +883,7 @@ export class Simulation {
 
   // Players can shoot a rune to destroy it, denying the ability to rivals.
   resolveRuneDestruction() {
-    if (this.allAbilitiesAtStart || !this.runes.length || !this.bolts.length) return;
+    if (!this.runes.length || !this.bolts.length) return;
     const remaining = [];
     for (const rune of this.runes) {
       let destroyed = false;
@@ -598,15 +904,25 @@ export class Simulation {
   }
 
   resolveRunePickups() {
-    if (this.allAbilitiesAtStart || !this.runes.length) return;
+    if (!this.runes.length) return;
     const remaining = [];
     for (const rune of this.runes) {
       let picked = false;
       for (const p of this.players.values()) {
-        if (!p.alive || p.falling || p.spectating || p.hasSpell(rune.spell)) continue;
+        if (!p.alive || p.falling || p.spectating) continue;
         const d = Math.hypot(p.x - rune.x, p.z - rune.z);
-        if (d <= CFG.RUNE_RADIUS + CFG.PLAYER_RADIUS && p.acquireSpell(rune.spell)) {
-          this.events.push({ type: "runePickup", id: p.id, spell: rune.spell, x: rune.x, z: rune.z });
+        if (d <= CFG.RUNE_RADIUS + CFG.PLAYER_RADIUS) {
+          if (!this.allAbilitiesAtStart) {
+            // Rune-only mode: grant the randomized spell (existing path).
+            if (p.hasSpell(rune.spell)) continue;
+            if (!p.acquireSpell(rune.spell)) continue;
+            this.events.push({ type: "runePickup", id: p.id, spell: rune.spell, x: rune.x, z: rune.z });
+          } else {
+            // All-abilities mode: pocketWatch-style cooldown reset + brief Rush buff.
+            p.cooldowns = {};
+            p.status.rush = SPELLS.rush.duration;
+            this.events.push({ type: "runePickup", id: p.id, spell: rune.spell, x: rune.x, z: rune.z, buff: true });
+          }
           picked = true;
           break;
         }
@@ -684,6 +1000,7 @@ export class Simulation {
         t: +m.t.toFixed(2), fall: m.fall, r: m.radius,
       })),
       runes: this.runes.map((r) => ({ id: r.id, spell: r.spell, x: r.x, z: r.z, c: SPELLS[r.spell]?.color || 0xffffff })),
+      mobs: this.mobs.filter(m => m.alive).map(m => m.snapshot()),
       spellSlotsEnabled: !this.allAbilitiesAtStart,
       events: this.events,
       // undefined is omitted by JSON.stringify, saving bandwidth on unchanged frames.

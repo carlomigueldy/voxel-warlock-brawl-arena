@@ -57,6 +57,7 @@ export class InputController {
     this.touchFire = false;
     this.onCast = null;          // optional callback (e.g. resume audio)
     this.selectedSpell = "fireball"; // touch ability selection
+    this.paused = false;         // when true (pause menu open) input is neutralized
 
     this._bind();
   }
@@ -64,6 +65,8 @@ export class InputController {
   _bind() {
     addEventListener("keydown", (e) => {
       this.keys[e.code] = true;
+      // While the pause menu is open, swallow gameplay keys (no fire/casts).
+      if (this.paused) return;
       if (e.code === "Space") this.fire = true;
       // Ability hotkeys queue a cast at the current aim/target point.
       const spell = this.spellForCode(e.code);
@@ -78,6 +81,7 @@ export class InputController {
       this.mouseY = e.clientY;
     });
     addEventListener("mousedown", (e) => {
+      if (this.paused) return;  // ignore clicks while paused
       if (e.button === 0) this.fire = true;
       // Right-click casts the currently selected ability at the cursor.
       if (e.button === 2) this.queueCast(this.selectedSpell);
@@ -167,6 +171,14 @@ export class InputController {
 
   // Build the current input snapshot to send/apply.
   sample() {
+    const aimNow = this.renderer.screenToAim(this.mouseX, this.mouseY);
+    // Paused: emit a neutral input so the warlock idles and no queued cast
+    // fires, but keep the stream alive (seq still advances).
+    if (this.paused) {
+      this._castWindow = [];
+      this.pendingCasts = [];
+      return { move: [0, 0], aim: aimNow, fire: false, seq: ++this.seq, casts: [] };
+    }
     let mx = 0, mz = 0;
     if (this.keys["KeyW"] || this.keys["ArrowUp"]) mz -= 1;
     if (this.keys["KeyS"] || this.keys["ArrowDown"]) mz += 1;

@@ -185,6 +185,150 @@ export const CFG = {
     { id: "moss",  name: "Moss Necromancer", color: 0x7cff5a, blurb: "Bone mask & cube staff" },
   ],
   DEFAULT_CHARACTER: "ember",
+
+  // --- Mobs ---
+  // Neutral PvE mobs that spawn during the PLAYING phase and drop ability runes
+  // on death.  Stats live here; class / AI / physics live in src/mob.js.
+  MOB_MAX_ALIVE:    4,    // hard ceiling on simultaneously alive big mobs (minions excluded)
+  MOB_MAX_CHILDREN: 2,    // max minions per big-mob parent
+  MOB_SPAWN_MIN:    6,    // seconds between mob spawns (lower bound)
+  MOB_SPAWN_MAX:   14,    // seconds between mob spawns (upper bound)
+  MOB_SPAWN_INVULN: 0.6,  // post-spawn invulnerability window (seconds)
+  MOB_MINION_CD:   15,    // cooldown between minion-spawn actions per parent (s)
+  MOB_ENTRANCE:    2.5,   // cinematic telegraph window: mob is locked + invulnerable (s)
+
+  // Health scaling by alive player count. Effective maxHits =
+  //   round(base * (MOB_HP_MIN_FACTOR + MOB_HP_PER_PLAYER * max(0, players - 2)))
+  // floored at 1.  At 2 players ≈ 0.55× base (killable in reasonable time since
+  // each big mob drops an ability rune); at 6 players ≈ 1.27× base.  Tunable.
+  MOB_HP_MIN_FACTOR: 0.55,
+  MOB_HP_PER_PLAYER: 0.18,
+
+  // Staged alive-cap: as the arena shrinks (progress 0→1 from start radius down to
+  // ARENA_MIN_RADIUS) the number of big mobs allowed alive at once rises.  Early
+  // game runs one-at-a-time (replaced on death); the remaining creatures are
+  // released as the land closes in.  Highest step whose `at <= progress` wins.
+  MOB_SHRINK_CAP_STEPS: [
+    { at: 0.00, cap: 1 },
+    { at: 0.40, cap: 2 },
+    { at: 0.70, cap: 3 },
+    { at: 0.90, cap: 4 },
+  ],
+
+  // Per-type stat tables.
+  // `attack`     : "melee" | "ranged"
+  // `speed`      : movement speed (units/sec) — all below CFG.MOVE_SPEED=9
+  // `meleeKb`    : base knockback impulse for a melee strike
+  // `meleeEvery` : seconds between melee attacks
+  // `maxHits`    : projectile hits required to kill
+  // `bodyR`      : collision / proximity radius
+  // `color`      : tint used in renderer and snapshot
+  // `abilityEvery`: seconds between signature-ability fires (null = no ability)
+  // `ability`    : string tag used by sim.js ability dispatch
+  // `abilityKb`  : knockback magnitude of the signature ability
+  // `abilityRadius`: AoE radius for the signature ability
+  // `boltToKb`   : small knockback shove a player bolt gives to the mob
+  //                (≈2–4; lets skilled play push mobs toward the lava)
+  // `canSpawnMinions`: whether this type may spawn melee minions
+  // `entrance`   : cinematic spawn descriptor consumed by renderer + sim:
+  //                { kind: "shatter"|"storm"|"summon"|"meteor", kb?, radius? }
+  //                kb/radius (summon, meteor) apply an AoE knockback to players
+  //                inside `radius` at the moment the entrance completes.
+  // ranged-only keys: `rangedKb`, `rangedEvery`, `rangedRange`
+  MOB_TYPES: {
+    stoneGiant: {
+      name:          "Stone Giant",
+      attack:        "melee",
+      speed:         3.0,
+      meleeKb:       14,
+      meleeEvery:    2.5,
+      maxHits:       18,
+      bodyR:         1.6,
+      color:         0x888880,
+      abilityEvery:  10,
+      ability:       "groundSlam",   // meteor-style AoE r≈7, kb≈34, 1 s telegraph
+      abilityKb:     34,
+      abilityRadius:  7,
+      boltToKb:       2,
+      canSpawnMinions: true,
+      // Emerges from a crumbling boulder that breaks apart.
+      entrance:      { kind: "shatter" },
+    },
+    stormingVortex: {
+      name:          "Storming Vortex",
+      attack:        "ranged",
+      speed:         4.5,
+      meleeKb:        8,
+      meleeEvery:    2.5,
+      rangedKb:       9,
+      rangedEvery:   2.2,
+      rangedRange:   18,
+      maxHits:       14,
+      bodyR:         1.2,
+      color:         0x55ccff,
+      abilityEvery:   8,
+      ability:       "cyclone",      // gravity-well pull r=8 2 s → outward fling kb≈30
+      abilityKb:     30,
+      abilityRadius:  8,
+      boltToKb:       4,
+      canSpawnMinions: true,
+      // Descends from a storm cloud with a lightning strike.
+      entrance:      { kind: "storm" },
+    },
+    giantDwarf: {
+      name:          "Giant Dwarf",
+      attack:        "melee",
+      speed:         5.0,
+      meleeKb:       12,
+      meleeEvery:    1.8,
+      maxHits:       16,
+      bodyR:         1.1,
+      color:         0xcc8844,
+      abilityEvery:   9,
+      ability:       "stomp",        // radial ring kb≈28, r≈6
+      abilityKb:     28,
+      abilityRadius:  6,
+      boltToKb:       3,
+      canSpawnMinions: true,
+      // Slams down from above; shockwave knocks nearby players back on arrival.
+      entrance:      { kind: "summon", kb: 26, radius: 6 },
+    },
+    fireElemental: {
+      name:          "Fire Elemental",
+      attack:        "ranged",
+      speed:         4.0,
+      meleeKb:        7,
+      meleeEvery:    3.0,
+      rangedKb:       8,
+      rangedEvery:   1.8,
+      rangedRange:   16,
+      maxHits:       12,
+      bodyR:         1.0,
+      color:         0xff4422,
+      abilityEvery:  12,
+      ability:       "eruption",     // fan of 8 pellets + central kb≈26 burst
+      abilityKb:     26,
+      abilityRadius:  5,
+      boltToKb:       3.5,
+      canSpawnMinions: true,
+      // Arrives as a flaming meteor; blast knocks nearby players back on impact.
+      entrance:      { kind: "meteor", kb: 30, radius: 6 },
+    },
+    minion: {
+      name:          "Minion",
+      attack:        "melee",
+      speed:         5.5,
+      meleeKb:        6,
+      meleeEvery:    1.5,
+      maxHits:        3,
+      bodyR:         0.6,
+      color:         0x999999,
+      abilityEvery:  null,
+      ability:       null,
+      boltToKb:       4,
+      canSpawnMinions: false,
+    },
+  },
 };
 
 // Resolve a selectable character by id, falling back to the default.

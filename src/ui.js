@@ -30,6 +30,8 @@ export class UI {
       btnSfx: $("btn-sfx"), btnMusic: $("btn-music"),
       // Custom control shells (native inputs above remain the source of truth).
       abilitiesToggleUi: $("abilities-toggle-ui"),
+      mobsToggleUi: $("mobs-toggle-ui"),
+      mobsToggle: $("mobs-toggle"),
       landSizeUi: $("land-size-ui"),
       arenaWorldUi: $("arena-world-ui"),
       botCountUi: $("bot-count-ui"), botCountValue: $("bot-count-value"),
@@ -50,9 +52,22 @@ export class UI {
       identityBadge: $("identity-badge"),
       authForm: $("auth-form"),
       accountNotice: $("account-disabled-notice"),
+      // Tutorial
+      tutSpellbookList: $("tut-spellbook-list"),
+      btnPractice: $("btn-practice"),
+      // ESC pause menu
+      pauseMenu: $("pause-menu"), pauseResume: $("pause-resume"),
+      pauseSfx: $("pause-sfx"), pauseMusic: $("pause-music"),
+      pauseHelp: $("pause-help"), pauseControls: $("pause-controls"),
+      pauseLeave: $("pause-leave"),
+      // Big-mob incoming announcement banner.
+      mobBanner: $("mob-banner"),
     };
     this.handlers = {};
     this.audio = null;
+    this._paused = false;
+    this._mobBannerTimer = null;
+    this._lastHandledSnapTime = null;
     this._abilityEls = null;
     this._abilityMode = null;
     this.spellSlotHotkeys = [...CFG.DEFAULT_SPELL_SLOT_HOTKEYS];
@@ -68,6 +83,8 @@ export class UI {
     this._spawnEmbers();
     this._bind();
     this._bindNavSpine();
+    this._bindTutorialTabs();
+    this._buildTutorialSpellbook();
     this._prefillFromUrl();
     this._maybeShowTouch();
   }
@@ -75,6 +92,7 @@ export class UI {
   // ---- Custom (non-native) menu controls ----------------------------------
   _buildCustomControls() {
     this._buildAbilitiesToggle();
+    this._buildMobsToggle();
     this._buildArenaCards();
     this._buildLandSizeSegmented();
     this._buildBotControls();
@@ -87,6 +105,21 @@ export class UI {
   _buildAbilitiesToggle() {
     const btn = this.el.abilitiesToggleUi;
     const native = this.el.allAbilitiesToggle;
+    if (!btn || !native) return;
+    const sync = () => {
+      const on = native.checked;
+      btn.classList.toggle("is-on", on);
+      btn.setAttribute("aria-checked", String(on));
+      const state = btn.querySelector(".rune-toggle-state");
+      if (state) state.textContent = on ? "ON" : "OFF";
+    };
+    btn.addEventListener("click", () => { native.checked = !native.checked; sync(); });
+    sync();
+  }
+
+  _buildMobsToggle() {
+    const btn = this.el.mobsToggleUi;
+    const native = this.el.mobsToggle;
     if (!btn || !native) return;
     const sync = () => {
       const on = native.checked;
@@ -742,19 +775,38 @@ export class UI {
 
   setAudio(audio) {
     this.audio = audio;
-    if (this.el.btnSfx) {
-      this.el.btnSfx.onclick = () => {
-        const on = this.el.btnSfx.classList.toggle("off");
-        audio.setEnabled(!on);
-        this.el.btnSfx.textContent = on ? "SFX: Off" : "SFX: On";
-      };
+    this._sfxOff = false;
+    this._musicOff = false;
+    const bindToggle = (btn, fn) => { if (btn) btn.onclick = fn; };
+    bindToggle(this.el.btnSfx, () => this._toggleSfx());
+    bindToggle(this.el.pauseSfx, () => this._toggleSfx());
+    bindToggle(this.el.btnMusic, () => this._toggleMusic());
+    bindToggle(this.el.pauseMusic, () => this._toggleMusic());
+    this._syncAudioButtons();
+  }
+
+  // SFX/Music toggles are shared by the HUD controls and the pause menu, so
+  // both button pairs always reflect the same AudioEngine state.
+  _toggleSfx() {
+    this._sfxOff = !this._sfxOff;
+    this.audio?.setEnabled(!this._sfxOff);
+    this._syncAudioButtons();
+  }
+
+  _toggleMusic() {
+    this._musicOff = !this._musicOff;
+    this.audio?.setMusic(!this._musicOff);
+    this._syncAudioButtons();
+  }
+
+  _syncAudioButtons() {
+    const sfxLabel = this._sfxOff ? "SFX: Off" : "SFX: On";
+    const musicLabel = this._musicOff ? "Music: Off" : "Music: On";
+    for (const b of [this.el.btnSfx, this.el.pauseSfx]) {
+      if (b) { b.classList.toggle("off", this._sfxOff); b.textContent = sfxLabel; }
     }
-    if (this.el.btnMusic) {
-      this.el.btnMusic.onclick = () => {
-        const off = this.el.btnMusic.classList.toggle("off");
-        audio.setMusic(!off);
-        this.el.btnMusic.textContent = off ? "Music: Off" : "Music: On";
-      };
+    for (const b of [this.el.btnMusic, this.el.pauseMusic]) {
+      if (b) { b.classList.toggle("off", this._musicOff); b.textContent = musicLabel; }
     }
   }
 
@@ -1001,6 +1053,7 @@ export class UI {
         if (!name) return this.setMenuStatus("Enter a name first.");
         this.handlers.hostLan?.(name, {
           allAbilitiesAtStart: this.allAbilitiesAtStart(),
+          mobsEnabled: this.mobsEnabled(),
           character: this.selectedCharacter,
           ...this.getArenaSettings(),
         });
@@ -1014,6 +1067,7 @@ export class UI {
         if (!name) return this.setMenuStatus("Enter a name first.");
         this.handlers.hostOnline?.(name, {
           allAbilitiesAtStart: this.allAbilitiesAtStart(),
+          mobsEnabled: this.mobsEnabled(),
           character: this.selectedCharacter,
           ...this.getArenaSettings(),
         });
@@ -1054,6 +1108,11 @@ export class UI {
     if (this.el.btnCopyLink) {
       this.el.btnCopyLink.onclick = () => this._copy(this._inviteLink(), this.el.btnCopyLink, "Copy Invite Link");
     }
+
+    // ESC pause menu buttons.
+    if (this.el.pauseResume) this.el.pauseResume.onclick = () => { this.hidePause(); this.handlers.resume?.(); };
+    if (this.el.pauseLeave) this.el.pauseLeave.onclick = () => this.handlers.leaveMatch?.();
+    if (this.el.pauseHelp) this.el.pauseHelp.onclick = () => this._togglePauseControls();
   }
 
   _tryJoin() {
@@ -1067,6 +1126,8 @@ export class UI {
   _name() { return this.el.nameInput?.value.trim().slice(0, 14) || ""; }
 
   allAbilitiesAtStart() { return this.el.allAbilitiesToggle?.checked !== false; }
+
+  mobsEnabled() { return this.el.mobsToggle?.checked !== false; }
 
   getArenaSettings() {
     const arenaWorld = CFG.ARENA_WORLDS.some((world) => world.id === this.el.arenaWorld?.value) ? this.el.arenaWorld.value : CFG.DEFAULT_ARENA_WORLD;
@@ -1151,6 +1212,7 @@ export class UI {
 
   // ---- screen transitions ----
   showMenu() {
+    this.hidePause();
     this.el.menu.classList.remove("hidden");
     this.el.lobby.classList.add("hidden");
     this.el.hud.classList.add("hidden");
@@ -1180,6 +1242,58 @@ export class UI {
     this._buildAbilityBar();
     if (this.el.abilityBar) this.el.abilityBar.classList.remove("hidden");
     if (this._touchEnabled && this.el.touch) this.el.touch.classList.remove("hidden");
+  }
+
+  // ---- ESC pause menu ----
+  showPause() {
+    if (!this.el.pauseMenu) return;
+    this.el.pauseMenu.classList.remove("hidden");
+    this._paused = true;
+  }
+
+  hidePause() {
+    if (this.el.pauseMenu) this.el.pauseMenu.classList.add("hidden");
+    if (this.el.pauseControls) this.el.pauseControls.classList.add("hidden");
+    this._paused = false;
+  }
+
+  /** Toggle the pause overlay; returns the new paused (visible) state. */
+  togglePause() {
+    if (this._paused) { this.hidePause(); return false; }
+    this._buildControlsPanel();
+    this.showPause();
+    return true;
+  }
+
+  _togglePauseControls() {
+    if (!this.el.pauseControls) return;
+    this._buildControlsPanel();
+    this.el.pauseControls.classList.toggle("hidden");
+  }
+
+  /** Render the keybind reference from the live spellbook + slot hotkeys. */
+  _buildControlsPanel() {
+    const el = this.el.pauseControls;
+    if (!el) return;
+    const rows = [
+      ["Move", "W A S D / Arrow keys"],
+      ["Aim", "Mouse"],
+      ["Fire", "Space / Left-click"],
+      ["Cast selected", "Right-click"],
+    ];
+    // Customizable ability-slot hotkeys (reflect any player remaps).
+    const slotKeys = this.spellSlotHotkeys || CFG.DEFAULT_SPELL_SLOT_HOTKEYS;
+    slotKeys.forEach((key, i) => {
+      rows.push([`Ability slot ${i + 1}`, String(key).toUpperCase()]);
+    });
+    // Default spell-cast keybinds straight from the spellbook definition.
+    for (const id of SPELL_ORDER) {
+      const s = SPELLS[id];
+      if (s?.key) rows.push([s.name, String(s.key).toUpperCase()]);
+    }
+    el.innerHTML = rows
+      .map(([k, v]) => `<div class="pause-control-row"><span>${escapeHTML(k)}</span><kbd>${escapeHTML(v)}</kbd></div>`)
+      .join("");
   }
 
   _renderQR(link) {
@@ -1294,5 +1408,201 @@ export class UI {
     const m = Math.floor(s / 60);
     const ss = Math.floor(s % 60).toString().padStart(2, "0");
     return `${m}:${ss}`;
+  }
+
+  // ---- Tutorial tab switching -----------------------------------------------
+
+  /** Switch to one of the five tutorial tabs ("basics"|"goal"|"controls"|"spellbook"|"tips"). */
+  _showTutorialTab(name) {
+    this.el.menu.querySelectorAll(".tut-panel").forEach((panel) => {
+      const on = panel.id === `tut-${name}`;
+      panel.classList.toggle("tut-panel-hidden", !on);
+      panel.setAttribute("aria-hidden", on ? "false" : "true");
+    });
+    this.el.menu.querySelectorAll(".tut-tab").forEach((tab) => {
+      const on = tab.dataset.tab === name;
+      tab.classList.toggle("is-active", on);
+      tab.setAttribute("aria-selected", on ? "true" : "false");
+      // Roving tabindex: only the active tab is a tab stop (WAI-ARIA tabs pattern).
+      tab.tabIndex = on ? 0 : -1;
+    });
+  }
+
+  /** Wire tutorial tab buttons and the practice CTA. Called once from the constructor. */
+  _bindTutorialTabs() {
+    const tabs = [...this.el.menu.querySelectorAll(".tut-tab")];
+    tabs.forEach((tab, i) => {
+      tab.addEventListener("click", () => this._showTutorialTab(tab.dataset.tab));
+      // Arrow / Home / End move focus across the tablist (WAI-ARIA tabs pattern).
+      tab.addEventListener("keydown", (e) => {
+        let next = -1;
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (i + 1) % tabs.length;
+        else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = tabs.length - 1;
+        if (next < 0) return;
+        e.preventDefault();
+        this._showTutorialTab(tabs[next].dataset.tab);
+        tabs[next].focus();
+      });
+    });
+    // Default to Basics.
+    this._showTutorialTab("basics");
+
+    // Practice vs Bot — mirrors the host flow but jumps straight to the game.
+    if (this.el.btnPractice) {
+      this.el.btnPractice.onclick = () => {
+        const name = this._name() || "Warlock";
+        this.handlers.practice?.(name, {
+          allAbilitiesAtStart: this.allAbilitiesAtStart(),
+          character: this.selectedCharacter,
+          ...this.getArenaSettings(),
+        });
+      };
+    }
+  }
+
+  /**
+   * Populate the spellbook panel from SPELL_ORDER + SPELLS (already imported).
+   * Grouped into Projectiles / Mobility / Control & Utility.
+   * Called once from the constructor so the list stays in sync with config.
+   */
+  _buildTutorialSpellbook() {
+    const container = this.el.tutSpellbookList;
+    if (!container) return;
+
+    const groups = [
+      { label: "Projectiles",       ids: SPELL_ORDER.slice(0, 8)  },
+      { label: "Mobility",          ids: SPELL_ORDER.slice(8, 13) },
+      { label: "Control / Utility", ids: SPELL_ORDER.slice(13)    },
+    ];
+
+    container.replaceChildren();
+
+    for (const group of groups) {
+      const section = document.createElement("div");
+      section.className = "tut-spell-group";
+
+      const heading = document.createElement("h3");
+      heading.className = "tut-spell-group-title";
+      heading.textContent = group.label;
+      section.appendChild(heading);
+
+      for (const id of group.ids) {
+        const s = SPELLS[id];
+        if (!s) continue;
+        const colorHex = "#" + ((s.color || 0x8888ff) >>> 0).toString(16).padStart(6, "0").slice(-6);
+
+        const row = document.createElement("div");
+        row.className = "tut-spell-row";
+        row.style.setProperty("--spell-color", colorHex);
+
+        const swatch = document.createElement("span");
+        swatch.className = "tut-spell-swatch";
+        swatch.style.background = colorHex;
+        swatch.setAttribute("aria-hidden", "true");
+
+        const keyChip = document.createElement("span");
+        keyChip.className = "tut-spell-key";
+        keyChip.textContent = s.key;
+
+        const info = document.createElement("div");
+        info.className = "tut-spell-info";
+
+        const name = document.createElement("span");
+        name.className = "tut-spell-name";
+        name.textContent = s.name;
+
+        const cd = document.createElement("span");
+        cd.className = "tut-spell-cd";
+        cd.textContent = `CD ${s.cd}s`;
+
+        const desc = document.createElement("span");
+        desc.className = "tut-spell-desc";
+        desc.textContent = s.desc || "";
+
+        info.append(name, cd, desc);
+        row.append(swatch, keyChip, info);
+        section.appendChild(row);
+      }
+
+      container.appendChild(section);
+    }
+  }
+
+  // ---- Big-mob incoming banner -------------------------------------------
+
+  /**
+   * Show the #mob-banner for the given mob type and entrance kind.
+   * Any previously scheduled hide timer is cancelled so back-to-back mobs
+   * always display a fresh banner rather than inheriting an old countdown.
+   *
+   * @param {string} mobType - e.g. "stoneGiant"
+   * @param {string} kind    - entrance kind: "shatter" | "storm" | "summon" | "meteor"
+   */
+  showMobBanner(mobType, kind) {
+    const el = this.el.mobBanner;
+    if (!el) return;
+
+    const COPY = {
+      stoneGiant:     "⚠ STONE GIANT EMERGES",
+      stormingVortex: "STORM INCOMING — STORMING VORTEX",
+      giantDwarf:     "THE GROUND TREMBLES — GIANT DWARF",
+      fireElemental:  "METEOR FALLING — FIRE ELEMENTAL",
+    };
+
+    // Cancel any in-flight hide.
+    if (this._mobBannerTimer != null) {
+      clearTimeout(this._mobBannerTimer);
+      this._mobBannerTimer = null;
+    }
+
+    // Reset accent classes.
+    el.classList.remove(
+      "mob-banner--shatter",
+      "mob-banner--storm",
+      "mob-banner--summon",
+      "mob-banner--meteor",
+    );
+
+    el.textContent = COPY[mobType] || mobType.toUpperCase();
+
+    if (kind) el.classList.add(`mob-banner--${kind}`);
+
+    // Force animation restart: toggling hidden re-triggers the CSS @keyframes
+    // because going from display:none to display:block restarts animations.
+    el.classList.remove("hidden");
+
+    // Auto-hide slightly after the full entrance window.
+    const hideAfterMs = Math.round((CFG.MOB_ENTRANCE + 0.6) * 1000);
+    this._mobBannerTimer = setTimeout(() => {
+      el.classList.add("hidden");
+      el.classList.remove(
+        "mob-banner--shatter",
+        "mob-banner--storm",
+        "mob-banner--summon",
+        "mob-banner--meteor",
+      );
+      this._mobBannerTimer = null;
+    }, hideAfterMs);
+  }
+
+  /**
+   * Iterate a snapshot's event list and trigger banner for each mobIncoming event.
+   * Uses snapTime to avoid reprocessing the same snapshot on every render frame.
+   *
+   * @param {Array}  events   - snapshot.events array (may be undefined/null)
+   * @param {number} snapTime - snapshot.t timestamp for deduplication
+   */
+  handleEvents(events, snapTime) {
+    if (!Array.isArray(events) || events.length === 0) return;
+    // Guard: only process each distinct snapshot once across render frames.
+    if (snapTime != null && snapTime === this._lastHandledSnapTime) return;
+    this._lastHandledSnapTime = snapTime;
+    for (const ev of events) {
+      if (ev.type === "mobIncoming") {
+        this.showMobBanner(ev.mobType, ev.entrance);
+      }
+    }
   }
 }

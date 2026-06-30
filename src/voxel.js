@@ -339,6 +339,62 @@ export function buildMeteor(x, z, fall, radius, color) {
   return g;
 }
 
+// Dark storm clouds that hover over a location during the Storming Vortex
+// "storm" cinematic entrance. Returns a transient effect group with the standard
+// update(dt) / done convention consumed by the renderer's effects list.
+export function buildStormClouds(x, z) {
+  const g = new THREE.Group();
+  const life = 3.0;
+  const cloudY = 7;
+  const cloudColor  = 0x3a4a88;
+  const accentColor = 0x7adfff;
+
+  // Cluster of dark blocky puff shapes at varying offsets for depth.
+  const offsets = [
+    [0,    0,    0   ],
+    [-1.4, 0.3,  0.6 ],
+    [ 1.2, -0.2, -0.7],
+    [ 0.5, 0.5,  1.4 ],
+    [-0.8, 0.1,  -1.2],
+  ];
+  for (let i = 0; i < offsets.length; i++) {
+    const [ox, oy, oz] = offsets[i];
+    const w = 1.2 + (i % 3) * 0.35;
+    const h = 0.45 + (i % 2) * 0.20;
+    const d = 0.9  + (i % 2) * 0.25;
+    const cloud = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshBasicMaterial({
+        color: i % 2 === 0 ? cloudColor : 0x4a5aaa,
+        transparent: true,
+        opacity: 0.80,
+      })
+    );
+    cloud.position.set(x + ox, cloudY + oy, z + oz);
+    g.add(cloud);
+  }
+
+  // Electric glow beneath the cloud mass.
+  const glow = new THREE.PointLight(accentColor, 2.0, 14);
+  glow.position.set(x, cloudY - 1, z);
+  g.add(glow);
+
+  g.userData.t    = 0;
+  g.userData.life = life;
+  g.userData.done = false;
+  g.userData.update = (dt) => {
+    g.userData.t += dt;
+    const k       = g.userData.t / life;
+    const opacity = Math.max(0, (1 - k) * 0.80);
+    for (const child of g.children) {
+      if (child.material) child.material.opacity = opacity;
+    }
+    glow.intensity = Math.max(0, 2.0 * (1 - k * 1.5));
+    if (k >= 1) g.userData.done = true;
+  };
+  return g;
+}
+
 // Build the voxel platform mesh for a given radius using merged boxes.
 // We rebuild it when the radius changes (shrinking arena).
 export function buildPlatform(radius, worldId = CFG.DEFAULT_ARENA_WORLD) {
@@ -669,6 +725,401 @@ export function buildRamp(ramp, plateauHeight, worldId = CFG.DEFAULT_ARENA_WORLD
   }
 
   return g;
+}
+
+// ── Mob mesh builders ────────────────────────────────────────────────────────
+// Each builder returns a THREE.Group following the buildWarlock recipe:
+//   userData.rig        — named joints for animateMob
+//   userData.anim       — { phase, attack, flicker } accumulators
+//   userData.healthBar  — foreground bar Mesh; renderer sets scale.x = hp/max
+//
+// Heights:  Stone Giant ≈ 5.8 wu (2.6× warlock);  vortex/dwarf/elemental ≈ 3–4 wu;
+//           minion ≈ 0.7× warlock (group scale 0.7, warlock-proportion geometry).
+
+function _makeHealthBar(color, yPos = 3.5) {
+  const g = new THREE.Group();
+  g.position.y = yPos;
+  const bg = new THREE.Mesh(
+    new THREE.BoxGeometry(2.0, 0.18, 0.1),
+    new THREE.MeshBasicMaterial({ color: 0x111111 })
+  );
+  const bar = new THREE.Mesh(
+    new THREE.BoxGeometry(2.0, 0.18, 0.14),
+    new THREE.MeshBasicMaterial({ color })
+  );
+  g.add(bg, bar);
+  return { group: g, bar };
+}
+
+// Stone Giant — grey stone colossus, oversized fists, glowing red eye slits.
+export function buildStoneGiant(color = 0x888888) {
+  const g = new THREE.Group();
+  const stone = color;
+  const dark  = shade(stone, -0.15);
+  const light = shade(stone, 0.08);
+
+  // Torso (tall slab)
+  const torso = joint(0, 2.0, 0);
+  g.add(torso);
+  torso.add(box(2.4, 1.6, 1.8, stone, 0, 0, 0));
+  torso.add(box(2.6, 0.34, 2.0, dark, 0, -0.85, 0)); // belt ridge
+
+  // Head (boulder)
+  const head = joint(0, 1.2, 0);
+  torso.add(head);
+  head.add(box(1.6, 1.2, 1.4, light, 0, 0.2, 0));
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
+  const eL = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.08), glowMat);
+  const eR = eL.clone();
+  eL.position.set(-0.3, 0.35, 0.72);
+  eR.position.set( 0.3, 0.35, 0.72);
+  head.add(eL, eR);
+
+  // Arms (huge, oversized fists)
+  const armL = joint(-1.7, 0.3, 0.1);
+  const armR = joint( 1.7, 0.3, 0.1);
+  torso.add(armL, armR);
+  armL.add(box(0.8, 1.8, 0.8, stone, 0, -0.9, 0));
+  armL.add(box(1.3, 1.2, 1.3, dark,  0, -2.3, 0));
+  armR.add(box(0.8, 1.8, 0.8, stone, 0, -0.9, 0));
+  armR.add(box(1.3, 1.2, 1.3, dark,  0, -2.3, 0));
+
+  // Legs
+  const legL = joint(-0.65, 0, 0);
+  const legR = joint( 0.65, 0, 0);
+  g.add(legL, legR);
+  legL.add(box(0.9, 1.8, 0.9, stone, 0, -0.9, 0));
+  legR.add(box(0.9, 1.8, 0.9, stone, 0, -0.9, 0));
+
+  const hb = _makeHealthBar(0xff3a1e, 5.2);
+  g.add(hb.group);
+  g.userData.rig = { spine: torso, neck: head, armL, armR, legL, legR, spineBaseY: 2.0 };
+  g.userData.anim = { phase: 0, attack: 0 };
+  g.userData.healthBar = hb.bar;
+  return g;
+}
+
+// Storming Vortex — translucent spinning shard ring with glowing core.
+export function buildStormingVortex(color = 0x7adfff) {
+  const g = new THREE.Group();
+  const c1 = color;
+  const c2 = shade(color, 0.2);
+
+  // Inner shard ring
+  const spin = new THREE.Group();
+  g.add(spin);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const shard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 1.4, 0.18),
+      new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? c1 : c2, transparent: true, opacity: 0.75 })
+    );
+    shard.position.set(Math.cos(a) * 0.9, 0.2, Math.sin(a) * 0.9);
+    shard.rotation.y = a;
+    shard.rotation.x = 0.28;
+    spin.add(shard);
+  }
+
+  // Core body
+  const core = joint(0, 0.8, 0);
+  g.add(core);
+  core.add(box(0.8, 1.6, 0.8, c1, 0, 0, 0));
+  const eyeM = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const eye = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.08), eyeM);
+  eye.position.set(0, 0.35, 0.42);
+  core.add(eye);
+
+  // Outer orbiting shards
+  const outerSpin = new THREE.Group();
+  g.add(outerSpin);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    const shard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 0.8, 0.2),
+      new THREE.MeshBasicMaterial({ color: c2, transparent: true, opacity: 0.5 })
+    );
+    shard.position.set(Math.cos(a) * 1.5, 0.4, Math.sin(a) * 1.5);
+    outerSpin.add(shard);
+  }
+
+  const glow = new THREE.PointLight(c1, 1.5, 8);
+  glow.position.set(0, 1.2, 0);
+  g.add(glow);
+
+  const hb = _makeHealthBar(0x7adfff, 2.5);
+  g.add(hb.group);
+  g.userData.rig = { spine: core, spin, outerSpin, spineBaseY: 0.8 };
+  g.userData.anim = { phase: 0, attack: 0 };
+  g.userData.healthBar = hb.bar;
+  g.scale.setScalar(1.35);
+  return g;
+}
+
+// Giant Dwarf — short/wide armoured figure, heavy stomp posture.
+export function buildGiantDwarf(color = 0xc47a2e) {
+  const g = new THREE.Group();
+  const body  = shade(color, -0.05);
+  const armor = shade(color, -0.2);
+  const skin  = 0xf0c0a0;
+
+  // Wide stocky torso
+  const torso = joint(0, 1.1, 0);
+  g.add(torso);
+  torso.add(box(2.2, 1.2, 1.6, body,  0,  0,    0));
+  torso.add(box(2.4, 0.3, 1.8, armor, 0, -0.6,  0)); // belt plate
+  torso.add(box(2.4, 0.3, 1.8, armor, 0,  0.55, 0)); // chest plate
+
+  // Broad head + beard
+  const neck = joint(0, 0.9, 0);
+  torso.add(neck);
+  neck.add(box(1.2, 1.0, 1.0, skin,    0, 0.1,  0));
+  neck.add(box(1.0, 0.5, 0.5, 0x884422, 0, -0.38, 0)); // beard
+  neck.add(box(1.3, 0.32, 1.1, armor,   0,  0.62, 0)); // helmet brim
+  neck.add(box(0.5, 0.38, 0.5, armor,   0,  0.84, 0)); // helmet top
+  const em2 = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const dL = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, 0.08), em2);
+  const dR = dL.clone();
+  dL.position.set(-0.22, 0.18, 0.52);
+  dR.position.set( 0.22, 0.18, 0.52);
+  neck.add(dL, dR);
+
+  // Short stubby arms + gauntlets
+  const armL = joint(-1.35, 0.25, 0.1);
+  const armR = joint( 1.35, 0.25, 0.1);
+  torso.add(armL, armR);
+  armL.add(box(0.65, 1.2, 0.65, body,  0, -0.6, 0));
+  armL.add(box(0.88, 0.9, 0.88, armor, 0, -1.4, 0));
+  armR.add(box(0.65, 1.2, 0.65, body,  0, -0.6, 0));
+  armR.add(box(0.88, 0.9, 0.88, armor, 0, -1.4, 0));
+
+  // Short wide legs
+  const legL = joint(-0.58, 0, 0);
+  const legR = joint( 0.58, 0, 0);
+  g.add(legL, legR);
+  legL.add(box(0.78, 0.9, 0.78, body,  0, -0.45, 0));
+  legL.add(box(0.9,  0.38, 1.0, armor, 0, -0.98, 0.08)); // boot
+  legR.add(box(0.78, 0.9, 0.78, body,  0, -0.45, 0));
+  legR.add(box(0.9,  0.38, 1.0, armor, 0, -0.98, 0.08));
+
+  const hb = _makeHealthBar(0xffd23c, 3.8);
+  g.add(hb.group);
+  g.userData.rig = { spine: torso, neck, armL, armR, legL, legR, spineBaseY: 1.1 };
+  g.userData.anim = { phase: 0, attack: 0 };
+  g.userData.healthBar = hb.bar;
+  g.scale.setScalar(1.1);
+  return g;
+}
+
+// Fire Elemental — emissive boxes with orbiting flame motes, per-frame flicker.
+export function buildFireElemental(color = 0xff5a1e) {
+  const g = new THREE.Group();
+  const hot  = color;
+  const core = 0xffcc44;
+
+  // Body stack (emissive)
+  const torso = joint(0, 1.2, 0);
+  g.add(torso);
+  const bodyM = new THREE.Mesh(
+    new THREE.BoxGeometry(1.4, 2.0, 1.2),
+    new THREE.MeshLambertMaterial({ color: hot, emissive: 0xff3300, emissiveIntensity: 0.8, flatShading: true })
+  );
+  bodyM.castShadow = true; bodyM.receiveShadow = true;
+  torso.add(bodyM);
+  const coreM = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 1.2, 0.7),
+    new THREE.MeshLambertMaterial({ color: core, emissive: 0xffcc00, emissiveIntensity: 1.4, flatShading: true })
+  );
+  coreM.castShadow = true; coreM.position.y = 0.1;
+  torso.add(coreM);
+
+  // Head (flame crown)
+  const head = joint(0, 1.2, 0);
+  torso.add(head);
+  const headM = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1, 1.0, 1.0),
+    new THREE.MeshLambertMaterial({ color: hot, emissive: 0xff5500, emissiveIntensity: 1.0, flatShading: true })
+  );
+  headM.castShadow = true;
+  head.add(headM);
+  const em3 = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const fL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.08), em3);
+  const fR = fL.clone();
+  fL.position.set(-0.22, 0.06, 0.52);
+  fR.position.set( 0.22, 0.06, 0.52);
+  head.add(fL, fR);
+
+  // Flame tendril arms
+  const armL = joint(-0.85, 0.5, 0.1);
+  const armR = joint( 0.85, 0.5, 0.1);
+  torso.add(armL, armR);
+  const armMatL = new THREE.MeshLambertMaterial({ color: hot, emissive: 0xff3300, emissiveIntensity: 0.7, flatShading: true });
+  const aML = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.5, 0.5), armMatL);
+  aML.position.y = -0.75; aML.castShadow = true;
+  armL.add(aML);
+  const aMR = aML.clone();
+  armR.add(aMR);
+
+  // Orbiting flame motes
+  const motes = new THREE.Group();
+  g.add(motes);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const mote = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.36, 0.22),
+      new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0xffcc44 : hot, transparent: true, opacity: 0.85 })
+    );
+    mote.position.set(Math.cos(a) * 0.85, 1.0, Math.sin(a) * 0.85);
+    mote.userData.baseA = a;
+    motes.add(mote);
+  }
+
+  const glow = new THREE.PointLight(hot, 2.0, 10);
+  glow.position.set(0, 1.5, 0);
+  g.add(glow);
+
+  const hb = _makeHealthBar(0xff5a1e, 4.0);
+  g.add(hb.group);
+  g.userData.rig = { spine: torso, neck: head, armL, armR, motes, glow, spineBaseY: 1.2 };
+  g.userData.anim = { phase: 0, attack: 0, flicker: 0 };
+  g.userData.healthBar = hb.bar;
+  g.scale.setScalar(1.1);
+  return g;
+}
+
+// Minion — tiny warlock silhouette tinted to parent colour, 0.7× warlock.
+export function buildMinion(color = 0x999999) {
+  const g = new THREE.Group();
+  const c     = color;
+  const cDark = shade(c, -0.2);
+  const skin  = 0xf0c8a0;
+
+  const spine = joint(0, 0.6, 0);
+  g.add(spine);
+  spine.add(box(1.1, 0.6, 1.1, cDark, 0, -0.30, 0));
+  spine.add(box(0.9, 0.7, 0.9, c,     0,  0.35, 0));
+
+  const neck = joint(0, 1.25, 0);
+  spine.add(neck);
+  neck.add(box(0.6, 0.6, 0.6, skin, 0, 0, 0));
+  const em4 = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const me1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.06), em4);
+  const me2 = me1.clone();
+  me1.position.set(-0.15, 0.05, 0.31);
+  me2.position.set( 0.15, 0.05, 0.31);
+  neck.add(me1, me2);
+
+  const hat = joint(0, 0.35, 0);
+  neck.add(hat);
+  hat.add(box(0.75, 0.25, 0.75, cDark, 0, 0.0,  0));
+  hat.add(box(0.5,  0.4,  0.5,  c,     0, 0.3,  0));
+  hat.add(box(0.22, 0.4,  0.22, cDark, 0, 0.65, 0));
+
+  const armL = joint(-0.62, 0.75, 0.1);
+  const armR = joint( 0.62, 0.75, 0.1);
+  spine.add(armL, armR);
+  armL.add(box(0.25, 0.6, 0.25, c, 0, -0.3, 0));
+  armR.add(box(0.25, 0.6, 0.25, c, 0, -0.3, 0));
+
+  const legL = joint(-0.24, 0.5, 0);
+  const legR = joint( 0.24, 0.5, 0);
+  g.add(legL, legR);
+  legL.add(box(0.26, 0.5, 0.26, cDark, 0, -0.25, 0));
+  legR.add(box(0.26, 0.5, 0.26, cDark, 0, -0.25, 0));
+
+  const hb = _makeHealthBar(0xcccccc, 2.2);
+  g.add(hb.group);
+  g.userData.rig = { spine, neck, hat, armL, armR, legL, legR, spineBaseY: 0.6 };
+  g.userData.anim = { phase: 0, attack: 0 };
+  g.userData.healthBar = hb.bar;
+  g.scale.setScalar(0.7);
+  return g;
+}
+
+// Shared mob animator — cloned from animateWarlock but handles:
+//   stormingVortex  — spin rings, no arms/legs
+//   fireElemental   — flicker glow + orbit motes
+//   humanoid types  — idle bob + walk swing (stoneGiant, giantDwarf, minion)
+// state: { type, speed, maxSpeed, dt, time, falling }
+export function animateMob(group, state) {
+  const rig  = group.userData.rig;
+  const anim = group.userData.anim;
+  if (!rig || !anim) return;
+
+  const dt       = Math.min(0.05, Math.max(0.0001, state.dt  || 0.016));
+  const time     = state.time     || 0;
+  const maxSpeed = state.maxSpeed || 5.0;
+  const gait     = Math.min(1, (state.speed || 0) / maxSpeed);
+  const moving   = gait > 0.06;
+  const type     = state.type || "minion";
+
+  anim.phase += dt * (moving ? 5 + gait * 4 : 1.5);
+  const ph    = anim.phase;
+  const swing = Math.sin(ph) * (moving ? 0.28 + gait * 0.32 : 0);
+  const bob   = moving
+    ? Math.abs(Math.sin(ph)) * 0.07
+    : Math.sin(time * 1.4) * 0.02;
+  const baseY = rig.spineBaseY ?? 1.0;
+
+  if (type === "stormingVortex") {
+    if (rig.spin)      rig.spin.rotation.y      += dt * 3.8;
+    if (rig.outerSpin) rig.outerSpin.rotation.y -= dt * 2.4;
+    if (rig.spine) {
+      rig.spine.position.y  = baseY + Math.sin(time * 2.2) * 0.14;
+      rig.spine.rotation.y += dt * 0.8;
+    }
+    return;
+  }
+
+  if (type === "fireElemental") {
+    anim.flicker  = (anim.flicker ?? 0) + dt * 11;
+    if (rig.glow) {
+      rig.glow.intensity = 1.7 + Math.sin(anim.flicker) * 0.5
+                               + Math.sin(anim.flicker * 1.9) * 0.3;
+    }
+    if (rig.motes) {
+      const children = rig.motes.children;
+      for (let i = 0; i < children.length; i++) {
+        const m  = children[i];
+        const ba = m.userData.baseA ?? 0;
+        const a  = ba + time * 2.6;
+        const r  = 0.85 + Math.sin(time * 2.8 + ba) * 0.2;
+        m.position.set(
+          Math.cos(a) * r,
+          1.0 + Math.sin(time * 2 + ba) * 0.35,
+          Math.sin(a) * r
+        );
+        if (m.material) m.material.opacity = 0.65 + Math.sin(time * 4 + ba) * 0.22;
+      }
+    }
+    if (rig.spine) rig.spine.position.y = baseY + bob;
+    if (rig.armL)  rig.armL.rotation.x  = -swing * 0.7;
+    if (rig.armR)  rig.armR.rotation.x  =  swing * 0.7;
+    return;
+  }
+
+  // Generic humanoid: stoneGiant / giantDwarf / minion
+  if (rig.legL) rig.legL.rotation.x  =  swing;
+  if (rig.legR) rig.legR.rotation.x  = -swing;
+  if (rig.armL) rig.armL.rotation.x  = -swing * 0.85;
+  if (rig.armR) rig.armR.rotation.x  =  swing * 0.85;
+  if (rig.spine) {
+    rig.spine.position.y = baseY + bob;
+    rig.spine.rotation.x = moving ? 0.06 : 0;
+  }
+  if (rig.neck) rig.neck.rotation.x = 0;
+  if (rig.hat)  rig.hat.rotation.z  = Math.sin(time * 2 + ph * 0.3) * 0.07;
+}
+
+// Dispatcher used by the renderer to build the right mesh for a given type.
+export function buildMobByType(type, color) {
+  switch (type) {
+    case "stoneGiant":     return buildStoneGiant(color);
+    case "stormingVortex": return buildStormingVortex(color);
+    case "giantDwarf":     return buildGiantDwarf(color);
+    case "fireElemental":  return buildFireElemental(color);
+    case "minion":         return buildMinion(color);
+    default:               return buildMinion(color);
+  }
 }
 
 // Back-compat aliases (older callers / any external refs).
