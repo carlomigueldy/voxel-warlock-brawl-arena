@@ -1,8 +1,7 @@
 # supabase/config.toml — minimal local dev config for Voxel Warlock Brawl Arena
 # Full reference: https://supabase.com/docs/guides/local-development/overview
 
-[project]
-id = "voxel-warlock-brawl-arena"
+project_id = "voxel-warlock-brawl-arena"
 
 [api]
 enabled = true

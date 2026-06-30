@@ -22,7 +22,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 // ---------------------------------------------------------------------------
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin":  "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
@@ -110,7 +110,9 @@ serve(async (req: Request): Promise<Response> => {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
-  if (req.method !== "GET") {
+  // supabase-js functions.invoke() defaults to POST; this endpoint is read-only
+  // and takes no body, so accept both GET and POST.
+  if (req.method !== "GET" && req.method !== "POST") {
     return new Response(
       JSON.stringify({ error: "Method not allowed" }),
       { status: 405, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
