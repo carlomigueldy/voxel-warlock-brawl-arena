@@ -49,6 +49,7 @@ function startHosting(name, options = {}) {
 
   const sim = new Simulation({
     allAbilitiesAtStart: options.allAbilitiesAtStart,
+    mobsEnabled: options.mobsEnabled,
     arenaWorld: options.arenaWorld,
     landSize: options.landSize,
     enabledObstacles: options.enabledObstacles,

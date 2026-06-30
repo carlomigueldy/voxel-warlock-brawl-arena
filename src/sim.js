@@ -7,6 +7,7 @@ import { Player } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
 import { BotBrain, BOT_PROFILES, closestApproach as _closestApproach } from "./bot.js";
+import { makeMobPrng, stepMobPhysics, spawnMob } from "./mob.js";
 
 // Re-wrap so the local call sites keep their original shape (returns .x/.z midpoint too).
 function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
@@ -81,6 +82,12 @@ export class Simulation {
     this.runePool = [];       // remaining spell ids queued to drop as runes
     this._meteorId = 1;
     this._runeId = 1;
+    // Mob state
+    this.mobs = [];
+    this.mobSpawnTimer = 0;
+    this._mobId = 1;
+    this._mobRand = null;
+    this.mobsEnabled = options.mobsEnabled !== false;
     this.arena = new LogicArena(this.world, this.landSize);
     this.phase = PHASE.LOBBY;
     this.round = 0;
@@ -220,6 +227,9 @@ export class Simulation {
     this.runes = [];
     this.runePool = [];
     this.runeSpawnTimer = 0;
+    this.mobs = [];
+    this.mobSpawnTimer = CFG.MOB_SPAWN_MIN; // grace window before first mob spawn
+    this._mobId = 1;
     this.arena.reset(); // clears radius and layout
     this.playTime = 0;
     this.phase = PHASE.COUNTDOWN;
@@ -232,6 +242,9 @@ export class Simulation {
     this.mapLayout = generateMap(this.world.id, this.landSize.radius, mapSeed, this.enabledObstacles);
     this.mapVersion++;
     this.arena.setLayout(this.mapLayout);
+    // Seed the per-round mob PRNG (mix matchSeed + round so every round differs).
+    const mobSeed = (this._matchSeed ^ (this.round * 0x517cc1b7)) >>> 0;
+    this._mobRand = makeMobPrng(mobSeed);
 
     // Spawn active players evenly around a ring; late joiners enter next round.
     const list = [...this.players.values()];
@@ -307,6 +320,8 @@ export class Simulation {
     this.runes = [];
     this.runePool = [];
     this.runeSpawnTimer = 0;
+    this.mobs = [];
+    this.mobSpawnTimer = 0;
     this.mapLayout = null;
     this.arena.reset();
     for (const p of this.players.values()) {
@@ -438,6 +453,7 @@ export class Simulation {
       if (b._spawn && b._spawn.length) spawned.push(...b._spawn);
     }
     this.resolveProjectileClashes();
+    this.resolveMobHits(); // bolt hits mob OR player, not both
     for (const b of this.bolts) {
       if (b.dead) continue;
       const res = b.step(0, playerArr, this.arena);
@@ -505,6 +521,8 @@ export class Simulation {
     this.resolveRuneDestruction();
     this.resolveRunePickups();
 
+    if (this.mobsEnabled) this.stepMobs(dt);
+
     // Death detection (falling players that reached lava become !alive in step()).
     for (const p of this.players.values()) {
       if (!p.alive && p._countedDeath !== this.round) {
@@ -516,6 +534,216 @@ export class Simulation {
     this.resolveRoundIfNeeded();
   }
 
+  // ── Mob system ──────────────────────────────────────────────────────────────
+
+  // Pick a random on-platform position away from all players.
+  _mobSpawnPos() {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const angle = this._mobRand() * Math.PI * 2;
+      const ring = (0.5 + this._mobRand() * 0.45) * Math.min(this.arena.radius * 0.8, CFG.RUNE_SPAWN_RADIUS);
+      const x = Math.cos(angle) * ring;
+      const z = Math.sin(angle) * ring;
+      if (!this.arena.isOnPlatform(x, z)) continue;
+      // Keep away from players (at least 5 units).
+      const tooClose = this.alivePlayers().some(p => Math.hypot(p.x - x, p.z - z) < 5);
+      if (tooClose) continue;
+      return { x, z };
+    }
+    return null; // couldn't place this tick — skip
+  }
+
+  stepMobs(dt) {
+    if (this.phase !== PHASE.PLAYING) return;
+
+    // ── Spawn ────────────────────────────────────────────────────────────────
+    this.mobSpawnTimer -= dt;
+    const bigMobTypes = Object.keys(CFG.MOB_TYPES).filter(k => k !== "minion");
+    const bigCount = this.mobs.filter(m => m.alive && m.type !== "minion").length;
+    if (this.mobSpawnTimer <= 0 && bigCount < CFG.MOB_MAX_ALIVE && this.alivePlayers().length) {
+      const pos = this._mobSpawnPos();
+      if (pos) {
+        const typeKeys = bigMobTypes;
+        const type = typeKeys[Math.floor(this._mobRand() * typeKeys.length)];
+        const id = "mob:" + this._mobId++;
+        const mob = spawnMob(id, type, pos.x, pos.z);
+        this.mobs.push(mob);
+        this.events.push({ type: "mobSpawn", id: mob.id, mobType: mob.type, x: pos.x, z: pos.z, color: CFG.MOB_TYPES[mob.type].color });
+      }
+      this.mobSpawnTimer = CFG.MOB_SPAWN_MIN + this._mobRand() * (CFG.MOB_SPAWN_MAX - CFG.MOB_SPAWN_MIN);
+    }
+
+    // ── AI + physics ─────────────────────────────────────────────────────────
+    const playerArr = [...this.players.values()];
+    for (const mob of this.mobs) {
+      if (!mob.alive) continue;
+
+      const action = mob._brain.think(mob, playerArr, dt);
+      stepMobPhysics(mob, dt, this.arena);
+
+      // Ring-out: fell to lava.
+      if (mob.falling && mob.y <= CFG.LAVA_Y) {
+        this.killMob(mob, "lava");
+        continue;
+      }
+
+      // Apply action effects.
+      if (action.kind === "melee" && action.target) {
+        const victim = action.target;
+        if (victim.alive && !victim.falling) {
+          const dx = victim.x - mob.x, dz = victim.z - mob.z;
+          victim.applyHit(dx, dz, CFG.MOB_TYPES[mob.type].meleeKb);
+          this.events.push({ type: "hit", x: victim.x, z: victim.z, victim: victim.id, by: mob.id });
+        }
+      } else if (action.kind === "ranged" && action.target) {
+        const typeCfg = CFG.MOB_TYPES[mob.type];
+        const ox = mob.x + Math.cos(mob.aim) * (typeCfg.bodyR + 0.6);
+        const oz = mob.z + Math.sin(mob.aim) * (typeCfg.bodyR + 0.6);
+        const bolt = new Bolt(mob.id, ox, oz, mob.aim, typeCfg.color, { kb: typeCfg.rangedKb });
+        this.bolts.push(bolt);
+      } else if (action.kind === "ability" && action.target) {
+        this._fireMobAbility(mob, action.target);
+      } else if (action.kind === "spawnMinion") {
+        const totalMinions = this.mobs.filter(m => m.alive && m.parentId === mob.id).length;
+        if (totalMinions < CFG.MOB_MAX_CHILDREN) {
+          const minionId = "mob:" + this._mobId++;
+          const minion = spawnMob(minionId, "minion", action.x, action.z, mob.id);
+          // Ensure minion is on platform; if not, just don't spawn.
+          if (this.arena.isOnPlatform(action.x, action.z)) {
+            mob.childCount++;
+            this.mobs.push(minion);
+            this.events.push({ type: "mobSpawn", id: minion.id, mobType: "minion", x: action.x, z: action.z, parentId: mob.id, color: CFG.MOB_TYPES.minion.color });
+          }
+        }
+      }
+    }
+
+    // Remove dead mobs.
+    this.mobs = this.mobs.filter(m => m.alive);
+  }
+
+  _fireMobAbility(mob, target) {
+    const typeCfg = CFG.MOB_TYPES[mob.type];
+    const ability = typeCfg.ability;
+    if (!ability) return;
+
+    this.events.push({ type: "mobAbility", mobType: mob.type, ability, x: mob.x, z: mob.z, radius: typeCfg.abilityRadius, color: typeCfg.color });
+
+    if (ability === "groundSlam" || ability === "stomp") {
+      // Meteor-style AoE: immediate detonation (1 s telegraph via existing meteor pipeline).
+      this.meteors.push({
+        id: this._meteorId++,
+        ownerId: mob.id,
+        x: mob.x, z: mob.z,
+        t: 1.0, fall: 1.0,
+        radius: typeCfg.abilityRadius,
+        effRadius: typeCfg.abilityRadius,
+        kb: typeCfg.abilityKb,
+      });
+    } else if (ability === "cyclone") {
+      // Gravity-well pull then outward fling — applied instantly.
+      const r = typeCfg.abilityRadius;
+      const kb = typeCfg.abilityKb;
+      for (const p of this.players.values()) {
+        if (!p.alive || p.falling || p.spectating) continue;
+        const d = Math.hypot(p.x - mob.x, p.z - mob.z);
+        if (d <= r) {
+          // Pull in for 0.4 s (status), then schedule outward burst via velocity.
+          p.status.gravity = 0.4;
+          p.status.gravX = mob.x; p.status.gravZ = mob.z;
+          p.status.gravPull = 25; p.status.gravBy = mob.id;
+          // Also apply the outward fling now (mirrors gravity's gravKb).
+          const ndx = d < 0.001 ? Math.cos(mob.aim) : (p.x - mob.x) / d;
+          const ndz = d < 0.001 ? Math.sin(mob.aim) : (p.z - mob.z) / d;
+          p.applyHit(ndx, ndz, kb);
+          this.events.push({ type: "hit", x: p.x, z: p.z, victim: p.id, by: mob.id });
+        }
+      }
+    } else if (ability === "eruption") {
+      // Fan of 8 bolts + central blast.
+      const r = typeCfg.abilityRadius;
+      const kb = typeCfg.abilityKb;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const ox = mob.x + Math.cos(a) * 1.2;
+        const oz = mob.z + Math.sin(a) * 1.2;
+        this.bolts.push(new Bolt(mob.id, ox, oz, a, CFG.MOB_TYPES.fireElemental.color, { kb: kb * 0.5 }));
+      }
+      // Central burst.
+      for (const p of this.players.values()) {
+        if (!p.alive || p.falling || p.spectating) continue;
+        const d = Math.hypot(p.x - mob.x, p.z - mob.z);
+        if (d <= r) {
+          const ndx = d < 0.001 ? 1 : (p.x - mob.x) / d;
+          const ndz = d < 0.001 ? 0 : (p.z - mob.z) / d;
+          p.applyHit(ndx, ndz, kb);
+          this.events.push({ type: "hit", x: p.x, z: p.z, victim: p.id, by: mob.id });
+        }
+      }
+    }
+  }
+
+  // Bolt hits a mob OR a player — not both. Inserted BETWEEN resolveProjectileClashes
+  // and the player-hit bolt loop so mob bolts cannot farm players AND player bolts
+  // cannot double-dip a mob and a player on the same tick.
+  resolveMobHits() {
+    if (!this.mobs.length || !this.bolts.length) return;
+    for (const b of this.bolts) {
+      if (b.dead) continue;
+      // Mob-owned bolts never damage other mobs.
+      if (b.ownerId && b.ownerId.startsWith("mob:")) continue;
+      for (const mob of this.mobs) {
+        if (!mob.alive) continue;
+        // Honour the post-spawn invulnerability window — mob moves but cannot
+        // be damaged until spawnInvuln expires (mirrors plan §2 spec).
+        if (mob.spawnInvuln > 0) continue;
+        const d = Math.hypot(b.x - mob.x, b.z - mob.z);
+        if (d <= CFG.BOLT_RADIUS + CFG.MOB_TYPES[mob.type].bodyR) {
+          // Shove the mob slightly toward lava (boltToKb).
+          const boltToKb = CFG.MOB_TYPES[mob.type].boltToKb;
+          if (boltToKb > 0) {
+            const l = d < 0.001 ? 1 : d;
+            mob.vx += ((mob.x - b.x) / l) * boltToKb;
+            mob.vz += ((mob.z - b.z) / l) * boltToKb;
+          }
+          mob.hitsRemaining--;
+          b.dead = true;
+          this.events.push({ type: "mobHit", id: mob.id, hp: mob.hitsRemaining, max: mob.maxHits, x: mob.x, z: mob.z });
+          if (mob.hitsRemaining <= 0) this.killMob(mob, "hits");
+          break; // bolt consumed — stop checking mobs
+        }
+      }
+    }
+  }
+
+  killMob(mob, cause) {
+    mob.alive = false;
+    // Decrement parent's child count if this was a minion.
+    if (mob.parentId) {
+      const parent = this.mobs.find(m => m.id === mob.parentId);
+      if (parent) parent.childCount = Math.max(0, parent.childCount - 1);
+    }
+    // Only big mobs drop runes — minions are 3-hit helpers and grant no reward
+    // on their own; the parent big mob is the rewarded target.
+    if (mob.type !== "minion") this.dropRune(mob.x, mob.z);
+    this.events.push({ type: "mobDeath", id: mob.id, mobType: mob.type, cause, x: mob.x, z: mob.z, color: CFG.MOB_TYPES[mob.type].color });
+  }
+
+  // Drop a rune with a random spell from SPELL_ORDER (minus fireball), picked
+  // via the seeded _mobRand so drops are deterministic and testable.
+  dropRune(x, z) {
+    const eligible = SPELL_ORDER.filter(id => id !== "fireball");
+    const spell = eligible[Math.floor(this._mobRand() * eligible.length)];
+    const rune = {
+      id: this._runeId++,
+      spell,
+      x: +x.toFixed(3),
+      z: +z.toFixed(3),
+      _fromMob: true,  // marker so tests can identify mob drops
+    };
+    this.runes.push(rune);
+    return rune;
+  }
+
   resolveProjectileClashes() {
     if (this.bolts.length < 2) return;
     const r = CFG.BOLT_RADIUS * 2;
@@ -525,6 +753,11 @@ export class Simulation {
       for (let j = i + 1; j < this.bolts.length; j++) {
         const b = this.bolts[j];
         if (b.dead || a.ownerId === b.ownerId) continue;
+        // Mob bolts and player bolts never cancel each other — mob bolts are
+        // resolved separately in resolveMobHits() and must reach their targets.
+        const aMob = typeof a.ownerId === "string" && a.ownerId.startsWith("mob:");
+        const bMob = typeof b.ownerId === "string" && b.ownerId.startsWith("mob:");
+        if (aMob !== bMob) continue;
         // Swept test against this tick's travel segments so fast projectiles
         // that cross between ticks still clash instead of tunneling through.
         const hit = closestApproach(
@@ -543,7 +776,7 @@ export class Simulation {
 
   // Players can shoot a rune to destroy it, denying the ability to rivals.
   resolveRuneDestruction() {
-    if (this.allAbilitiesAtStart || !this.runes.length || !this.bolts.length) return;
+    if (!this.runes.length || !this.bolts.length) return;
     const remaining = [];
     for (const rune of this.runes) {
       let destroyed = false;
@@ -564,15 +797,25 @@ export class Simulation {
   }
 
   resolveRunePickups() {
-    if (this.allAbilitiesAtStart || !this.runes.length) return;
+    if (!this.runes.length) return;
     const remaining = [];
     for (const rune of this.runes) {
       let picked = false;
       for (const p of this.players.values()) {
-        if (!p.alive || p.falling || p.spectating || p.hasSpell(rune.spell)) continue;
+        if (!p.alive || p.falling || p.spectating) continue;
         const d = Math.hypot(p.x - rune.x, p.z - rune.z);
-        if (d <= CFG.RUNE_RADIUS + CFG.PLAYER_RADIUS && p.acquireSpell(rune.spell)) {
-          this.events.push({ type: "runePickup", id: p.id, spell: rune.spell, x: rune.x, z: rune.z });
+        if (d <= CFG.RUNE_RADIUS + CFG.PLAYER_RADIUS) {
+          if (!this.allAbilitiesAtStart) {
+            // Rune-only mode: grant the randomized spell (existing path).
+            if (p.hasSpell(rune.spell)) continue;
+            if (!p.acquireSpell(rune.spell)) continue;
+            this.events.push({ type: "runePickup", id: p.id, spell: rune.spell, x: rune.x, z: rune.z });
+          } else {
+            // All-abilities mode: pocketWatch-style cooldown reset + brief Rush buff.
+            p.cooldowns = {};
+            p.status.rush = SPELLS.rush.duration;
+            this.events.push({ type: "runePickup", id: p.id, spell: rune.spell, x: rune.x, z: rune.z, buff: true });
+          }
           picked = true;
           break;
         }
@@ -650,6 +893,7 @@ export class Simulation {
         t: +m.t.toFixed(2), fall: m.fall, r: m.radius,
       })),
       runes: this.runes.map((r) => ({ id: r.id, spell: r.spell, x: r.x, z: r.z, c: SPELLS[r.spell]?.color || 0xffffff })),
+      mobs: this.mobs.filter(m => m.alive).map(m => m.snapshot()),
       spellSlotsEnabled: !this.allAbilitiesAtStart,
       events: this.events,
       // undefined is omitted by JSON.stringify, saving bandwidth on unchanged frames.
