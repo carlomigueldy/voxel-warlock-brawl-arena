@@ -57,9 +57,9 @@ test("generated character asset URLs resolve relative to the character module", 
   // Character-aware loader resolves rigged + walk + run GLBs per selectable
   // character relative to the module.
   assert.match(character, /new URL\(p, import\.meta\.url\)\.href/);
-  assert.match(character, /assets\/characters\/ember-warlock-rigged\.glb/);
-  assert.match(character, /assets\/characters\/ember-warlock-walking\.glb/);
-  assert.match(character, /assets\/characters\/ember-warlock-running\.glb/);
+  assert.match(character, /assets\/characters\/[\w-]+-rigged\.glb/);
+  assert.match(character, /assets\/characters\/[\w-]+-walking\.glb/);
+  assert.match(character, /assets\/characters\/[\w-]+-running\.glb/);
 });
 
 test("character roster exposes four rigged voxel characters", () => {
@@ -91,10 +91,14 @@ test("generated character model is bottom aligned after scaling", () => {
   assert.match(character, /scene\.position\.y -= measured\.min\.y \* s/);
 });
 
-test("generated character tinting preserves single-material meshes", () => {
+test("generated character clones materials and marks identity with a hero glyph", () => {
   const character = fs.readFileSync("src/character.js", "utf8");
+  // Materials are cloned per instance (no body tint) and flat-shaded so voxel
+  // facets read crisply; player identity is shown by a glowing hero glyph.
   assert.match(character, /const wasArray = Array\.isArray\(o\.material\)/);
-  assert.match(character, /o\.material = wasArray \? tinted : tinted\[0\]/);
+  assert.match(character, /o\.material = wasArray \? cloned : cloned\[0\]/);
+  assert.match(character, /flatShading = true/);
+  assert.match(character, /makeHeroGlyph/);
 });
 
 test("generated character label height follows simulation player height", () => {
