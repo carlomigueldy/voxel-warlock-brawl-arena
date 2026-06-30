@@ -40,9 +40,13 @@ export class UI {
       // Tutorial
       tutSpellbookList: $("tut-spellbook-list"),
       btnPractice: $("btn-practice"),
+      // Big-mob incoming announcement banner.
+      mobBanner: $("mob-banner"),
     };
     this.handlers = {};
     this.audio = null;
+    this._mobBannerTimer = null;
+    this._lastHandledSnapTime = null;
     this._abilityEls = null;
     this._abilityMode = null;
     this.spellSlotHotkeys = [...CFG.DEFAULT_SPELL_SLOT_HOTKEYS];
@@ -978,6 +982,82 @@ export class UI {
       }
 
       container.appendChild(section);
+    }
+  }
+
+  // ---- Big-mob incoming banner -------------------------------------------
+
+  /**
+   * Show the #mob-banner for the given mob type and entrance kind.
+   * Any previously scheduled hide timer is cancelled so back-to-back mobs
+   * always display a fresh banner rather than inheriting an old countdown.
+   *
+   * @param {string} mobType - e.g. "stoneGiant"
+   * @param {string} kind    - entrance kind: "shatter" | "storm" | "summon" | "meteor"
+   */
+  showMobBanner(mobType, kind) {
+    const el = this.el.mobBanner;
+    if (!el) return;
+
+    const COPY = {
+      stoneGiant:     "⚠ STONE GIANT EMERGES",
+      stormingVortex: "STORM INCOMING — STORMING VORTEX",
+      giantDwarf:     "THE GROUND TREMBLES — GIANT DWARF",
+      fireElemental:  "METEOR FALLING — FIRE ELEMENTAL",
+    };
+
+    // Cancel any in-flight hide.
+    if (this._mobBannerTimer != null) {
+      clearTimeout(this._mobBannerTimer);
+      this._mobBannerTimer = null;
+    }
+
+    // Reset accent classes.
+    el.classList.remove(
+      "mob-banner--shatter",
+      "mob-banner--storm",
+      "mob-banner--summon",
+      "mob-banner--meteor",
+    );
+
+    el.textContent = COPY[mobType] || mobType.toUpperCase();
+
+    if (kind) el.classList.add(`mob-banner--${kind}`);
+
+    // Force animation restart: toggling hidden re-triggers the CSS @keyframes
+    // because going from display:none to display:block restarts animations.
+    el.classList.remove("hidden");
+
+    // Auto-hide slightly after the full entrance window.
+    const hideAfterMs = Math.round((CFG.MOB_ENTRANCE + 0.6) * 1000);
+    this._mobBannerTimer = setTimeout(() => {
+      el.classList.add("hidden");
+      el.classList.remove(
+        "mob-banner--shatter",
+        "mob-banner--storm",
+        "mob-banner--summon",
+        "mob-banner--meteor",
+      );
+      this._mobBannerTimer = null;
+    }, hideAfterMs);
+  }
+
+  /**
+   * Iterate a snapshot's event list and trigger banner for each mobIncoming event.
+   * Uses snapTime to avoid reprocessing the same snapshot on every render frame.
+   *
+   * @param {Array}  events   - snapshot.events array (may be undefined/null)
+   * @param {number} snapTime - snapshot.t timestamp for deduplication
+   */
+  handleEvents(events, snapTime) {
+    if (!Array.isArray(events) || events.length === 0) return;
+    // Guard: only process each distinct snapshot once across render frames.
+    if (snapTime != null && snapTime === this._lastHandledSnapTime) return;
+    this._lastHandledSnapTime = snapTime;
+    for (const ev of events) {
+      if (ev.type === "mobIncoming") {
+        this.showMobBanner(ev.mobType, ev.entrance);
+      }
     }
   }
 }

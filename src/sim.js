@@ -88,6 +88,11 @@ export class Simulation {
     this._mobId = 1;
     this._mobRand = null;
     this.mobsEnabled = options.mobsEnabled !== false;
+    // Big-mob roster for the current round (shuffled order; each type spawns once).
+    this._mobRoster = [];
+    this._mobRosterIdx = 0;
+    // Arena radius at the moment the PLAYING phase begins; used by _mobAliveCap().
+    this._arenaStartR = 0;
     this.arena = new LogicArena(this.world, this.landSize);
     this.phase = PHASE.LOBBY;
     this.round = 0;
@@ -246,6 +251,17 @@ export class Simulation {
     const mobSeed = (this._matchSeed ^ (this.round * 0x517cc1b7)) >>> 0;
     this._mobRand = makeMobPrng(mobSeed);
 
+    // Build a shuffled big-mob roster so each type appears exactly once per round
+    // in a deterministic but varied order (Fisher-Yates over the seeded PRNG).
+    this._mobRoster = ["stoneGiant", "stormingVortex", "giantDwarf", "fireElemental"];
+    for (let i = this._mobRoster.length - 1; i > 0; i--) {
+      const j = Math.floor(this._mobRand() * (i + 1));
+      const tmp = this._mobRoster[i]; this._mobRoster[i] = this._mobRoster[j]; this._mobRoster[j] = tmp;
+    }
+    this._mobRosterIdx = 0;
+    // Fallback start radius; true value is captured at the COUNTDOWN→PLAYING transition.
+    this._arenaStartR = this.arena.radius;
+
     // Spawn active players evenly around a ring; late joiners enter next round.
     const list = [...this.players.values()];
     const n = Math.max(1, list.length);
@@ -366,6 +382,9 @@ export class Simulation {
       if (this.phaseTimer <= 0) {
         this.phase = PHASE.PLAYING;
         this.playTime = 0;
+        // Capture the true start radius now that the round is live; used by
+        // _mobAliveCap() to track shrink progress for the dynamic mob cap.
+        this._arenaStartR = this.arena.radius;
       }
       return;
     }
@@ -536,6 +555,17 @@ export class Simulation {
 
   // ── Mob system ──────────────────────────────────────────────────────────────
 
+  // How many big mobs may be alive simultaneously given the current shrink
+  // progress.  Increases in steps from 1 up to MOB_MAX_ALIVE as the arena
+  // contracts, so late-round fights become progressively more chaotic.
+  _mobAliveCap() {
+    const span = Math.max(0.001, this._arenaStartR - CFG.ARENA_MIN_RADIUS);
+    const s = Math.min(1, Math.max(0, (this._arenaStartR - this.arena.radius) / span));
+    let cap = 1;
+    for (const step of CFG.MOB_SHRINK_CAP_STEPS) if (s >= step.at) cap = step.cap;
+    return Math.min(cap, CFG.MOB_MAX_ALIVE);
+  }
+
   // Pick a random on-platform position away from all players.
   _mobSpawnPos() {
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -557,17 +587,37 @@ export class Simulation {
 
     // ── Spawn ────────────────────────────────────────────────────────────────
     this.mobSpawnTimer -= dt;
-    const bigMobTypes = Object.keys(CFG.MOB_TYPES).filter(k => k !== "minion");
-    const bigCount = this.mobs.filter(m => m.alive && m.type !== "minion").length;
-    if (this.mobSpawnTimer <= 0 && bigCount < CFG.MOB_MAX_ALIVE && this.alivePlayers().length) {
+    const bigAlive = this.mobs.filter(m => m.alive && m.type !== "minion").length;
+    // Big mobs: roster-driven, one alive at a time (scaled by shrink cap).
+    // Each type from the shuffled roster spawns at most once per round.
+    // When the roster is exhausted no further big mobs spawn this round.
+    if (
+      this.mobSpawnTimer <= 0 &&
+      bigAlive < this._mobAliveCap() &&
+      this._mobRosterIdx < this._mobRoster.length &&
+      this.alivePlayers().length
+    ) {
       const pos = this._mobSpawnPos();
       if (pos) {
-        const typeKeys = bigMobTypes;
-        const type = typeKeys[Math.floor(this._mobRand() * typeKeys.length)];
+        const type = this._mobRoster[this._mobRosterIdx++];
         const id = "mob:" + this._mobId++;
         const mob = spawnMob(id, type, pos.x, pos.z);
+        // Health scaling: base * (MIN_FACTOR + PER_PLAYER * max(0, players - 2)).
+        const n = this.alivePlayers().length;
+        const factor = CFG.MOB_HP_MIN_FACTOR + CFG.MOB_HP_PER_PLAYER * Math.max(0, n - 2);
+        mob.maxHits = mob.hitsRemaining = Math.max(1, Math.round(CFG.MOB_TYPES[type].maxHits * factor));
+        mob.entering = CFG.MOB_ENTRANCE; // already set by constructor; made explicit here
         this.mobs.push(mob);
-        this.events.push({ type: "mobSpawn", id: mob.id, mobType: mob.type, x: pos.x, z: pos.z, color: CFG.MOB_TYPES[mob.type].color });
+        this.events.push({
+          type: "mobIncoming",
+          id: mob.id,
+          mobType: type,
+          x: pos.x,
+          z: pos.z,
+          color: CFG.MOB_TYPES[type].color,
+          entrance: CFG.MOB_TYPES[type].entrance.kind,
+          duration: CFG.MOB_ENTRANCE,
+        });
       }
       this.mobSpawnTimer = CFG.MOB_SPAWN_MIN + this._mobRand() * (CFG.MOB_SPAWN_MAX - CFG.MOB_SPAWN_MIN);
     }
@@ -577,6 +627,9 @@ export class Simulation {
     for (const mob of this.mobs) {
       if (!mob.alive) continue;
 
+      // Capture pre-think entering value so we can detect when the cinematic
+      // window transitions to zero (think() decrements mob.entering).
+      const wasEntering = mob.entering;
       const action = mob._brain.think(mob, playerArr, dt);
       stepMobPhysics(mob, dt, this.arena);
 
@@ -584,6 +637,25 @@ export class Simulation {
       if (mob.falling && mob.y <= CFG.LAVA_Y) {
         this.killMob(mob, "lava");
         continue;
+      }
+
+      // Entrance completion: first tick where the cinematic window closes.
+      // Emit mobArrive, then apply AoE knockback for entrance kinds that have it.
+      if (wasEntering > 0 && mob.entering <= 0) {
+        const ec = CFG.MOB_TYPES[mob.type].entrance;
+        this.events.push({ type: "mobArrive", id: mob.id, mobType: mob.type, x: mob.x, z: mob.z, radius: ec.radius || 0 });
+        if (ec.kb) {
+          for (const p of this.players.values()) {
+            if (!p.alive || p.falling || p.spectating) continue;
+            const d = Math.hypot(p.x - mob.x, p.z - mob.z);
+            if (d <= ec.radius) {
+              const ndx = d < 0.001 ? Math.cos(mob.aim) : (p.x - mob.x) / d;
+              const ndz = d < 0.001 ? Math.sin(mob.aim) : (p.z - mob.z) / d;
+              p.applyHit(ndx, ndz, ec.kb);
+              this.events.push({ type: "hit", x: p.x, z: p.z, victim: p.id, by: mob.id });
+            }
+          }
+        }
       }
 
       // Apply action effects.
@@ -695,7 +767,8 @@ export class Simulation {
         if (!mob.alive) continue;
         // Honour the post-spawn invulnerability window — mob moves but cannot
         // be damaged until spawnInvuln expires (mirrors plan §2 spec).
-        if (mob.spawnInvuln > 0) continue;
+        // Also guard the cinematic entrance window: mob cannot be hit while entering.
+        if (mob.spawnInvuln > 0 || mob.entering > 0) continue;
         const d = Math.hypot(b.x - mob.x, b.z - mob.z);
         if (d <= CFG.BOLT_RADIUS + CFG.MOB_TYPES[mob.type].bodyR) {
           // Shove the mob slightly toward lava (boltToKb).

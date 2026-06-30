@@ -446,6 +446,82 @@ html, body {
 @keyframes centerPop { from { opacity: 0; transform: translate(-50%,-50%) scale(0.7); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
 .center-msg small { display:block; font-family: var(--font-ui); font-size: 18px; color: var(--muted); font-weight: normal; margin-top: 12px; }
 
+/* ============================================================
+   MOB BANNER — big-mob incoming announcement (displayed above #center-msg)
+   ============================================================ */
+.mob-banner {
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  /* Base transform — animation keyframes carry the full translateX(-50%) so
+     we don't double-apply it. When display:none is removed the animation
+     restarts automatically, giving a fresh slide-in each time. */
+  z-index: 7;
+  pointer-events: none;
+  font-family: var(--font-display);
+  font-size: clamp(11px, 2vw, 17px);
+  letter-spacing: 3px;
+  text-align: center;
+  text-transform: uppercase;
+  color: #fff;
+  white-space: nowrap;
+  padding: 14px 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 8, 20, 0.88);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    0 0 32px rgba(255, 90, 60, 0.35),
+    0 8px 32px rgba(0, 0, 0, 0.7);
+  animation: mobBannerIn 0.42s var(--ease-spring) both;
+}
+
+@keyframes mobBannerIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-18px) scale(0.91); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0)      scale(1);   }
+}
+
+/* Per-kind colour accent modifiers */
+.mob-banner--shatter {
+  color: #d4b896;
+  border-color: rgba(160, 130, 100, 0.45);
+  box-shadow:
+    0 0 28px rgba(160, 130, 100, 0.45),
+    0 8px 32px rgba(0, 0, 0, 0.7);
+}
+.mob-banner--storm {
+  color: #a0e8ff;
+  border-color: rgba(76, 201, 255, 0.5);
+  box-shadow:
+    0 0 32px rgba(76, 201, 255, 0.45),
+    0 8px 32px rgba(0, 0, 0, 0.7);
+}
+.mob-banner--summon {
+  color: var(--gold);
+  border-color: rgba(255, 210, 60, 0.5);
+  box-shadow:
+    0 0 32px rgba(255, 210, 60, 0.45),
+    0 8px 32px rgba(0, 0, 0, 0.7);
+}
+.mob-banner--meteor {
+  color: var(--ember);
+  border-color: rgba(255, 90, 60, 0.6);
+  box-shadow:
+    0 0 38px rgba(255, 90, 60, 0.55),
+    0 8px 32px rgba(0, 0, 0, 0.7);
+}
+
+/* Reduced motion: skip slide — opacity-only reveal, no translation. */
+@media (prefers-reduced-motion: reduce) {
+  .mob-banner {
+    animation: none !important;
+    transform: translateX(-50%) !important;
+  }
+  .mob-banner:not(.hidden) {
+    opacity: 1 !important;
+  }
+}
+
 /* Touch */
 #touch-controls { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
 #joystick {

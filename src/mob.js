@@ -206,6 +206,11 @@ export class Mob {
     // Post-spawn grace window: mob moves but deals no damage / fires no ranged.
     this.spawnInvuln = CFG.MOB_SPAWN_INVULN;
 
+    // Cinematic entrance window: big mobs are frozen in place and cannot be
+    // targeted or damaged until the entrance animation completes.
+    // Minions (parentId set OR type === "minion") skip the entrance entirely.
+    this.entering = (parentId !== null || type === "minion") ? 0 : CFG.MOB_ENTRANCE;
+
     // Movement intent set each tick by MobBrain.think(); consumed by stepMobPhysics.
     this._moveX = 0;
     this._moveZ = 0;
@@ -227,6 +232,7 @@ export class Mob {
       max:   this.maxHits,
       color: CFG.MOB_TYPES[this.type].color,
       f:     this.falling ? 1 : 0,
+      ent:   +this.entering.toFixed(2),
     };
   }
 }
@@ -275,6 +281,17 @@ export class MobBrain {
     mob.spawnInvuln = Math.max(0, mob.spawnInvuln - dt);
     if (typeCfg.abilityEvery != null) {
       mob.abilityCd = Math.max(0, mob.abilityCd - dt);
+    }
+
+    // ── Cinematic entrance lock ──────────────────────────────────────────
+    // Big mobs are frozen and silent while their entrance animation plays.
+    // Caller (sim.stepMobs) reads mob.entering to suppress damage and to
+    // emit the mobArrive event when it transitions 0+ → 0.
+    if (mob.entering > 0) {
+      mob.entering = Math.max(0, mob.entering - dt);
+      mob._moveX = 0;
+      mob._moveZ = 0;
+      return { kind: "idle" };
     }
 
     // ── Find nearest alive player / bot ──────────────────────────────────
