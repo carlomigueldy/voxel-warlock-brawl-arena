@@ -23,7 +23,7 @@ console.log("Physics (fall-stun + collision + sim wiring) tests:");
 // ---------------------------------------------------------------------------
 
 test("player elevated above FALL_STUN_MIN_HEIGHT is stunned on landing", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -43,7 +43,7 @@ test("player elevated above FALL_STUN_MIN_HEIGHT is stunned on landing", () => {
 });
 
 test("player dropping less than FALL_STUN_MIN_HEIGHT is not stunned", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -59,7 +59,7 @@ test("player dropping less than FALL_STUN_MIN_HEIGHT is not stunned", () => {
 });
 
 test("stunned player cannot move under their own input", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -74,7 +74,7 @@ test("stunned player cannot move under their own input", () => {
 });
 
 test("stunned player cannot fire", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -85,7 +85,7 @@ test("stunned player cannot fire", () => {
 });
 
 test("stunned player cannot cast spells", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -95,7 +95,7 @@ test("stunned player cannot cast spells", () => {
 });
 
 test("stun duration ticks down to zero", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -107,7 +107,7 @@ test("stun duration ticks down to zero", () => {
 });
 
 test("snapshot includes st field mirroring stun remaining", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -119,7 +119,7 @@ test("snapshot includes st field mirroring stun remaining", () => {
 });
 
 test("snapshot st is 0 when not stunned", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -134,7 +134,7 @@ test("snapshot st is 0 when not stunned", () => {
 // ---------------------------------------------------------------------------
 
 test("hazard death still works when layout is present (unchanged path)", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -152,7 +152,7 @@ test("hazard death still works when layout is present (unchanged path)", () => {
 // ---------------------------------------------------------------------------
 
 test("player with knockback into an obstacle is stopped at its boundary", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
 
@@ -179,7 +179,7 @@ test("player with knockback into an obstacle is stopped at its boundary", () => 
 });
 
 test("player with knockback into a plateau wall is stopped", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
 
@@ -203,7 +203,7 @@ test("player with knockback into a plateau wall is stopped", () => {
 });
 
 test("player already on a plateau top is not blocked by its own sides", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
 
@@ -233,7 +233,7 @@ test("player already on a plateau top is not blocked by its own sides", () => {
 // ---------------------------------------------------------------------------
 
 test("beginRound generates a mapLayout and stores it on the simulation", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   assert.ok(sim.mapLayout !== null, "mapLayout should be set after startMatch");
@@ -243,7 +243,7 @@ test("beginRound generates a mapLayout and stores it on the simulation", () => {
 });
 
 test("mapVersion increments each round", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   const v1 = sim.mapVersion;
@@ -260,7 +260,7 @@ test("mapVersion increments each round", () => {
 });
 
 test("each round produces a different layout (distinct seeds)", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   const layout1 = JSON.stringify(sim.mapLayout);
@@ -275,7 +275,7 @@ test("each round produces a different layout (distinct seeds)", () => {
 });
 
 test("mapLayout is included in the simulation snapshot", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   const snap = sim.snapshot();
@@ -286,7 +286,7 @@ test("mapLayout is included in the simulation snapshot", () => {
 });
 
 test("snapshot with mapLayout is JSON-serializable", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   const snap = sim.snapshot();
@@ -294,7 +294,7 @@ test("snapshot with mapLayout is JSON-serializable", () => {
 });
 
 test("arena.groundHeightAt is wired through LogicArena after layout is set", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   // Base platform (center-clear zone) should return PLATFORM_TOP.
@@ -304,7 +304,7 @@ test("arena.groundHeightAt is wired through LogicArena after layout is set", () 
 });
 
 test("arena.blocksMovement is wired through LogicArena after layout is set", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   // Center-clear zone: no obstacles placed there, should not be blocked at y=0.
@@ -313,7 +313,7 @@ test("arena.blocksMovement is wired through LogicArena after layout is set", () 
 });
 
 test("returnToLobby clears mapLayout", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   assert.ok(sim.mapLayout !== null, "mapLayout should exist during a round");
@@ -326,7 +326,7 @@ test("returnToLobby clears mapLayout", () => {
 // ---------------------------------------------------------------------------
 
 test("player groundY is exposed and updated each tick", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -355,7 +355,7 @@ const rampLayout = {
 };
 
 function rampSim() {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -446,7 +446,7 @@ test("ramp peakY resets each tick so multi-step descent never accumulates stun d
 // ---------------------------------------------------------------------------
 
 test("snapshot omits mapLayout when map version is unchanged between calls", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   const snap1 = sim.snapshot(); // first call: _lastSentMapV=-1 != mapVersion=1 → include
@@ -457,7 +457,7 @@ test("snapshot omits mapLayout when map version is unchanged between calls", () 
 });
 
 test("snapshot includes mapLayout after a new round begins (version increments)", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   sim.snapshot(); // consume round 1's layout send
@@ -472,7 +472,7 @@ test("snapshot includes mapLayout after a new round begins (version increments)"
 });
 
 test("snapshot sends explicit null layout on returnToLobby even without version change", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   sim.snapshot(); // consume initial layout send

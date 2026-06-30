@@ -7,6 +7,7 @@ import { Player, resolveKillCredit } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
 import { BotBrain, BOT_PROFILES, closestApproach as _closestApproach } from "./bot.js";
+import { makePrng } from "./rng.js";
 
 // Re-wrap so the local call sites keep their original shape (returns .x/.z midpoint too).
 function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
@@ -63,6 +64,9 @@ function botDisplayName(skill, index) {
 
 export class Simulation {
   constructor(options = {}) {
+    // Injectable RNG: pass options.seed (number) for a deterministic PRNG;
+    // omit it (or pass undefined/null) to keep the default random behaviour.
+    this._rng = typeof options.seed === "number" ? makePrng(options.seed) : Math.random;
     this.allAbilitiesAtStart = options.allAbilitiesAtStart !== false;
     this.world = getArenaWorld(options.arenaWorld);
     this.landSize = getArenaLandSize(options.landSize);
@@ -200,7 +204,7 @@ export class Simulation {
     this.round = 0;
     // New random base seed for the whole match; each round mixes it with the
     // round number so every round gets a distinct but reproducible layout.
-    this._matchSeed = Math.floor(Math.random() * 0xffffffff);
+    this._matchSeed = Math.floor(this._rng() * 0xffffffff);
     this.beginRound();
     return true;
   }
@@ -266,8 +270,8 @@ export class Simulation {
     if (this.runes.length >= CFG.RUNE_MAX_ACTIVE) return null;
     if (!this.runePool.length) return null;
     const spell = this.runePool.shift();
-    const angle = Math.random() * Math.PI * 2;
-    const ring = Math.min(CFG.RUNE_SPAWN_RADIUS, this.arena.radius * 0.72) * (0.5 + 0.4 * Math.random());
+    const angle = this._rng() * Math.PI * 2;
+    const ring = Math.min(CFG.RUNE_SPAWN_RADIUS, this.arena.radius * 0.72) * (0.5 + 0.4 * this._rng());
     const rune = {
       id: this._runeId++,
       spell,
@@ -281,7 +285,7 @@ export class Simulation {
   _shuffle(arr) {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(this._rng() * (i + 1));
       [a[i], a[j]] = [a[j], a[i]];
     }
     return a;
