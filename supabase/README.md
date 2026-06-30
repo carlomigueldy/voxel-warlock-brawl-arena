@@ -63,8 +63,24 @@ the default injection.
 
 - **Email** — enabled by default; disable "Confirm email" for fast dev onboarding
   (enable in production).
-- **Google OAuth** — add your OAuth client ID and secret; set the redirect URL
-  to `https://<your-project-ref>.supabase.co/auth/v1/callback`.
+- **Web3 Wallets (Ethereum + Solana)** — in *Authentication → Providers*, enable
+  the **Web3** provider. Both Ethereum (EIP-1193) and Solana are activated together.
+  No client ID or secret is required — Supabase verifies the wallet signature
+  server-side. You can also enable them via `config.toml` (`[auth.web3.ethereum]`
+  and `[auth.web3.solana]`) for local dev.
+
+  > **Site URL registration** — Web3 sign-in validates the wallet signature against
+  > the project's allowed URLs. Register every origin where the game is served under
+  > *Authentication → URL Configuration → Redirect URLs*: e.g. `http://localhost:8000`
+  > and your Vercel deployment URL (`https://<your-app>.vercel.app`). Missing entries
+  > will cause signature verification to fail.
+
+  > **Wallet accounts have no email** — `signInWithEthereum()` and `signInWithSolana()`
+  > return a user with `email: null`. The app sets the profile `username` to a
+  > shortened wallet address (`0x1234…abcd`) as a best-effort display name. If you
+  > need email-based features for wallet users, prompt them to link an email via
+  > `supabase.auth.updateUser({ email })` after sign-in.
+
 - **Anonymous sign-ins** — toggle *Allow anonymous sign-ins* (required for
   `signInAsGuest()` in `src/auth.js`).
 

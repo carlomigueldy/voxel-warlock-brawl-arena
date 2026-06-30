@@ -415,13 +415,23 @@ export class UI {
         }
       });
 
-      const googleBtn = document.createElement("button");
-      googleBtn.type = "button";
-      googleBtn.className = "btn btn-ghost auth-google-btn";
-      googleBtn.textContent = "Continue with Google";
-      googleBtn.addEventListener("click", () => this.handlers.googleSignIn?.());
+      const walletDivider = document.createElement("p");
+      walletDivider.className = "auth-wallet-divider";
+      walletDivider.textContent = "or connect a wallet";
 
-      fields.append(submitBtn, googleBtn);
+      const ethBtn = document.createElement("button");
+      ethBtn.type = "button";
+      ethBtn.className = "btn btn-ghost auth-wallet-btn auth-eth-btn";
+      ethBtn.textContent = "Sign in with Ethereum";
+      ethBtn.addEventListener("click", () => this.handlers.ethSignIn?.());
+
+      const solBtn = document.createElement("button");
+      solBtn.type = "button";
+      solBtn.className = "btn btn-ghost auth-wallet-btn auth-sol-btn";
+      solBtn.textContent = "Sign in with Solana";
+      solBtn.addEventListener("click", () => this.handlers.solSignIn?.());
+
+      fields.append(submitBtn, walletDivider, ethBtn, solBtn);
     }
 
     container.appendChild(fields);

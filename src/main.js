@@ -11,7 +11,7 @@ import { preloadAssets } from "./loader.js";
 
 // Online services — all modules no-op gracefully when Supabase is not configured.
 import { isEnabled } from "./supabase.js";
-import { initAuth, getUser, onAuthChange, signUpEmail, signInEmail, signInWithGoogle, signInAsGuest, upgradeGuest, signOut } from "./auth.js";
+import { initAuth, getUser, onAuthChange, signUpEmail, signInEmail, signInWithEthereum, signInWithSolana, signInAsGuest, upgradeGuest, signOut } from "./auth.js";
 import { getRegion, setRegion } from "./region.js";
 import { publishRoom, heartbeat, closeRoom, listRooms, subscribeRooms, quickMatch as qmatch } from "./matchmaking.js";
 import { submitMatchResult, fetchLeaderboard } from "./leaderboard.js";
@@ -474,12 +474,21 @@ ui.on("signIn", async ({ email, password }) => {
   }
 });
 
-ui.on("googleSignIn", async () => {
+ui.on("ethSignIn", async () => {
   try {
-    await signInWithGoogle();
+    await signInWithEthereum();
     ui.renderAuthState(getUser());
   } catch (err) {
-    ui.setMenuStatus("Google sign-in failed: " + (err.message || err));
+    ui.setMenuStatus("Ethereum sign-in failed: " + (err.message || err));
+  }
+});
+
+ui.on("solSignIn", async () => {
+  try {
+    await signInWithSolana();
+    ui.renderAuthState(getUser());
+  } catch (err) {
+    ui.setMenuStatus("Solana sign-in failed: " + (err.message || err));
   }
 });
 

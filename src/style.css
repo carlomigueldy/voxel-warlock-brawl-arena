@@ -1116,7 +1116,13 @@ html, body {
 }
 .auth-tab-btn:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
 .auth-fields { display: flex; flex-direction: column; gap: 10px; }
-.auth-google-btn { margin-top: 2px; }
+.auth-wallet-divider {
+  font-size: 11px; color: var(--muted); text-align: center;
+  margin: 4px 0 2px; letter-spacing: 0.04em; user-select: none;
+}
+.auth-wallet-btn { margin-top: 0; }
+.auth-eth-btn:focus-visible,
+.auth-sol-btn:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
 .auth-upgrade-title { font-size: 13px; color: var(--muted); margin-bottom: 2px; }
 
 /* ---- Identity badge ---- */
