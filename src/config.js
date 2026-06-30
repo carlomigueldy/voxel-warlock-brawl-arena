@@ -174,12 +174,31 @@ export const CFG = {
   // --- Mobs ---
   // Neutral PvE mobs that spawn during the PLAYING phase and drop ability runes
   // on death.  Stats live here; class / AI / physics live in src/mob.js.
-  MOB_MAX_ALIVE:    4,    // cap on simultaneously alive big mobs (minions excluded)
+  MOB_MAX_ALIVE:    4,    // hard ceiling on simultaneously alive big mobs (minions excluded)
   MOB_MAX_CHILDREN: 2,    // max minions per big-mob parent
   MOB_SPAWN_MIN:    6,    // seconds between mob spawns (lower bound)
   MOB_SPAWN_MAX:   14,    // seconds between mob spawns (upper bound)
   MOB_SPAWN_INVULN: 0.6,  // post-spawn invulnerability window (seconds)
   MOB_MINION_CD:   15,    // cooldown between minion-spawn actions per parent (s)
+  MOB_ENTRANCE:    2.5,   // cinematic telegraph window: mob is locked + invulnerable (s)
+
+  // Health scaling by alive player count. Effective maxHits =
+  //   round(base * (MOB_HP_MIN_FACTOR + MOB_HP_PER_PLAYER * max(0, players - 2)))
+  // floored at 1.  At 2 players ≈ 0.55× base (killable in reasonable time since
+  // each big mob drops an ability rune); at 6 players ≈ 1.27× base.  Tunable.
+  MOB_HP_MIN_FACTOR: 0.55,
+  MOB_HP_PER_PLAYER: 0.18,
+
+  // Staged alive-cap: as the arena shrinks (progress 0→1 from start radius down to
+  // ARENA_MIN_RADIUS) the number of big mobs allowed alive at once rises.  Early
+  // game runs one-at-a-time (replaced on death); the remaining creatures are
+  // released as the land closes in.  Highest step whose `at <= progress` wins.
+  MOB_SHRINK_CAP_STEPS: [
+    { at: 0.00, cap: 1 },
+    { at: 0.40, cap: 2 },
+    { at: 0.70, cap: 3 },
+    { at: 0.90, cap: 4 },
+  ],
 
   // Per-type stat tables.
   // `attack`     : "melee" | "ranged"
@@ -196,6 +215,10 @@ export const CFG = {
   // `boltToKb`   : small knockback shove a player bolt gives to the mob
   //                (≈2–4; lets skilled play push mobs toward the lava)
   // `canSpawnMinions`: whether this type may spawn melee minions
+  // `entrance`   : cinematic spawn descriptor consumed by renderer + sim:
+  //                { kind: "shatter"|"storm"|"summon"|"meteor", kb?, radius? }
+  //                kb/radius (summon, meteor) apply an AoE knockback to players
+  //                inside `radius` at the moment the entrance completes.
   // ranged-only keys: `rangedKb`, `rangedEvery`, `rangedRange`
   MOB_TYPES: {
     stoneGiant: {
@@ -213,6 +236,8 @@ export const CFG = {
       abilityRadius:  7,
       boltToKb:       2,
       canSpawnMinions: true,
+      // Emerges from a crumbling boulder that breaks apart.
+      entrance:      { kind: "shatter" },
     },
     stormingVortex: {
       name:          "Storming Vortex",
@@ -232,6 +257,8 @@ export const CFG = {
       abilityRadius:  8,
       boltToKb:       4,
       canSpawnMinions: true,
+      // Descends from a storm cloud with a lightning strike.
+      entrance:      { kind: "storm" },
     },
     giantDwarf: {
       name:          "Giant Dwarf",
@@ -248,6 +275,8 @@ export const CFG = {
       abilityRadius:  6,
       boltToKb:       3,
       canSpawnMinions: true,
+      // Slams down from above; shockwave knocks nearby players back on arrival.
+      entrance:      { kind: "summon", kb: 26, radius: 6 },
     },
     fireElemental: {
       name:          "Fire Elemental",
@@ -267,6 +296,8 @@ export const CFG = {
       abilityRadius:  5,
       boltToKb:       3.5,
       canSpawnMinions: true,
+      // Arrives as a flaming meteor; blast knocks nearby players back on impact.
+      entrance:      { kind: "meteor", kb: 30, radius: 6 },
     },
     minion: {
       name:          "Minion",

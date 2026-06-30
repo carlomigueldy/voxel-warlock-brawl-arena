@@ -339,6 +339,62 @@ export function buildMeteor(x, z, fall, radius, color) {
   return g;
 }
 
+// Dark storm clouds that hover over a location during the Storming Vortex
+// "storm" cinematic entrance. Returns a transient effect group with the standard
+// update(dt) / done convention consumed by the renderer's effects list.
+export function buildStormClouds(x, z) {
+  const g = new THREE.Group();
+  const life = 3.0;
+  const cloudY = 7;
+  const cloudColor  = 0x3a4a88;
+  const accentColor = 0x7adfff;
+
+  // Cluster of dark blocky puff shapes at varying offsets for depth.
+  const offsets = [
+    [0,    0,    0   ],
+    [-1.4, 0.3,  0.6 ],
+    [ 1.2, -0.2, -0.7],
+    [ 0.5, 0.5,  1.4 ],
+    [-0.8, 0.1,  -1.2],
+  ];
+  for (let i = 0; i < offsets.length; i++) {
+    const [ox, oy, oz] = offsets[i];
+    const w = 1.2 + (i % 3) * 0.35;
+    const h = 0.45 + (i % 2) * 0.20;
+    const d = 0.9  + (i % 2) * 0.25;
+    const cloud = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshBasicMaterial({
+        color: i % 2 === 0 ? cloudColor : 0x4a5aaa,
+        transparent: true,
+        opacity: 0.80,
+      })
+    );
+    cloud.position.set(x + ox, cloudY + oy, z + oz);
+    g.add(cloud);
+  }
+
+  // Electric glow beneath the cloud mass.
+  const glow = new THREE.PointLight(accentColor, 2.0, 14);
+  glow.position.set(x, cloudY - 1, z);
+  g.add(glow);
+
+  g.userData.t    = 0;
+  g.userData.life = life;
+  g.userData.done = false;
+  g.userData.update = (dt) => {
+    g.userData.t += dt;
+    const k       = g.userData.t / life;
+    const opacity = Math.max(0, (1 - k) * 0.80);
+    for (const child of g.children) {
+      if (child.material) child.material.opacity = opacity;
+    }
+    glow.intensity = Math.max(0, 2.0 * (1 - k * 1.5));
+    if (k >= 1) g.userData.done = true;
+  };
+  return g;
+}
+
 // Build the voxel platform mesh for a given radius using merged boxes.
 // We rebuild it when the radius changes (shrinking arena).
 export function buildPlatform(radius, worldId = CFG.DEFAULT_ARENA_WORLD) {

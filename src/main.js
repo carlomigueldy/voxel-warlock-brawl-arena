@@ -189,6 +189,7 @@ function startHosting(name, options = {}) {
     renderer.apply(snap, playerMeta);
     if (snap.phase !== PHASE.LOBBY) {
       ui.updateHUD(snap, localId, playerMeta);
+      ui.handleEvents(snap.events, snap.t);
       syncLocalSpellSlots(snap);
       ui.updateAbilityBar(snap, localId);
       playTransitionAudio(snap);
@@ -265,6 +266,7 @@ function startJoining(name, code, character) {
       renderer.apply(latestSnapshot, playerMeta);
       if (latestSnapshot.phase !== PHASE.LOBBY) {
         ui.updateHUD(latestSnapshot, localId, playerMeta);
+        ui.handleEvents(latestSnapshot.events, latestSnapshot.t);
         ui.updateAbilityBar(latestSnapshot, localId);
         playTransitionAudio(latestSnapshot);
       }
