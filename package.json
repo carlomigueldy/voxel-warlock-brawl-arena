@@ -4,6 +4,9 @@
   "description": "A 3D low-poly voxel Warlock Brawl clone (Three.js + WebGL) with P2P multiplayer (invite link, room code, QR code).",
   "type": "module",
   "scripts": {
+    "gen:config": "node scripts/gen-supabase-config.mjs",
+    "vercel-build": "node scripts/gen-supabase-config.mjs",
+    "prestart": "node scripts/gen-supabase-config.mjs",
     "start": "python3 -m http.server ${PORT:-8080}",
     "serve": "python3 -m http.server ${PORT:-8080}",
     "dev": "npx --yes serve -l ${PORT:-8080} .",
