@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
 import { CFG, getArenaHazard } from "../src/config.js";
+import { effectPos } from "../src/renderer-util.js";
 
 let passed = 0;
 function test(name, fn) {
@@ -15,6 +16,7 @@ const ui = fs.readFileSync("src/ui.js", "utf8");
 const input = fs.readFileSync("src/input.js", "utf8");
 const html = fs.readFileSync("index.html", "utf8");
 const renderer = fs.readFileSync("src/renderer.js", "utf8");
+const css = fs.readFileSync("src/style.css", "utf8");
 
 test("host start is gated by Simulation.startMatch result", () => {
   assert.match(main, /if \(!sim\.startMatch\(\)\)/);
@@ -434,6 +436,65 @@ test("syncLocalSpellSlots (or setSpellSlots) is called inside both host and clie
   const clientLoopBlock = main.match(/function clientLoop[\s\S]*?requestAnimationFrame\(clientLoop\)/)?.[0] || "";
   assert.match(clientLoopBlock, /syncLocalSpellSlots/,
     "syncLocalSpellSlots must appear inside the clientLoop function body");
+});
+
+// --- Bug-1 regression: death-freeze root cause ---
+
+test("death handler delegates to effectPos(deadMesh) and does not read .position directly", () => {
+  // The call site must use effectPos — the helper owns the .group.position access.
+  assert.match(renderer, /effectPos\(deadMesh\)/,
+    "renderer must call effectPos(deadMesh) in the death handler");
+  assert.doesNotMatch(renderer, /deadMesh\.position\./,
+    "renderer must not read .position directly off the mesh entry");
+});
+
+test("effectPos helper in renderer-util uses .group.position (not bare .position)", () => {
+  const util = fs.readFileSync("src/renderer-util.js", "utf8");
+  assert.match(util, /group\.position/,
+    "renderer-util.js must read through .group.position");
+  assert.doesNotMatch(util, /entry\.position\./,
+    "renderer-util.js must not read .position directly off the entry");
+});
+
+// Behavioral tests: exercise both branches of effectPos without loading THREE.js
+test("effectPos returns group position and entry colour for a present entry", () => {
+  const entry = { group: { position: { x: 7, z: -3 } }, color: 0xff0000 };
+  const pos = effectPos(entry);
+  assert.strictEqual(pos.x, 7,     "x must come from entry.group.position.x");
+  assert.strictEqual(pos.z, -3,    "z must come from entry.group.position.z");
+  assert.strictEqual(pos.color, 0xff0000, "color must come from entry.color");
+});
+
+test("effectPos returns {0, 0, white} when entry is absent (player already removed)", () => {
+  const pos = effectPos(null);
+  assert.strictEqual(pos.x, 0,          "x must be 0 when no entry");
+  assert.strictEqual(pos.z, 0,          "z must be 0 when no entry");
+  assert.strictEqual(pos.color, 0xffffff, "color must default to white when no entry");
+});
+
+test("effectPos returns white when entry exists but color is missing (undefined)", () => {
+  const entry = { group: { position: { x: 1, z: 2 } } }; // no .color
+  const pos = effectPos(entry);
+  assert.strictEqual(pos.color, 0xffffff,
+    "color must fall back to 0xffffff when entry.color is undefined");
+});
+
+test("link and pocketwatch handlers also read position through .group", () => {
+  assert.doesNotMatch(renderer, /(aMesh|bMesh|pwMesh)\.position\./);
+});
+
+test("hostLoop survives a throwing frame (try/catch wraps body, rAF stays outside)", () => {
+  assert.match(main, /function hostLoop[\s\S]*?try \{[\s\S]*?catch[\s\S]*?requestAnimationFrame\(hostLoop\)/);
+});
+
+test("clientLoop survives a throwing frame (try/catch wraps body, rAF stays outside)", () => {
+  assert.match(main, /function clientLoop[\s\S]*?try \{[\s\S]*?catch[\s\S]*?requestAnimationFrame\(clientLoop\)/);
+});
+
+// --- Bug-2 regression: unstyled item bar ---
+
+test("item bar has a positioned CSS rule with pointer-events auto", () => {
+  assert.match(css, /#item-bar\s*\{[\s\S]*?position:\s*fixed[\s\S]*?pointer-events:\s*auto/);
 });
 
 console.log(`\n${passed} source checks passed.`);

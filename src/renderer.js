@@ -19,6 +19,7 @@ import {
   buildCharacterInstance,
 } from "./character.js";
 import { archetypeForEvent } from "./animations.js";
+import { effectPos } from "./renderer-util.js";
 
 export const MESHY_ASSETS = {
   rune: "assets/meshy/ability-rune.glb",
@@ -658,10 +659,10 @@ export class GameRenderer {
           break;
         case "death": {
           // Large colour-matched burst + ring pulse at the player's last position.
+          // effectPos() reads through .group.position (the scene node), not the
+          // raw entry itself, and gracefully falls back when the entry is absent.
           const deadMesh = this.playerMeshes?.get(ev.id);
-          const deadColor = deadMesh?.color ?? 0xffffff;
-          const deadX = deadMesh ? deadMesh.position.x : 0;
-          const deadZ = deadMesh ? deadMesh.position.z : 0;
+          const { x: deadX, z: deadZ, color: deadColor } = effectPos(deadMesh);
           this._addEffect(this._burstAt(deadX, deadZ, deadColor, { count: 32, speed: 12, life: 0.9 }));
           this._addEffect(this._ringPulse(deadX, deadZ, 2.5, deadColor));
           this.audio?.play("death");
@@ -764,15 +765,15 @@ export class GameRenderer {
           // Link tether cast: burst at both ends (caster a and target b).
           const aMesh = this.playerMeshes?.get(ev.a);
           const bMesh = this.playerMeshes?.get(ev.b);
-          if (aMesh) this._addEffect(this._burstAt(aMesh.position.x, aMesh.position.z, 0xff66cc, { count: 14, speed: 7, life: 0.45 }));
-          if (bMesh) this._addEffect(this._burstAt(bMesh.position.x, bMesh.position.z, 0xff66cc, { count: 14, speed: 7, life: 0.45 }));
+          if (aMesh) this._addEffect(this._burstAt(aMesh.group.position.x, aMesh.group.position.z, 0xff66cc, { count: 14, speed: 7, life: 0.45 }));
+          if (bMesh) this._addEffect(this._burstAt(bMesh.group.position.x, bMesh.group.position.z, 0xff66cc, { count: 14, speed: 7, life: 0.45 }));
           break;
         }
         case "pocketwatch": {
           // Pocket Watch: golden burst at the caster.
           const pwMesh = this.playerMeshes?.get(ev.id);
-          const pwX = pwMesh ? pwMesh.position.x : 0;
-          const pwZ = pwMesh ? pwMesh.position.z : 0;
+          const pwX = pwMesh ? pwMesh.group.position.x : 0;
+          const pwZ = pwMesh ? pwMesh.group.position.z : 0;
           this._addEffect(this._burstAt(pwX, pwZ, 0xffd23c, { count: 20, speed: 8, life: 0.5 }));
           this._addEffect(this._ringPulse(pwX, pwZ, 2.0, 0xffd23c));
           break;

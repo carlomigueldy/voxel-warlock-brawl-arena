@@ -574,6 +574,13 @@ html, body {
   display: flex; gap: 7px; flex-wrap: wrap; justify-content: center;
   max-width: 96vw; z-index: 6; pointer-events: auto;
 }
+
+/* ===== Item bar (4 active-item slots, reuses .ability-slot styling) ===== */
+#item-bar {
+  position: fixed; right: 16px; bottom: 130px; left: auto; transform: none;
+  display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end;
+  max-width: 40vw; z-index: 6; pointer-events: auto;
+}
 .ability-slot {
   position: relative; width: 66px; height: 64px;
   background: rgba(24,20,51,0.85); border: 1px solid var(--line-strong);

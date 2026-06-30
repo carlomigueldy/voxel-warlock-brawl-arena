@@ -212,23 +212,30 @@ function startHosting(name, options = {}) {
     latestSnapshot = snap;
     host.broadcast({ type: MSG.STATE, ...snap });
 
-    renderer.apply(snap, playerMeta);
-    if (snap.phase !== PHASE.LOBBY) {
-      ui.updateHUD(snap, localId, playerMeta);
-      ui.handleEvents(snap.events, snap.t);
-      syncLocalSpellSlots(snap);
-      ui.updateAbilityBar(snap, localId);
-      ui.updateItemBar(snap, localId);
-      playTransitionAudio(snap);
+    // Isolate rendering/UI from simulation & broadcast so a transient render
+    // error doesn't silently swallow a persistent sim/network fault that would
+    // otherwise desync clients (Hard rule: sim.step + host.broadcast stay
+    // outside the guard so real faults still surface as loud crashes).
+    try {
+      renderer.apply(snap, playerMeta);
+      if (snap.phase !== PHASE.LOBBY) {
+        ui.updateHUD(snap, localId, playerMeta);
+        ui.handleEvents(snap.events, snap.t);
+        syncLocalSpellSlots(snap);
+        ui.updateAbilityBar(snap, localId);
+        ui.updateItemBar(snap, localId);
+        playTransitionAudio(snap);
 
-      // On match end: submit result + close the online room.
-      if (snap.phase === PHASE.MATCH_END && _isOnline && !_matchResultSubmitted) {
-        _matchResultSubmitted = true;
-        _teardownOnlineRoom(snap);
+        // On match end: submit result + close the online room.
+        if (snap.phase === PHASE.MATCH_END && _isOnline && !_matchResultSubmitted) {
+          _matchResultSubmitted = true;
+          _teardownOnlineRoom(snap);
+        }
       }
+      renderer.update();
+    } catch (err) {
+      console.error("[hostLoop] frame error (continuing):", err);
     }
-    renderer.update();
-
     if (sessionGen === mySession) requestAnimationFrame(hostLoop);
   }
   requestAnimationFrame(hostLoop);
@@ -302,21 +309,27 @@ function startJoining(name, code, character, { userId, region } = {}) {
       client.sendInput(input.sample());
       lastInput = now;
     }
-    if (latestSnapshot) {
-      for (const p of latestSnapshot.players) {
-        if (!playerMeta.has(p.id)) playerMeta.set(p.id, { name: "warlock", colorIndex: 0, userId: null });
+    // Isolate rendering/UI from input-send so a transient render error doesn't
+    // swallow a persistent network fault (client.sendInput stays outside the guard).
+    try {
+      if (latestSnapshot) {
+        for (const p of latestSnapshot.players) {
+          if (!playerMeta.has(p.id)) playerMeta.set(p.id, { name: "warlock", colorIndex: 0, userId: null });
+        }
+        renderer.apply(latestSnapshot, playerMeta);
+        if (latestSnapshot.phase !== PHASE.LOBBY) {
+          ui.updateHUD(latestSnapshot, localId, playerMeta);
+          ui.handleEvents(latestSnapshot.events, latestSnapshot.t);
+          syncLocalSpellSlots(latestSnapshot);
+          ui.updateAbilityBar(latestSnapshot, localId);
+          ui.updateItemBar(latestSnapshot, localId);
+          playTransitionAudio(latestSnapshot);
+        }
       }
-      renderer.apply(latestSnapshot, playerMeta);
-      if (latestSnapshot.phase !== PHASE.LOBBY) {
-        ui.updateHUD(latestSnapshot, localId, playerMeta);
-        ui.handleEvents(latestSnapshot.events, latestSnapshot.t);
-        syncLocalSpellSlots(latestSnapshot);
-        ui.updateAbilityBar(latestSnapshot, localId);
-        ui.updateItemBar(latestSnapshot, localId);
-        playTransitionAudio(latestSnapshot);
-      }
+      renderer.update();
+    } catch (err) {
+      console.error("[clientLoop] frame error (continuing):", err);
     }
-    renderer.update();
     if (sessionGen === mySession) requestAnimationFrame(clientLoop);
   }
   requestAnimationFrame(clientLoop);
