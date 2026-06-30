@@ -299,6 +299,7 @@ export class GameRenderer {
     if (e) {
       const char = e.group.userData.character;
       if (char?.mixer) char.mixer.stopAllAction();
+      char?.dispose?.(); // frees per-instance glyph texture + geometry + material
       this.scene.remove(e.group);
       this._disposeGroup(e.group, e.usingGLB);
       this.playerMeshes.delete(id);

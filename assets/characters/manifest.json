@@ -1,0 +1,82 @@
+{
+  "provider": "Meshy.AI MCP",
+  "generatedAt": "2026-06-30",
+  "style": "cute chibi voxel low-poly, crisp cubic MagicaVoxel aesthetic, flat-shaded in-engine",
+  "pipeline": [
+    "text_to_image (nano-banana-pro, t-pose)",
+    "image_to_3d (meshy-6, t-pose)",
+    "remesh (25000 tris, triangle)",
+    "rig (auto, includes walking + running)"
+  ],
+  "note": "Game loads 3 GLBs per character: <slug>-rigged.glb (idle clip0), -walking.glb (walk), -running.glb (run). Internal character ids (ember/frost/storm/moss) are unchanged; only display metadata + models were re-themed. Orc required normal (non-chibi) humanoid proportions for Meshy auto-rig pose estimation to succeed.",
+  "characters": [
+    {
+      "id": "ember",
+      "displayName": "Undead Warlock",
+      "slug": "undead-warlock",
+      "prompt": "cute chibi voxel low-poly undead warlock, skull face glowing green eyes, dark-green hooded robe, brown belt, skull staff",
+      "tasks": {
+        "textToImage": "019f1628-c28b-7ff5-91ba-5e6eb96740ab",
+        "imageTo3d": "019f162b-0125-70cd-993a-7fa44acfef67",
+        "remesh": "019f1631-7bfd-7650-8124-88c90f2b1662",
+        "rig": "019f1633-0883-7bad-bc0b-6395172e5378"
+      },
+      "files": [
+        "undead-warlock-rigged.glb",
+        "undead-warlock-walking.glb",
+        "undead-warlock-running.glb"
+      ]
+    },
+    {
+      "id": "frost",
+      "displayName": "Archmage",
+      "slug": "archmage",
+      "prompt": "cute chibi voxel low-poly human archmage (Khadgar), blue and gold robes, pointed hood, beard, rune staff",
+      "tasks": {
+        "textToImage": "019f162b-1299-70ce-9100-0addbaed1fb5",
+        "imageTo3d": "019f162d-c7cf-70e7-bd6e-cb69e6de788f",
+        "remesh": "019f1631-8493-7651-a601-70c53278adaf",
+        "rig": "019f1633-3051-7666-a1db-eaa63aef6674"
+      },
+      "files": [
+        "archmage-rigged.glb",
+        "archmage-walking.glb",
+        "archmage-running.glb"
+      ]
+    },
+    {
+      "id": "storm",
+      "displayName": "Orc Shaman",
+      "slug": "orc-shaman",
+      "prompt": "voxel low-poly orc shaman, normal heroic proportions, green skin, tusks, black topknot, tribal leather vest and fur shoulder, brown belt and boots",
+      "tasks": {
+        "textToImage": "019f1650-e05b-734a-92c8-031eb6ad9386",
+        "imageTo3d": "019f1651-e50a-736a-a203-9f682d14fc0f",
+        "remesh": "019f1653-f714-73b9-b0ad-4ffa6d199402",
+        "rig": "019f1654-93c0-73da-9e87-db12a1a273c3"
+      },
+      "files": [
+        "orc-shaman-rigged.glb",
+        "orc-shaman-walking.glb",
+        "orc-shaman-running.glb"
+      ]
+    },
+    {
+      "id": "moss",
+      "displayName": "Blood Elf Mage",
+      "slug": "bloodelf-mage",
+      "prompt": "cute chibi voxel low-poly female blood elf mage, blonde hair, crimson and gold robes, red eyes, fel-green crystal staff",
+      "tasks": {
+        "textToImage": "019f162b-32eb-7c38-82cc-59508a64046a",
+        "imageTo3d": "019f162d-dffc-7cfe-ae2f-77379e84e5d1",
+        "remesh": "019f1631-a2eb-762d-bd72-0a28d18c5768",
+        "rig": "019f1633-7106-7bd1-a447-437204bcec72"
+      },
+      "files": [
+        "bloodelf-mage-rigged.glb",
+        "bloodelf-mage-walking.glb",
+        "bloodelf-mage-running.glb"
+      ]
+    }
+  ]
+}

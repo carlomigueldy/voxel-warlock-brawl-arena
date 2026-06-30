@@ -1,0 +1,3 @@
+# Project Memory
+
+- **2026-06-30 — Chibi voxel character regen via Meshy.AI** — All 4 playable characters were re-generated as cute chibi voxel low-poly models using the pipeline: text_to_image → image_to_3d → remesh (25k faces) → rig. Rendered with flat shading; player color is now expressed via a glowing hero glyph overlay (old body-tint approach dropped). Internal IDs unchanged (ember/frost/storm/moss); display names are now Undead Warlock / Archmage / Orc Shaman / Blood Elf Mage. Generation is reproducible from [`assets/characters/manifest.json`](../assets/characters/manifest.json). **GOTCHA:** Meshy auto-rig pose-estimation fails on extreme-chibi oversized-head proportions — the Orc Shaman (storm) required normal humanoid proportions to rig successfully.

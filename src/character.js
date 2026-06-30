@@ -4,30 +4,32 @@ import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { CFG } from "./config.js";
 import { CastAnimator } from "./animations.js";
 
-// Each selectable character is a Meshy-rigged voxel warlock with its own
-// skinned walk/run clips. The skeletons share the same bone layout, so the
-// CastAnimator overlays (animations.js) apply uniformly across all of them.
+// Each selectable character is a Meshy voxel low-poly warlock rendered with
+// flat shading (no smoothed normals, no baked normal maps) so cubic MagicaVoxel-
+// style facets read as hard planes. A glowing hero glyph marks each instance;
+// there is no body tint — native Meshy colors are preserved. The skeletons share
+// the same bone layout, so CastAnimator overlays (animations.js) apply uniformly.
 const url = (p) => new URL(p, import.meta.url).href;
 export const CHARACTER_ASSETS = {
   ember: {
-    base: url("../assets/characters/ember-warlock-rigged.glb"),
-    walk: url("../assets/characters/ember-warlock-walking.glb"),
-    run: url("../assets/characters/ember-warlock-running.glb"),
+    base: url("../assets/characters/undead-warlock-rigged.glb"),
+    walk: url("../assets/characters/undead-warlock-walking.glb"),
+    run: url("../assets/characters/undead-warlock-running.glb"),
   },
   frost: {
-    base: url("../assets/characters/frost-mage-rigged.glb"),
-    walk: url("../assets/characters/frost-mage-walking.glb"),
-    run: url("../assets/characters/frost-mage-running.glb"),
+    base: url("../assets/characters/archmage-rigged.glb"),
+    walk: url("../assets/characters/archmage-walking.glb"),
+    run: url("../assets/characters/archmage-running.glb"),
   },
   storm: {
-    base: url("../assets/characters/storm-shaman-rigged.glb"),
-    walk: url("../assets/characters/storm-shaman-walking.glb"),
-    run: url("../assets/characters/storm-shaman-running.glb"),
+    base: url("../assets/characters/orc-shaman-rigged.glb"),
+    walk: url("../assets/characters/orc-shaman-walking.glb"),
+    run: url("../assets/characters/orc-shaman-running.glb"),
   },
   moss: {
-    base: url("../assets/characters/moss-necromancer-rigged.glb"),
-    walk: url("../assets/characters/moss-necromancer-walking.glb"),
-    run: url("../assets/characters/moss-necromancer-running.glb"),
+    base: url("../assets/characters/bloodelf-mage-rigged.glb"),
+    walk: url("../assets/characters/bloodelf-mage-walking.glb"),
+    run: url("../assets/characters/bloodelf-mage-running.glb"),
   },
 };
 export const DEFAULT_CHARACTER = "ember";
@@ -112,19 +114,29 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
   const model = cloneSkinned(template.scene);
   root.add(model);
 
-  const tint = new THREE.Color(color);
+  // Clone materials per instance (so the renderer's per-player emissive/charge
+  // writes never bleed across players) and force flat shading without baked
+  // normal maps so the voxel facets read as hard cubic planes. Native Meshy
+  // colors are preserved — player identity is shown by the hero glyph below.
   model.traverse((o) => {
     if ((o.isMesh || o.isSkinnedMesh) && o.material) {
       const wasArray = Array.isArray(o.material);
       const mats = wasArray ? o.material : [o.material];
-      const tinted = mats.map((m) => {
+      const cloned = mats.map((m) => {
         const c = m.clone();
-        if (c.color) c.color.lerp(tint, 0.45);
+        c.flatShading = true;
+        c.normalMap = null;
+        c.needsUpdate = true;
         return c;
       });
-      o.material = wasArray ? tinted : tinted[0];
+      o.material = wasArray ? cloned : cloned[0];
     }
   });
+
+  // Warcraft III–style glowing hero glyph at the feet, colored by the player
+  // color. Carries multiplayer identity so the model keeps its native colors.
+  const glyph = makeHeroGlyph(color);
+  root.add(glyph);
 
   const mixer = new THREE.AnimationMixer(model);
   const actions = {};
@@ -156,11 +168,21 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
     current,
     cast: new CastAnimator(),
     w: { idle: current === actions.idle ? 1 : 0, walk: 0, run: 0 },
+    glyph,
+    glyphBaseOpacity: 0.4,
   };
 
   // Fire a cast animation archetype (attack/slam/dash/buff/channel). Triggered
   // by the renderer when the simulation reports this warlock cast something.
   state.triggerCast = (archetype) => state.cast.trigger(archetype);
+
+  // Free the per-instance glyph GPU resources when the player mesh is torn down
+  // (renderer.removePlayer calls this). Material.dispose() does NOT free its map.
+  state.dispose = () => {
+    glyph.geometry.dispose();
+    if (glyph.material.map) glyph.material.map.dispose();
+    glyph.material.dispose();
+  };
 
   state.update = (info) => {
     const dt = Math.min(0.05, Math.max(0.0001, info.dt || 0.016));
@@ -203,10 +225,59 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
     // bespoke skinned clip per ability.
     state.cast.update(dt);
     applyCastOverlay(model, restPos, restRot, state.cast, info);
+
+    // Gentle pulse on the hero glyph; brighten slightly with charge.
+    if (state.glyph) {
+      const t = info.time || 0;
+      const charge = info.charge || 0;
+      state.glyph.material.opacity = state.glyphBaseOpacity + 0.1 * Math.sin(t * 2) + 0.06 * charge;
+      state.glyph.scale.setScalar(1 + 0.04 * Math.sin(t * 2.4 + 0.8) + 0.06 * charge);
+    }
   };
 
   root.userData.character = state;
   return root;
+}
+
+// Procedural WC3-style hero glyph: a flat additive disc at the feet with a soft
+// radial gradient and two faint rune rings, tinted to the player color. Built
+// per instance so it can be disposed with the player mesh.
+function makeHeroGlyph(color) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  const cx = 128, cy = 128;
+  const grad = ctx.createRadialGradient(cx, cy, 8, cx, cy, 128);
+  grad.addColorStop(0, "rgba(255,255,255,0.95)");
+  grad.addColorStop(0.35, "rgba(255,255,255,0.45)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(cx, cy, 96, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, 70, 0, Math.PI * 2); ctx.stroke();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    color: new THREE.Color(color),
+    transparent: true,
+    opacity: 0.4,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const geo = new THREE.CircleGeometry(TARGET_HEIGHT * 0.55, 48);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.02;
+  mesh.renderOrder = -1;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.frustumCulled = false;
+  return mesh;
 }
 
 // Distinct whole-body poses per cast archetype, blended in by the CastAnimator
