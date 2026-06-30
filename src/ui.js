@@ -40,11 +40,17 @@ export class UI {
       // Tutorial
       tutSpellbookList: $("tut-spellbook-list"),
       btnPractice: $("btn-practice"),
+      // ESC pause menu
+      pauseMenu: $("pause-menu"), pauseResume: $("pause-resume"),
+      pauseSfx: $("pause-sfx"), pauseMusic: $("pause-music"),
+      pauseHelp: $("pause-help"), pauseControls: $("pause-controls"),
+      pauseLeave: $("pause-leave"),
       // Big-mob incoming announcement banner.
       mobBanner: $("mob-banner"),
     };
     this.handlers = {};
     this.audio = null;
+    this._paused = false;
     this._mobBannerTimer = null;
     this._lastHandledSnapTime = null;
     this._abilityEls = null;
@@ -354,19 +360,38 @@ export class UI {
 
   setAudio(audio) {
     this.audio = audio;
-    if (this.el.btnSfx) {
-      this.el.btnSfx.onclick = () => {
-        const on = this.el.btnSfx.classList.toggle("off");
-        audio.setEnabled(!on);
-        this.el.btnSfx.textContent = on ? "SFX: Off" : "SFX: On";
-      };
+    this._sfxOff = false;
+    this._musicOff = false;
+    const bindToggle = (btn, fn) => { if (btn) btn.onclick = fn; };
+    bindToggle(this.el.btnSfx, () => this._toggleSfx());
+    bindToggle(this.el.pauseSfx, () => this._toggleSfx());
+    bindToggle(this.el.btnMusic, () => this._toggleMusic());
+    bindToggle(this.el.pauseMusic, () => this._toggleMusic());
+    this._syncAudioButtons();
+  }
+
+  // SFX/Music toggles are shared by the HUD controls and the pause menu, so
+  // both button pairs always reflect the same AudioEngine state.
+  _toggleSfx() {
+    this._sfxOff = !this._sfxOff;
+    this.audio?.setEnabled(!this._sfxOff);
+    this._syncAudioButtons();
+  }
+
+  _toggleMusic() {
+    this._musicOff = !this._musicOff;
+    this.audio?.setMusic(!this._musicOff);
+    this._syncAudioButtons();
+  }
+
+  _syncAudioButtons() {
+    const sfxLabel = this._sfxOff ? "SFX: Off" : "SFX: On";
+    const musicLabel = this._musicOff ? "Music: Off" : "Music: On";
+    for (const b of [this.el.btnSfx, this.el.pauseSfx]) {
+      if (b) { b.classList.toggle("off", this._sfxOff); b.textContent = sfxLabel; }
     }
-    if (this.el.btnMusic) {
-      this.el.btnMusic.onclick = () => {
-        const off = this.el.btnMusic.classList.toggle("off");
-        audio.setMusic(!off);
-        this.el.btnMusic.textContent = off ? "Music: Off" : "Music: On";
-      };
+    for (const b of [this.el.btnMusic, this.el.pauseMusic]) {
+      if (b) { b.classList.toggle("off", this._musicOff); b.textContent = musicLabel; }
     }
   }
 
@@ -636,6 +661,11 @@ export class UI {
     this.el.botSkill?.addEventListener("change", () => this.handlers.bots?.(this.getBotSettings()));
     this.el.btnCopyCode.onclick = () => this._copy(this.currentCode, this.el.btnCopyCode, "Copy Code");
     this.el.btnCopyLink.onclick = () => this._copy(this._inviteLink(), this.el.btnCopyLink, "Copy Invite Link");
+
+    // ESC pause menu buttons.
+    if (this.el.pauseResume) this.el.pauseResume.onclick = () => { this.hidePause(); this.handlers.resume?.(); };
+    if (this.el.pauseLeave) this.el.pauseLeave.onclick = () => this.handlers.leaveMatch?.();
+    if (this.el.pauseHelp) this.el.pauseHelp.onclick = () => this._togglePauseControls();
   }
 
   _tryJoin() {
@@ -728,6 +758,7 @@ export class UI {
 
   // ---- screen transitions ----
   showMenu() {
+    this.hidePause();
     this.el.menu.classList.remove("hidden");
     this.el.lobby.classList.add("hidden");
     this.el.hud.classList.add("hidden");
@@ -757,6 +788,58 @@ export class UI {
     this._buildAbilityBar();
     if (this.el.abilityBar) this.el.abilityBar.classList.remove("hidden");
     if (this._touchEnabled && this.el.touch) this.el.touch.classList.remove("hidden");
+  }
+
+  // ---- ESC pause menu ----
+  showPause() {
+    if (!this.el.pauseMenu) return;
+    this.el.pauseMenu.classList.remove("hidden");
+    this._paused = true;
+  }
+
+  hidePause() {
+    if (this.el.pauseMenu) this.el.pauseMenu.classList.add("hidden");
+    if (this.el.pauseControls) this.el.pauseControls.classList.add("hidden");
+    this._paused = false;
+  }
+
+  /** Toggle the pause overlay; returns the new paused (visible) state. */
+  togglePause() {
+    if (this._paused) { this.hidePause(); return false; }
+    this._buildControlsPanel();
+    this.showPause();
+    return true;
+  }
+
+  _togglePauseControls() {
+    if (!this.el.pauseControls) return;
+    this._buildControlsPanel();
+    this.el.pauseControls.classList.toggle("hidden");
+  }
+
+  /** Render the keybind reference from the live spellbook + slot hotkeys. */
+  _buildControlsPanel() {
+    const el = this.el.pauseControls;
+    if (!el) return;
+    const rows = [
+      ["Move", "W A S D / Arrow keys"],
+      ["Aim", "Mouse"],
+      ["Fire", "Space / Left-click"],
+      ["Cast selected", "Right-click"],
+    ];
+    // Customizable ability-slot hotkeys (reflect any player remaps).
+    const slotKeys = this.spellSlotHotkeys || CFG.DEFAULT_SPELL_SLOT_HOTKEYS;
+    slotKeys.forEach((key, i) => {
+      rows.push([`Ability slot ${i + 1}`, String(key).toUpperCase()]);
+    });
+    // Default spell-cast keybinds straight from the spellbook definition.
+    for (const id of SPELL_ORDER) {
+      const s = SPELLS[id];
+      if (s?.key) rows.push([s.name, String(s.key).toUpperCase()]);
+    }
+    el.innerHTML = rows
+      .map(([k, v]) => `<div class="pause-control-row"><span>${escapeHTML(k)}</span><kbd>${escapeHTML(v)}</kbd></div>`)
+      .join("");
   }
 
   _renderQR(link) {

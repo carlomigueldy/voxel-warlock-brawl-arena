@@ -1270,3 +1270,68 @@ kbd {
   .tut-tab.is-active::before { animation: none !important; }
   .tut-spell-row { transition: none !important; }
 }
+
+/* ---- ESC pause menu ---- */
+.pause-overlay {
+  position: fixed; inset: 0; z-index: 15;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: rgba(6, 4, 16, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.pause-panel { width: min(420px, 100%); text-align: center; }
+.pause-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(18px, 4vw, 26px);
+  color: var(--arcane);
+  text-shadow: 0 0 18px rgba(108, 76, 255, 0.55), 0 3px 0 rgba(0, 0, 0, 0.45);
+  margin: 0 0 22px;
+}
+.pause-actions { display: flex; flex-direction: column; gap: 16px; }
+.pause-actions .btn-forge,
+.pause-actions .btn-ghost { width: 100%; padding-top: 15px; padding-bottom: 15px; font-size: 16px; min-height: 48px; }
+.pause-audio { display: flex; gap: 10px; }
+.pause-audio button {
+  flex: 1;
+  padding: 14px 12px;
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  min-height: 48px;
+  color: var(--text);
+  background: var(--panel-2, rgba(24, 20, 51, 0.9));
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+.pause-audio button:hover { border-color: var(--arcane); }
+.pause-audio button.off { color: var(--muted); opacity: 0.7; }
+.pause-leave { color: var(--ember); border-color: rgba(255, 90, 60, 0.55); }
+.pause-leave:hover { background: rgba(255, 90, 60, 0.14); }
+.pause-controls {
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 4px 0 2px;
+  padding: 14px;
+  text-align: left;
+  background: rgba(10, 8, 24, 0.6);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  max-height: 240px; overflow-y: auto;
+}
+.pause-control-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-family: "Chakra Petch", sans-serif; font-size: 14px; color: var(--muted);
+}
+.pause-control-row kbd {
+  font-family: "Chakra Petch", sans-serif; font-size: 12px;
+  color: var(--text);
+  background: rgba(108, 76, 255, 0.18);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pause-overlay .panel { animation: none !important; }
+}
