@@ -1,12 +1,12 @@
 // Pure, authoritative game simulation. Deliberately free of Three.js so it can
 // run on the host and be unit-tested headlessly in Node.
-import { CFG, SPELLS, SPELL_ORDER, getArenaLandSize, getArenaWorld, isOnArenaWorld } from "./config.js";
+import { CFG, SPELLS, SPELL_ORDER, SPELL_TEMPLATES, ITEMS, getArenaLandSize, getArenaWorld, isOnArenaWorld } from "./config.js";
 import { MapQuery } from "./arena-query.js";
 import { generateMap } from "./mapgen.js";
 import { Player, resolveKillCredit } from "./player.js";
 import { Bolt } from "./bolt.js";
-import { castSpell } from "./spells.js";
-import { BotBrain, BOT_PROFILES, closestApproach as _closestApproach } from "./bot.js";
+import { castSpell, advanceCasts, applyAoE, nearestEnemy } from "./spells.js";
+import { BotBrain, BOT_PROFILES, botSpellLoadout, closestApproach as _closestApproach } from "./bot.js";
 import { makePrng } from "./rng.js";
 import { makeMobPrng, stepMobPhysics, spawnMob } from "./mob.js";
 
@@ -45,8 +45,23 @@ class LogicArena {
   }
 }
 
+// Step 6: Ensure a draft pick list is always padded to a full 6-slot loadout.
+// Empty picks fall back to the Burst template. Additional slots are filled from
+// Burst in order, skipping any spell already in the list.
+function completeLoadout(picks = []) {
+  const out = [...new Set((picks || []).filter((id) => SPELLS[id] && id !== "fireball"))];
+  const fallback = SPELL_TEMPLATES[0].spells;
+  if (out.length === 0) return fallback.slice(0, CFG.SPELL_SLOT_COUNT);
+  for (const id of fallback) {
+    if (out.length >= CFG.SPELL_SLOT_COUNT) break;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out.slice(0, CFG.SPELL_SLOT_COUNT);
+}
+
 export const PHASE = {
   LOBBY: "lobby",
+  SPELL_SELECTION: "spellSelection", // Step 6: 30-second pre-match draft
   COUNTDOWN: "countdown",
   PLAYING: "playing",
   ROUND_END: "roundEnd",
@@ -68,7 +83,6 @@ export class Simulation {
     // Injectable RNG: pass options.seed (number) for a deterministic PRNG;
     // omit it (or pass undefined/null) to keep the default random behaviour.
     this._rng = typeof options.seed === "number" ? makePrng(options.seed) : Math.random;
-    this.allAbilitiesAtStart = options.allAbilitiesAtStart !== false;
     this.world = getArenaWorld(options.arenaWorld);
     this.landSize = getArenaLandSize(options.landSize);
     // Sanitize enabledObstacles: only keep recognised type ids; map explicit false
@@ -82,16 +96,20 @@ export class Simulation {
     this.bolts = [];
     this.meteors = [];        // in-flight meteors (delayed AoE)
     this.runes = [];
-    this.runeSpawnTimer = 0;  // counts down to the next timed rune spawn
-    this.runePool = [];       // remaining spell ids queued to drop as runes
     this._meteorId = 1;
-    this._runeId = 1;
+    // Item loot state (Step 4 — additive alongside runes)
+    this.items = [];
+    this.itemSpawnTimer = 0;
+    this._itemId = 1;
     // Mob state
     this.mobs = [];
     this.mobSpawnTimer = 0;
     this._mobId = 1;
     this._mobRand = null;
     this.mobsEnabled = options.mobsEnabled !== false;
+    // Step 6: opt-in flag — false by default so existing tests stay green.
+    // Pass draftEnabled: true to insert the SPELL_SELECTION phase before round 1.
+    this.draftEnabled = options.draftEnabled === true;
     // Big-mob roster for the current round (shuffled order; each type spawns once).
     this._mobRoster = [];
     this._mobRosterIdx = 0;
@@ -116,8 +134,15 @@ export class Simulation {
     if (this.players.has(id)) return this.players.get(id);
     const idx = this.players.size;
     const p = new Player(id, name, idx, options);
-    if (this.allAbilitiesAtStart) p.setAllSpells();
-    else p.setStarterSpells();
+    // Draft mode: human players joining during SPELL_SELECTION get the default
+    // template pre-loaded so they are never empty if they skip the overlay.
+    if (this.draftEnabled && !p.isBot && this.phase === PHASE.SPELL_SELECTION) {
+      p._draftLoadout = completeLoadout([]);
+      p.setDraftLoadout(p._draftLoadout);
+      p.beginDraft();
+    } else {
+      p.setLoadout(CFG.DEFAULT_SPELL_LOADOUT);
+    }
     if (this.phase !== PHASE.LOBBY) {
       p.alive = false;
       p.spectating = true;
@@ -140,6 +165,10 @@ export class Simulation {
       const bot = this.addPlayer(botId, botDisplayName(botSkill, i), { isBot: true, botSkill });
       bot._brain = new BotBrain(botId, botSkill);
       bot.applyItems(profile.loadout);
+      // Derive per-profile spell kit from abilityWeights so the bot's AI can
+      // actually cast the spells it scores. Stored as _spawnLoadout so beginRound
+      // re-applies it each round instead of falling back to DEFAULT_SPELL_LOADOUT.
+      bot._spawnLoadout = botSpellLoadout(profile);
       bots.push(bot);
     }
     if (this.phase !== PHASE.LOBBY) this.resolveRoundIfNeeded();
@@ -185,7 +214,6 @@ export class Simulation {
     p.input = {
       move: [mx, mz],
       aim: Number.isFinite(input.aim) ? input.aim : 0,
-      fire: !!input.fire,
       seq,
       casts: p.input.casts || [],
     };
@@ -217,8 +245,48 @@ export class Simulation {
     // New random base seed for the whole match; each round mixes it with the
     // round number so every round gets a distinct but reproducible layout.
     this._matchSeed = Math.floor(this._rng() * 0xffffffff);
-    this.beginRound();
+    if (this.draftEnabled) this.beginDraft();
+    else this.beginRound();
     return true;
+  }
+
+  // ---- Step 6: spell draft ----
+
+  /** Enter the SPELL_SELECTION phase and reset every player's draft state. */
+  beginDraft() {
+    this.phase = PHASE.SPELL_SELECTION;
+    this.phaseTimer = CFG.SPELL_SELECTION_TIME;
+    for (const p of this.players.values()) {
+      if (!p.isBot) p.beginDraft();
+    }
+  }
+
+  /**
+   * Host-authoritative handler for a draft action from a player.
+   * No-ops when the phase is not SPELL_SELECTION or the player is unknown.
+   */
+  applyDraft(id, msg = {}) {
+    if (this.phase !== PHASE.SPELL_SELECTION) return;
+    const p = this.players.get(id);
+    if (!p || p.isBot) return;
+    switch (msg.action) {
+      case "toggle":   p.toggleDraftSpell(msg.spell); break;
+      case "template": p.applyDraftTemplate(msg.template); break;
+      case "ready":    p.setDraftReady(true); break;
+      case "clear":    p.clearDraft(); break;
+    }
+  }
+
+  /**
+   * Commit every player's draft picks and advance to the first round.
+   * Players who never picked (or timed out) get the Burst default template.
+   */
+  finishDraft() {
+    for (const p of this.players.values()) {
+      if (p.isBot) continue;
+      p._draftLoadout = completeLoadout(p.draftPick);
+    }
+    this.beginRound();
   }
 
   spawnPoint(angle) {
@@ -240,8 +308,6 @@ export class Simulation {
     this.bolts = [];
     this.meteors = [];
     this.runes = [];
-    this.runePool = [];
-    this.runeSpawnTimer = 0;
     this.mobs = [];
     this.mobSpawnTimer = CFG.MOB_SPAWN_MIN; // grace window before first mob spawn
     this._mobId = 1;
@@ -278,62 +344,91 @@ export class Simulation {
     list.forEach((p, i) => {
       const spawn = this.spawnPoint((i / n) * Math.PI * 2);
       p.spawn(spawn.angle, spawn.radius);
-      if (this.allAbilitiesAtStart) p.setAllSpells();
-      else p.setStarterSpells();
+      // Draft mode: human players get their committed draft kit every round.
+      // Bots and non-draft matches keep the profile/default loadout path.
+      if (this.draftEnabled && !p.isBot) {
+        p.setDraftLoadout(p._draftLoadout || completeLoadout([]));
+      } else {
+        // Use per-player spawn loadout when set (bots use profile-derived kit).
+        p.setLoadout(p._spawnLoadout || CFG.DEFAULT_SPELL_LOADOUT);
+      }
     });
-    if (!this.allAbilitiesAtStart) this.spawnRunes();
+    this.spawnItems();
   }
 
-  // Initialise rune mode: fill a shuffled pool of acquirable spells and seed the
-  // field up to the active cap. Remaining spells drip out over time.
-  spawnRunes() {
-    this.runes = [];
-    this.runePool = this._shuffle(SPELL_ORDER.filter((id) => id !== "fireball"));
-    this.runeSpawnTimer = CFG.RUNE_SPAWN_INTERVAL;
-    const seed = Math.min(CFG.RUNE_MAX_ACTIVE, this.runePool.length);
-    for (let i = 0; i < seed; i++) this.spawnNextRune();
+  // Initialise the item-drop layer. Items come mainly from mob deaths; a few
+  // rarer "unfair advantage" items also drip onto the field over time.
+  spawnItems() {
+    this.items = [];
+    this.itemSpawnTimer = CFG.ITEM_SPAWN_INTERVAL;
   }
 
-  // Pop the next spell from the pool and drop it as a rune at a random spot.
-  spawnNextRune() {
-    if (this.runes.length >= CFG.RUNE_MAX_ACTIVE) return null;
-    if (!this.runePool.length) return null;
-    const spell = this.runePool.shift();
-    const angle = this._rng() * Math.PI * 2;
-    const ring = Math.min(CFG.RUNE_SPAWN_RADIUS, this.arena.radius * 0.72) * (0.5 + 0.4 * this._rng());
-    const rune = {
-      id: this._runeId++,
-      spell,
-      x: +(Math.cos(angle) * ring).toFixed(3),
-      z: +(Math.sin(angle) * ring).toFixed(3),
+  // Weighted random item key from the given rarity weight map.
+  _weightedItemKey(rng, weights) {
+    const pool = Object.keys(ITEMS).filter((k) => (weights[ITEMS[k].rarity] || 0) > 0);
+    const total = pool.reduce((s, k) => s + (weights[ITEMS[k].rarity] || 0), 0);
+    let r = rng() * total;
+    for (const k of pool) { r -= (weights[ITEMS[k].rarity] || 0); if (r <= 0) return k; }
+    return pool[pool.length - 1];
+  }
+
+  // Mob-death loot — rarity-weighted, deterministic via the seeded _mobRand.
+  dropItem(x, z) {
+    if (this._mobRand() > CFG.ITEM_MOB_DROP_CHANCE) return null;
+    const key = this._weightedItemKey(this._mobRand, CFG.ITEM_RARITY_WEIGHTS);
+    return this._pushItem(key, x, z, true);
+  }
+
+  _pushItem(key, x, z, fromMob = false) {
+    const it = ITEMS[key];
+    const item = {
+      id: this._itemId++, itemKey: key, kind: it.kind, shape: it.shape,
+      color: it.color, rarity: it.rarity,
+      x: +x.toFixed(3), z: +z.toFixed(3), _fromMob: fromMob,
     };
-    this.runes.push(rune);
-    return rune;
+    this.items.push(item);
+    return item;
   }
 
-  _shuffle(arr) {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(this._rng() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
+  // World-spawn: a rarer item placed at a random ring position (not from mob).
+  spawnNextWorldItem() {
+    const key = this._weightedItemKey(this._rng, CFG.ITEM_WORLD_RARITY);
+    const angle = this._rng() * Math.PI * 2;
+    const ring = Math.min(CFG.ITEM_SPAWN_RADIUS, this.arena.radius * 0.72) * (0.5 + 0.4 * this._rng());
+    return this._pushItem(key, Math.cos(angle) * ring, Math.sin(angle) * ring, false);
   }
 
-  // Advance the rune spawn timer and refill the pool so abilities keep flowing.
-  stepRunes(dt) {
-    if (this.allAbilitiesAtStart) return;
-    if (!this.runePool.length && !this.runes.length) {
-      // All spells distributed/consumed for now — recycle the pool so the
-      // round keeps offering fresh abilities to fight over.
-      this.runePool = this._shuffle(SPELL_ORDER.filter((id) => id !== "fireball"));
+  // Advance the world-spawn timer; cap world items to ITEM_MAX_ACTIVE.
+  stepItems(dt) {
+    const worldCount = this.items.filter((i) => !i._fromMob).length;
+    if (worldCount >= CFG.ITEM_MAX_ACTIVE) return;
+    this.itemSpawnTimer -= dt;
+    if (this.itemSpawnTimer <= 0) {
+      this.spawnNextWorldItem();
+      this.itemSpawnTimer = CFG.ITEM_SPAWN_INTERVAL;
     }
-    if (this.runes.length >= CFG.RUNE_MAX_ACTIVE) return;
-    this.runeSpawnTimer -= dt;
-    if (this.runeSpawnTimer <= 0) {
-      this.spawnNextRune();
-      this.runeSpawnTimer = CFG.RUNE_SPAWN_INTERVAL;
+  }
+
+  // Host-authoritative pickup resolution — first free slot wins; leaves item
+  // on field if all slots are full so rivals can contest it.
+  resolveItemPickups() {
+    if (!this.items.length) return;
+    const remaining = [];
+    for (const item of this.items) {
+      let picked = false;
+      for (const p of this.players.values()) {
+        if (!p.alive || p.falling || p.spectating) continue;
+        const d = Math.hypot(p.x - item.x, p.z - item.z);
+        if (d <= CFG.ITEM_RADIUS + CFG.PLAYER_RADIUS) {
+          if (!p.acquireItem(item.itemKey)) continue;  // slots full — leave on field
+          this.events.push({ type: "itemPickup", id: p.id, itemKey: item.itemKey, x: item.x, z: item.z });
+          picked = true;
+          break;
+        }
+      }
+      if (!picked) remaining.push(item);
     }
+    this.items = remaining;
   }
 
   returnToLobby() {
@@ -344,8 +439,8 @@ export class Simulation {
     this.matchWinnerId = null;
     this.bolts = [];
     this.runes = [];
-    this.runePool = [];
-    this.runeSpawnTimer = 0;
+    this.items = [];
+    this.itemSpawnTimer = 0;
     this.mobs = [];
     this.mobSpawnTimer = 0;
     this.mapLayout = null;
@@ -371,21 +466,19 @@ export class Simulation {
     if (alive.length <= 1) this.endRound(alive[0] || null);
   }
 
-  spawnBolt(owner) {
-    const ox = owner.x + Math.cos(owner.aim) * (CFG.PLAYER_RADIUS + 0.6);
-    const oz = owner.z + Math.sin(owner.aim) * (CFG.PLAYER_RADIUS + 0.6);
-    // Pass groundY so the auto-attack spawns at the shooter's elevation and
-    // honors terrain/obstacle cover (coverEnabled), same as cast projectiles.
-    this.bolts.push(new Bolt(owner.id, ox, oz, owner.aim, owner.color, { groundY: owner.groundY }));
-    this.events.push({ type: "cast", spell: "fireball", id: owner.id, x: owner.x, z: owner.z });
-    owner.cooldown = owner.isBot && Number.isFinite(owner._botFireCooldown)
-      ? owner._botFireCooldown
-      : CFG.BOLT_COOLDOWN;
-  }
-
   // Advance the whole simulation by dt seconds (host authoritative).
   step(dt) {
     this.events = [];
+
+    // Step 6: spell draft countdown — transitions to the first round when all
+    // players are ready OR the 30-second timer expires.
+    if (this.phase === PHASE.SPELL_SELECTION) {
+      this.phaseTimer -= dt;
+      const players = this.activePlayers().filter((p) => !p.isBot);
+      const allReady = players.length > 0 && players.every((p) => p.draftReady);
+      if (this.phaseTimer <= 0 || allReady) this.finishDraft();
+      return;
+    }
 
     if (this.phase === PHASE.COUNTDOWN) {
       this.phaseTimer -= dt;
@@ -426,22 +519,11 @@ export class Simulation {
 
     this.updateBotInputs();
 
-    // Fire intents -> default fireball (holding fire / Space).
-    for (const p of this.players.values()) {
-      if (p.input.fire && p.canFire()) this.spawnBolt(p);
-    }
-
     // Resolve queued spell casts (one shot per cast id).
     for (const p of this.players.values()) {
       if (p.pendingCasts.length) {
         for (const cast of p.pendingCasts) {
-          const fired = castSpell(this, p, cast);
-          // In rune mode, abilities are single-use: casting consumes the spell
-          // (Fireball is the permanent starter weapon and is never consumed).
-          if (fired && !this.allAbilitiesAtStart && cast.spell !== "fireball") {
-            p.removeSpell(cast.spell);
-            this.events.push({ type: "spellConsumed", id: p.id, spell: cast.spell });
-          }
+          castSpell(this, p, cast);
         }
         p.pendingCasts = [];
       }
@@ -453,6 +535,11 @@ export class Simulation {
       p.step(dt, this.arena);
       if (p._events.length) { for (const ev of p._events) this.events.push(ev); }
     }
+
+    // Advance cast-time / channel state machines (step-3).
+    // Runs after p.step() so movement drift / fall-stun are current this tick,
+    // and after the cast-resolve loop so stun spells interrupt same-tick.
+    advanceCasts(this, dt);
 
     // Resolve Time Shift rewinds.
     for (const p of this.players.values()) {
@@ -489,13 +576,26 @@ export class Simulation {
       if (res && res.hit != null) {
         const shooter = this.players.get(b.ownerId);
         const victim = this.players.get(res.hit);
-        // Disable projectiles silence their victim.
-        if (b.disable && victim) victim.status.disabled = b.disable;
-        // Lifesteal items reduce the shooter's own charge on a landed hit.
-        if (shooter && shooter.mods.lifesteal > 0) {
-          shooter.charge = Math.max(0, shooter.charge - shooter.mods.lifesteal);
+        // Status effects (disable, slow, burn, curse), lifesteal, and the hit
+        // event are only applied when the hit actually landed (shield was not
+        // consumed).  This matches the Shield ability's "absorbs the next
+        // incoming hit entirely" contract and the lightning/meteor precedent
+        // (both gate their status effects on a successful hit).
+        if (res.landed) {
+          // Disable projectiles silence their victim.
+          if (b.disable && victim) victim.status.disabled = b.disable;
+          // Apply status effects carried by the bolt.
+          if (victim) {
+            if (b.slow)  { victim.status.slow = b.slowDur; victim.status.slowMul = b.slow; this.events.push({ type: "statusApplied", status: "slow",  x: b.x, z: b.z, victim: res.hit }); }
+            if (b.burn)  { victim.status.burn = b.burnDur; victim.status.burnDps = b.burn; victim.status.burnBy = b.ownerId; this.events.push({ type: "statusApplied", status: "burn",  x: b.x, z: b.z, victim: res.hit }); }
+            if (b.curse) { victim.status.curse = b.curseDur; victim.status.curseMul = b.curse; this.events.push({ type: "statusApplied", status: "curse", x: b.x, z: b.z, victim: res.hit }); }
+          }
+          // Lifesteal items reduce the shooter's own charge on a landed hit.
+          if (shooter && shooter.mods.lifesteal > 0) {
+            shooter.charge = Math.max(0, shooter.charge - shooter.mods.lifesteal);
+          }
+          this.events.push({ type: "hit", x: b.x, z: b.z, victim: res.hit, by: b.ownerId });
         }
-        this.events.push({ type: "hit", x: b.x, z: b.z, victim: res.hit, by: b.ownerId });
       }
     }
     if (spawned.length) this.bolts.push(...spawned);
@@ -535,15 +635,21 @@ export class Simulation {
             let ndx = dx, ndz = dz;
             if (d < 0.001) { ndx = Math.cos(p.aim); ndz = Math.sin(p.aim); }
             const l = Math.hypot(ndx, ndz) || 1;
-            // Raised knockback floor (0.55 instead of 0.4) so edge-caught
-            // players still get flung meaningfully.
-            const meteorHit = p.applyHit((ndx / l), (ndz / l), m.kb * (0.55 + 0.45 * falloff));
+            // Raised knockback floor (0.65 instead of 0.55) for harder fling impact.
+            const meteorHit = p.applyHit((ndx / l), (ndz / l), m.kb * (0.65 + 0.35 * falloff));
             // Record the attacker for kill-credit attribution (meteors do not
             // emit per-victim hit events, so we record here directly).
-            if (meteorHit && m.ownerId && m.ownerId !== p.id) {
-              p.recordAttacker(m.ownerId, Date.now());
+            if (meteorHit) {
+              p.applyDamage(m.dmg ?? CFG.BOLT_BASE_DAMAGE, m.ownerId);
+              if (m.burn) { p.status.burn = m.burnDur; p.status.burnDps = m.burn; p.status.burnBy = m.burnBy ?? m.ownerId; }
+              if (m.stun) { p.status.stunned = Math.max(p.status.stunned, m.stun); }
+              if (m.ownerId && m.ownerId !== p.id) p.recordAttacker(m.ownerId, Date.now());
             }
           }
+        }
+        // Player-sourced meteors also damage mobs in blast radius.
+        if (m.ownerId && !String(m.ownerId).startsWith("mob:")) {
+          this.damageMobsInRadius(m.x, m.z, blastR, { dmg: m.dmg ?? CFG.BOLT_BASE_DAMAGE, kb: m.kb ? m.kb * 0.25 : 0, by: m.ownerId });
         }
         this.events.push({ type: "meteorImpact", x: m.x, z: m.z, radius: blastR, by: m.ownerId });
         m.dead = true;
@@ -551,9 +657,8 @@ export class Simulation {
     }
     this.meteors = this.meteors.filter((m) => !m.dead);
 
-    this.stepRunes(dt);
-    this.resolveRuneDestruction();
-    this.resolveRunePickups();
+    this.stepItems(dt);
+    this.resolveItemPickups();
 
     if (this.mobsEnabled) this.stepMobs(dt);
 
@@ -616,6 +721,24 @@ export class Simulation {
     return null; // couldn't place this tick — skip
   }
 
+  // Spawn a player-summoned minion (step-3 Conjure spell). Placed just behind
+  // the caster; skipped silently if the position is off-platform.
+  spawnSummon(owner, ttl) {
+    if (!this.arena) return;
+    const a = owner.aim + Math.PI;
+    const x = owner.x + Math.cos(a) * 2;
+    const z = owner.z + Math.sin(a) * 2;
+    if (!this.arena.isOnPlatform(x, z)) return;
+    const id = "mob:" + this._mobId++;
+    const m = spawnMob(id, "minion", x, z, owner.id);
+    m.ttl = ttl;
+    m.summoned = true;
+    m.ownerPlayerId = owner.id; // exclude owner from targeting so minion harries foes
+    m.entering = 0; // no cinematic entrance for summoned minions
+    this.mobs.push(m);
+    this.events.push({ type: "mobSpawn", id, mobType: "minion", x, z, parentId: owner.id, color: CFG.MOB_TYPES.minion.color });
+  }
+
   stepMobs(dt) {
     if (this.phase !== PHASE.PLAYING) return;
 
@@ -661,6 +784,12 @@ export class Simulation {
     for (const mob of this.mobs) {
       if (!mob.alive) continue;
 
+      // TTL despawn for summoned minions (step-3 Conjure).
+      if (mob.ttl != null) {
+        mob.ttl -= dt;
+        if (mob.ttl <= 0) { this.killMob(mob, "expire"); continue; }
+      }
+
       // Capture pre-think entering value so we can detect when the cinematic
       // window transitions to zero (think() decrements mob.entering).
       const wasEntering = mob.entering;
@@ -685,9 +814,24 @@ export class Simulation {
             if (d <= ec.radius) {
               const ndx = d < 0.001 ? Math.cos(mob.aim) : (p.x - mob.x) / d;
               const ndz = d < 0.001 ? Math.sin(mob.aim) : (p.z - mob.z) / d;
-              p.applyHit(ndx, ndz, ec.kb);
+              const landed = p.applyHit(ndx, ndz, ec.kb);
+              if (landed) p.applyDamage(CFG.MOB_TYPES[mob.type].dmg, mob.id);
               this.events.push({ type: "hit", x: p.x, z: p.z, victim: p.id, by: mob.id });
             }
+          }
+        }
+      }
+
+      // Telegraphed-ability channel: tick the windup, cancel on death/fall, resolve on expiry.
+      if (mob.channel) {
+        if (!mob.alive || mob.falling) {
+          mob.channel = null;                     // interrupt (death or lava)
+        } else {
+          mob.channel.t -= dt;
+          if (mob.channel.t < 1e-9) {            // <= 0 with fp-safe epsilon
+            const tgt = this.players.get(mob.channel.targetId) ?? action.target;
+            this._fireMobAbility(mob, tgt);       // resolve at locked cast point
+            mob.channel = null;
           }
         }
       }
@@ -697,17 +841,18 @@ export class Simulation {
         const victim = action.target;
         if (victim.alive && !victim.falling) {
           const dx = victim.x - mob.x, dz = victim.z - mob.z;
-          victim.applyHit(dx, dz, CFG.MOB_TYPES[mob.type].meleeKb);
+          const landed = victim.applyHit(dx, dz, CFG.MOB_TYPES[mob.type].meleeKb);
+          if (landed) victim.applyDamage(CFG.MOB_TYPES[mob.type].dmg, mob.id);
           this.events.push({ type: "hit", x: victim.x, z: victim.z, victim: victim.id, by: mob.id });
         }
       } else if (action.kind === "ranged" && action.target) {
         const typeCfg = CFG.MOB_TYPES[mob.type];
         const ox = mob.x + Math.cos(mob.aim) * (typeCfg.bodyR + 0.6);
         const oz = mob.z + Math.sin(mob.aim) * (typeCfg.bodyR + 0.6);
-        const bolt = new Bolt(mob.id, ox, oz, mob.aim, typeCfg.color, { kb: typeCfg.rangedKb });
+        const bolt = new Bolt(mob.id, ox, oz, mob.aim, typeCfg.color, { kb: typeCfg.rangedKb, dmg: typeCfg.dmg });
         this.bolts.push(bolt);
-      } else if (action.kind === "ability" && action.target) {
-        this._fireMobAbility(mob, action.target);
+      } else if (action.kind === "ability" && action.target && !mob.channel) {
+        this._startMobChannel(mob, action.target);
       } else if (action.kind === "spawnMinion") {
         const totalMinions = this.mobs.filter(m => m.alive && m.parentId === mob.id).length;
         if (totalMinions < CFG.MOB_MAX_CHILDREN) {
@@ -727,63 +872,114 @@ export class Simulation {
     this.mobs = this.mobs.filter(m => m.alive);
   }
 
+  // Begin a telegraphed ability channel: root the mob, lock the cast point, emit telegraph.
+  _startMobChannel(mob, target) {
+    const cfg = CFG.MOB_TYPES[mob.type];
+    // Self-centered abilities lock at mob position; others lock at target position (dodgeable).
+    const selfCentered = cfg.ability === "seismicStomp" || cfg.ability === "vacuum";
+    let tx = selfCentered ? mob.x : target.x;
+    let tz = selfCentered ? mob.z : target.z;
+
+    // magmaEruption meteors only reach stageR units from the mob along the direction
+    // toward the target. Clamp the locked cast point to that range so the telegraph
+    // decal is over the same ground the meteors actually land on.
+    if (cfg.ability === "magmaEruption") {
+      const rawX = tx - mob.x, rawZ = tz - mob.z;
+      const len  = Math.hypot(rawX, rawZ);
+      const ux   = len > 0.001 ? rawX / len : Math.cos(mob.aim);
+      const uz   = len > 0.001 ? rawZ / len : Math.sin(mob.aim);
+      const clampR = cfg.stageR ?? 4;
+      tx = mob.x + ux * clampR;
+      tz = mob.z + uz * clampR;
+    }
+
+    mob.channel = {
+      ability:  cfg.ability,
+      t:        cfg.castTime,
+      targetId: target.id,
+      tx, tz,
+      r: cfg.telegraphR ?? cfg.abilityRadius,
+    };
+    this.events.push({
+      type:     "mobTelegraph",
+      id:       mob.id,
+      mobType:  mob.type,
+      ability:  cfg.ability,
+      x:        tx,
+      z:        tz,
+      radius:   mob.channel.r,
+      castTime: cfg.castTime,
+      color:    cfg.color,
+    });
+  }
+
   _fireMobAbility(mob, target) {
     const typeCfg = CFG.MOB_TYPES[mob.type];
-    const ability = typeCfg.ability;
+    const ability  = typeCfg.ability;
     if (!ability) return;
 
-    this.events.push({ type: "mobAbility", mobType: mob.type, ability, x: mob.x, z: mob.z, radius: typeCfg.abilityRadius, color: typeCfg.color });
+    // Use the locked cast point from an active channel; fall back to mob position for
+    // direct test calls (no channel set).
+    const cx = mob.channel?.tx ?? mob.x;
+    const cz = mob.channel?.tz ?? mob.z;
 
-    if (ability === "groundSlam" || ability === "stomp") {
-      // Meteor-style AoE: immediate detonation (1 s telegraph via existing meteor pipeline).
+    this.events.push({ type: "mobAbility", mobType: mob.type, ability, x: cx, z: cz, radius: typeCfg.abilityRadius, color: typeCfg.color });
+
+    if (ability === "fissureSlam") {
+      // Echo Slam / Fissure: center hit + stun, then delayed echo ring.
       this.meteors.push({
-        id: this._meteorId++,
-        ownerId: mob.id,
-        x: mob.x, z: mob.z,
-        t: 1.0, fall: 1.0,
-        radius: typeCfg.abilityRadius,
-        effRadius: typeCfg.abilityRadius,
-        kb: typeCfg.abilityKb,
+        id: this._meteorId++, ownerId: mob.id,
+        x: cx, z: cz,
+        t: 0.45, fall: 0.45,
+        radius: typeCfg.abilityRadius, effRadius: typeCfg.abilityRadius,
+        kb: typeCfg.abilityKb, dmg: typeCfg.abilityDmg,
+        stun: typeCfg.stunDur,
       });
-    } else if (ability === "cyclone") {
-      // Gravity-well pull then outward fling — applied instantly.
-      const r = typeCfg.abilityRadius;
-      const kb = typeCfg.abilityKb;
+      // Delayed echo ring: larger radius, lower kb/dmg, no stun.
+      this.meteors.push({
+        id: this._meteorId++, ownerId: mob.id,
+        x: cx, z: cz,
+        t: 0.45 + typeCfg.stageDelay, fall: 0.45,
+        radius: typeCfg.abilityRadius * 1.5, effRadius: typeCfg.abilityRadius * 1.5,
+        kb: typeCfg.abilityKb * 0.6, dmg: Math.round(typeCfg.abilityDmg * 0.5),
+      });
+    } else if (ability === "seismicStomp") {
+      // Slardar/Sven radial stun-nova: instant AoE at self via shared helper.
+      applyAoE(this, mob, cx, cz, typeCfg.abilityRadius, typeCfg.abilityKb, typeCfg.abilityDmg, { stun: typeCfg.stunDur });
+    } else if (ability === "vacuum") {
+      // Vacuum / Black Hole: apply sustained gravity pull + slow + curse to all in radius.
+      // Terminal outward fling + kill credit is handled by the existing player.js gravity implosion.
       for (const p of this.players.values()) {
         if (!p.alive || p.falling || p.spectating) continue;
-        const d = Math.hypot(p.x - mob.x, p.z - mob.z);
-        if (d <= r) {
-          // Pull in for 0.4 s (status), then schedule outward burst via velocity.
-          p.status.gravity = 0.4;
-          p.status.gravX = mob.x; p.status.gravZ = mob.z;
-          p.status.gravPull = 25; p.status.gravBy = mob.id;
-          // Also apply the outward fling now (mirrors gravity's gravKb).
-          const ndx = d < 0.001 ? Math.cos(mob.aim) : (p.x - mob.x) / d;
-          const ndz = d < 0.001 ? Math.sin(mob.aim) : (p.z - mob.z) / d;
-          p.applyHit(ndx, ndz, kb);
-          this.events.push({ type: "hit", x: p.x, z: p.z, victim: p.id, by: mob.id });
-        }
+        if (Math.hypot(p.x - cx, p.z - cz) > typeCfg.abilityRadius) continue;
+        p.status.gravity     = typeCfg.channelTime;
+        p.status.gravX       = cx;    p.status.gravZ  = cz;
+        p.status.gravPull    = typeCfg.pull;
+        p.status.gravBy      = mob.id;
+        // Store the mob type's abilityDmg on the status so the implosion uses it
+        // instead of SPELLS.gravity.dmg — keeps mob tuning decoupled from player-spell rebalancing.
+        p.status.gravImplDmg = typeCfg.abilityDmg;
+        p.status.slow     = typeCfg.slowDur;  p.status.slowMul  = typeCfg.slowMul;
+        p.status.curse    = typeCfg.curseDur; p.status.curseMul = typeCfg.curseMul;
       }
-    } else if (ability === "eruption") {
-      // Fan of 8 bolts + central blast.
-      const r = typeCfg.abilityRadius;
-      const kb = typeCfg.abilityKb;
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        const ox = mob.x + Math.cos(a) * 1.2;
-        const oz = mob.z + Math.sin(a) * 1.2;
-        this.bolts.push(new Bolt(mob.id, ox, oz, a, CFG.MOB_TYPES.fireElemental.color, { kb: kb * 0.5 }));
-      }
-      // Central burst.
-      for (const p of this.players.values()) {
-        if (!p.alive || p.falling || p.spectating) continue;
-        const d = Math.hypot(p.x - mob.x, p.z - mob.z);
-        if (d <= r) {
-          const ndx = d < 0.001 ? 1 : (p.x - mob.x) / d;
-          const ndz = d < 0.001 ? 0 : (p.z - mob.z) / d;
-          p.applyHit(ndx, ndz, kb);
-          this.events.push({ type: "hit", x: p.x, z: p.z, victim: p.id, by: mob.id });
-        }
+      this.events.push({ type: "gravity", id: mob.id, x: cx, z: cz, radius: typeCfg.abilityRadius, duration: typeCfg.channelTime });
+    } else if (ability === "magmaEruption") {
+      // Multi-stage delayed burn meteors stepping from mob position toward locked cast point.
+      const rawX = cx - mob.x, rawZ = cz - mob.z;
+      const len  = Math.hypot(rawX, rawZ);
+      const ux   = len > 0.001 ? rawX / len : Math.cos(mob.aim);
+      const uz   = len > 0.001 ? rawZ / len : Math.sin(mob.aim);
+      for (let i = 0; i < typeCfg.stages; i++) {
+        const f = i / Math.max(1, typeCfg.stages - 1);
+        this.meteors.push({
+          id: this._meteorId++, ownerId: mob.id,
+          x: mob.x + ux * typeCfg.stageR * f,
+          z: mob.z + uz * typeCfg.stageR * f,
+          t: 0.5 + i * typeCfg.stageDelay, fall: 0.5,
+          radius: typeCfg.abilityRadius, effRadius: typeCfg.abilityRadius,
+          kb: typeCfg.abilityKb, dmg: typeCfg.abilityDmg,
+          burn: typeCfg.burn, burnDur: typeCfg.burnDur, burnBy: mob.id,
+        });
       }
     }
   }
@@ -822,6 +1018,33 @@ export class Simulation {
     }
   }
 
+  // Apply scaled spell damage to a single mob — player-sourced only (never called from
+  // mob-ability paths, preserving the invariant that mob bolts cannot damage mobs).
+  damageMobAt(mob, { dmg, kb = 0, by }) {
+    if (!mob.alive || mob.spawnInvuln > 0 || mob.entering > 0) return;
+    const hits = Math.max(1, Math.round(dmg / CFG.BOLT_BASE_DAMAGE));
+    if (kb > 0) {
+      // Shove mob toward lava along a default direction (away from arena center).
+      const l = Math.hypot(mob.x, mob.z) || 1;
+      mob.vx += (mob.x / l) * kb * 0.5;
+      mob.vz += (mob.z / l) * kb * 0.5;
+    }
+    mob.hitsRemaining -= hits;
+    this.events.push({ type: "mobHit", id: mob.id, hp: mob.hitsRemaining, max: mob.maxHits, x: mob.x, z: mob.z });
+    if (mob.hitsRemaining <= 0) this.killMob(mob, "spell");
+  }
+
+  // Apply scaled spell damage to all living mobs within radius r of (x, z).
+  // Player-sourced only — do not call from mob-ability paths.
+  damageMobsInRadius(x, z, r, { dmg, kb = 0, by }) {
+    for (const mob of this.mobs) {
+      if (!mob.alive || mob.spawnInvuln > 0 || mob.entering > 0) continue;
+      const d = Math.hypot(mob.x - x, mob.z - z);
+      if (d > r) continue;
+      this.damageMobAt(mob, { dmg, kb, by });
+    }
+  }
+
   killMob(mob, cause) {
     mob.alive = false;
     // Decrement parent's child count if this was a minion.
@@ -829,26 +1052,10 @@ export class Simulation {
       const parent = this.mobs.find(m => m.id === mob.parentId);
       if (parent) parent.childCount = Math.max(0, parent.childCount - 1);
     }
-    // Only big mobs drop runes — minions are 3-hit helpers and grant no reward
+    // Only big mobs drop items — minions are 3-hit helpers and grant no reward
     // on their own; the parent big mob is the rewarded target.
-    if (mob.type !== "minion") this.dropRune(mob.x, mob.z);
+    if (mob.type !== "minion") this.dropItem(mob.x, mob.z);
     this.events.push({ type: "mobDeath", id: mob.id, mobType: mob.type, cause, x: mob.x, z: mob.z, color: CFG.MOB_TYPES[mob.type].color });
-  }
-
-  // Drop a rune with a random spell from SPELL_ORDER (minus fireball), picked
-  // via the seeded _mobRand so drops are deterministic and testable.
-  dropRune(x, z) {
-    const eligible = SPELL_ORDER.filter(id => id !== "fireball");
-    const spell = eligible[Math.floor(this._mobRand() * eligible.length)];
-    const rune = {
-      id: this._runeId++,
-      spell,
-      x: +x.toFixed(3),
-      z: +z.toFixed(3),
-      _fromMob: true,  // marker so tests can identify mob drops
-    };
-    this.runes.push(rune);
-    return rune;
   }
 
   resolveProjectileClashes() {
@@ -879,57 +1086,6 @@ export class Simulation {
         }
       }
     }
-  }
-
-  // Players can shoot a rune to destroy it, denying the ability to rivals.
-  resolveRuneDestruction() {
-    if (!this.runes.length || !this.bolts.length) return;
-    const remaining = [];
-    for (const rune of this.runes) {
-      let destroyed = false;
-      for (const b of this.bolts) {
-        if (b.dead) continue;
-        const d = Math.hypot(b.x - rune.x, b.z - rune.z);
-        if (d <= CFG.RUNE_RADIUS + CFG.BOLT_RADIUS) {
-          destroyed = true;
-          b.dead = true;
-          this.events.push({ type: "runeDestroyed", spell: rune.spell, by: b.ownerId, x: rune.x, z: rune.z });
-          break;
-        }
-      }
-      if (!destroyed) remaining.push(rune);
-    }
-    this.runes = remaining;
-    this.bolts = this.bolts.filter((b) => !b.dead);
-  }
-
-  resolveRunePickups() {
-    if (!this.runes.length) return;
-    const remaining = [];
-    for (const rune of this.runes) {
-      let picked = false;
-      for (const p of this.players.values()) {
-        if (!p.alive || p.falling || p.spectating) continue;
-        const d = Math.hypot(p.x - rune.x, p.z - rune.z);
-        if (d <= CFG.RUNE_RADIUS + CFG.PLAYER_RADIUS) {
-          if (!this.allAbilitiesAtStart) {
-            // Rune-only mode: grant the randomized spell (existing path).
-            if (p.hasSpell(rune.spell)) continue;
-            if (!p.acquireSpell(rune.spell)) continue;
-            this.events.push({ type: "runePickup", id: p.id, spell: rune.spell, x: rune.x, z: rune.z });
-          } else {
-            // All-abilities mode: pocketWatch-style cooldown reset + brief Rush buff.
-            p.cooldowns = {};
-            p.status.rush = SPELLS.rush.duration;
-            this.events.push({ type: "runePickup", id: p.id, spell: rune.spell, x: rune.x, z: rune.z, buff: true });
-          }
-          picked = true;
-          break;
-        }
-      }
-      if (!picked) remaining.push(rune);
-    }
-    this.runes = remaining;
   }
 
   updateBotInputs() {
@@ -999,9 +1155,14 @@ export class Simulation {
         id: m.id, x: +m.x.toFixed(2), z: +m.z.toFixed(2),
         t: +m.t.toFixed(2), fall: m.fall, r: m.radius,
       })),
+      // runes: reserved / superseded by item system (Step 4) — kept for snapshot wire compat and Step-7 tests.
       runes: this.runes.map((r) => ({ id: r.id, spell: r.spell, x: r.x, z: r.z, c: SPELLS[r.spell]?.color || 0xffffff })),
+      items: this.items.map((i) => ({
+        id: i.id, itemKey: i.itemKey, kind: i.kind, shape: i.shape,
+        c: i.color, rarity: i.rarity, name: ITEMS[i.itemKey].name, x: i.x, z: i.z,
+      })),
       mobs: this.mobs.filter(m => m.alive).map(m => m.snapshot()),
-      spellSlotsEnabled: !this.allAbilitiesAtStart,
+      spellSlotsEnabled: true,
       events: this.events,
       // undefined is omitted by JSON.stringify, saving bandwidth on unchanged frames.
       mapLayout: includeLayout ? this.mapLayout : undefined,

@@ -220,6 +220,8 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
     // Layer the cast archetype as a skeleton-agnostic whole-body gesture on top
     // of the locomotion clips. Each archetype reads distinctly without needing a
     // bespoke skinned clip per ability.
+    // Hold the "channel" pose while a channel is in progress (info.channel=1).
+    if (info.channel && !state.cast.active) state.cast.trigger("channel");
     state.cast.update(dt);
     applyCastOverlay(model, restPos, restRot, state.cast, info);
 

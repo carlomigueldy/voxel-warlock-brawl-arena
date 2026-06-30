@@ -30,6 +30,76 @@ function shade(hex, f) {
   return c.getHex();
 }
 
+// Emissive voxel — same box recipe but a Lambert material with self-illumination,
+// for glowing accents (item cores, charge runes, eye/jewel highlights) that still
+// take scene light. opts: { x,y,z, emissive, intensity=0.9, flat=true }.
+function glowBox(w, h, d, color, opts = {}) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const mat = new THREE.MeshLambertMaterial({
+    color,
+    emissive:          opts.emissive ?? color,
+    emissiveIntensity: opts.intensity ?? 0.9,
+    flatShading:       opts.flat !== false,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(opts.x ?? 0, opts.y ?? 0, opts.z ?? 0);
+  m.castShadow    = true;
+  m.receiveShadow = true;
+  return m;
+}
+
+// Unlit translucent voxel — for halos / aura shells (matches buildBolt halo look).
+function auraBox(w, h, d, color, opts = {}) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const mat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity:     opts.opacity ?? 0.3,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(opts.x ?? 0, opts.y ?? 0, opts.z ?? 0);
+  return m;
+}
+
+// Richer color transform than shade(): independent hue/sat/light deltas.
+function tint(hex, dh = 0, ds = 0, dl = 0) {
+  const c = new THREE.Color(hex);
+  c.offsetHSL(dh, ds, dl);
+  return c.getHex();
+}
+
+// Register a node for cheap secondary motion (bob / sway / spin / pulse). Pushes
+// a descriptor into group.userData._sec[]; driven by animateSecondary(). Additive
+// and opt-in — a builder calls wobble() and never touches anim code directly.
+// cfg: { bobAmp, bobHz, swayAmp, swayHz, spinX, spinY, spinZ,
+//        pulseMat, pulseBase, pulseAmp, pulseHz, phase }
+function wobble(group, node, cfg) {
+  (group.userData._sec ||= []).push({ node, cfg, base: node.position.clone() });
+  return node;
+}
+
+// Drives every node registered via wobble() on this group. Safe to call on a group
+// with no _sec list (no-op). Pure transform/opacity writes, no allocation per frame.
+export function animateSecondary(group, t, dt) {
+  const sec = group.userData._sec;
+  if (!sec || !sec.length) return;
+  for (const { node, cfg, base } of sec) {
+    const ph = cfg.phase ?? 0;
+    if (cfg.bobAmp)  node.position.y = base.y + Math.sin(t * (cfg.bobHz  ?? 2)   * Math.PI * 2 + ph) * cfg.bobAmp;
+    if (cfg.swayAmp) node.position.x = base.x + Math.sin(t * (cfg.swayHz ?? 1.5) * Math.PI * 2 + ph) * cfg.swayAmp;
+    if (cfg.spinX)   node.rotation.x += cfg.spinX * dt;
+    if (cfg.spinY)   node.rotation.y += cfg.spinY * dt;
+    if (cfg.spinZ)   node.rotation.z += cfg.spinZ * dt;
+    // Guard: MeshBasicMaterial has no emissiveIntensity property (it's silently
+    // ignored). Only write it on materials that actually support self-illumination
+    // (MeshLambertMaterial, MeshStandardMaterial, MeshPhongMaterial, etc.).
+    if (cfg.pulseMat && node.material && 'emissiveIntensity' in node.material) {
+      node.material.emissiveIntensity =
+        (cfg.pulseBase ?? 0.5) + Math.sin(t * (cfg.pulseHz ?? 2) * Math.PI * 2 + ph) * (cfg.pulseAmp ?? 0.3);
+    }
+  }
+}
+
 // Build a chunky low-poly warlock from stacked voxels.
 // Returns a Group whose children we can recolor per player.
 export function buildWarlock(color) {
@@ -68,6 +138,17 @@ export function buildWarlock(color) {
   shoulderL.add(box(0.25, 0.6, 0.25, robe, 0, -0.3, 0));
   shoulderR.add(box(0.25, 0.6, 0.25, robe, 0, -0.3, 0));
 
+  // Hand anchors at arm tips — pure attach points for future weapon/VFX parenting.
+  const handL = joint(0, -0.62, 0); shoulderL.add(handL);
+  const handR = joint(0, -0.62, 0); shoulderR.add(handR);
+  // Chest emitter anchor — used by the channel/cast wind-up pose hook below.
+  const chest = joint(0, 0.45, 0.45); spine.add(chest);
+  // Channel glow cube on the chest; hidden until state.channel > 0 activates it.
+  // Kept invisible so it never renders on non-channeling warlocks.
+  const castGlow = glowBox(0.18, 0.18, 0.18, color, { emissive: color, intensity: 0 });
+  castGlow.visible = false;
+  chest.add(castGlow);
+
   const hipL = joint(-0.24, 0.5, 0);
   const hipR = joint(0.24, 0.5, 0);
   g.add(hipL, hipR);
@@ -79,8 +160,10 @@ export function buildWarlock(color) {
     spine, neck, hat,
     armL: shoulderL, armR: shoulderR,
     legL: hipL, legR: hipR,
+    handL, handR, chest,                // new: arm-tip + chest emitter anchors
   };
-  g.userData.anim = { phase: 0, cast: 0, fall: 0 };
+  g.userData.anim    = { phase: 0, cast: 0, fall: 0, channel: 0 };
+  g.userData.castGlow = castGlow;       // driven by animateWarlock channel blend
   // Body-cast archetype overlay (attack/slam/dash/buff/channel), shared with the
   // GLB rig via the same CastAnimator state machine.
   g.userData.castAnim = new CastAnimator();
@@ -102,9 +185,10 @@ export function animateWarlock(group, state) {
   const gait = Math.min(1, (state.speed || 0) / maxSpeed);
   const moving = gait > 0.06;
 
-  anim.cast = _lerp(anim.cast, Math.min(1, state.charge || 0), 1 - Math.exp(-8 * dt));
-  anim.fall = _lerp(anim.fall, state.falling ? 1 : 0, 1 - Math.exp(-10 * dt));
-  anim.phase += dt * (moving ? 7 + gait * 6 : 2.0);
+  anim.cast    = _lerp(anim.cast,    Math.min(1, state.charge  || 0), 1 - Math.exp(-8  * dt));
+  anim.fall    = _lerp(anim.fall,    state.falling ? 1 : 0,          1 - Math.exp(-10 * dt));
+  anim.channel = _lerp(anim.channel, Math.min(1, state.channel || 0), 1 - Math.exp(-6  * dt));
+  anim.phase  += dt * (moving ? 7 + gait * 6 : 2.0);
 
   const ph = anim.phase;
   const swing = Math.sin(ph) * (moving ? 0.35 + gait * 0.55 : 0);
@@ -138,6 +222,29 @@ export function animateWarlock(group, state) {
   rig.neck.rotation.x = _lerp(0, -0.25, cast) - lean * 0.5;
   rig.hat.rotation.z = Math.sin(time * 2 + ph * 0.3) * 0.07;
   rig.hat.rotation.x = swing * 0.1;
+
+  // Channel / wind-up pose hook — additive on top of locomotion pose.
+  // Gated to ch > 0.001; state.channel defaults to 0 so all existing callers
+  // are unaffected until a later step passes a non-zero value.
+  const ch = anim.channel;
+  if (ch > 0.001) {
+    rig.armL.rotation.x += (-1.2 - Math.sin(time * 3) * 0.05) * ch;  // hands raised, braced
+    rig.armR.rotation.x += (-1.2 - Math.sin(time * 3) * 0.05) * ch;
+    rig.armL.rotation.z += -0.35 * ch;  rig.armR.rotation.z += 0.35 * ch; // cupped inward
+    rig.spine.rotation.x += -0.12 * ch;                                    // slight lean-back
+    if (rig.chest) rig.chest.position.y = 0.45 + Math.sin(time * 8) * 0.03 * ch; // emitter shiver
+  }
+  // castGlow is channel-exclusive: hidden when ch ≤ 0.001 so it never renders
+  // during normal charging (cast) or on warlocks that have never channeled.
+  if (group.userData.castGlow) {
+    const cg = group.userData.castGlow;
+    if (ch > 0.001) {
+      cg.visible = true;
+      cg.material.emissiveIntensity = _lerp(0, 1.6, ch);
+    } else {
+      cg.visible = false;
+    }
+  }
 
   // Body-cast archetype overlay on top of the locomotion pose.
   const castAnim = group.userData.castAnim;
@@ -724,6 +831,238 @@ export function buildRamp(ramp, plateauHeight, worldId = CFG.DEFAULT_ARENA_WORLD
     g.add(mesh);
   }
 
+  return g;
+}
+
+// ── Item-drop / pickup mesh builders ─────────────────────────────────────────
+// buildItemDrop(kind, color, opts) — builds a floating pickup group.
+// kind ∈ "orb" | "tome" | "blade" | "boots" | "crown" | "rune"
+// opts: { rarity="common"|"rare"|"epic"|"legendary", glow=true, scale=1,
+//         floatAmp, floatHz, spinHz }
+//
+// Each private shape builder returns { group, core } where core is the innermost
+// glow mesh that bobs independently (matches buildRune's userData.core contract).
+
+function _buildOrb(color) {
+  const g    = new THREE.Group();
+  const core = glowBox(0.45, 0.45, 0.45, color, { emissive: color, intensity: 1.2 });
+  core.rotation.set(0.4, 0.4, 0);
+  core.position.y = 0.55;
+  const halo = auraBox(0.72, 0.72, 0.72, color, { opacity: 0.28 });
+  halo.rotation.set(0.4, 0.4, 0);
+  halo.position.y = 0.55;
+  g.add(halo, core);
+  return { group: g, core };
+}
+
+function _buildTome(color) {
+  const g = new THREE.Group();
+  const coverColor = tint(color, 0, -0.1, -0.2);
+  g.add(box(0.7, 0.5, 0.18, coverColor, 0, 0.25, 0));         // book body
+  const sp = glowBox(0.1, 0.55, 0.22, color, { emissive: color, intensity: 0.8 });
+  sp.position.set(-0.36, 0.27, 0);                              // spine glowBox
+  g.add(sp);
+  g.add(box(0.56, 0.44, 0.12, shade(0xfff8e8, 0), 0.03, 0.27, 0.05)); // page edges
+  // Floating rune above the book — the bob target.
+  const core = glowBox(0.22, 0.22, 0.22, color, { emissive: color, intensity: 1.4 });
+  core.position.y = 0.55;
+  core.rotation.set(0.5, 0.5, 0);
+  g.add(core);
+  return { group: g, core };
+}
+
+function _buildBlade(color) {
+  const g = new THREE.Group();
+  g.add(box(0.16, 1.1, 0.06, shade(color, 0.1),  0,     0.55, 0)); // blade
+  g.add(box(0.55, 0.12, 0.14, shade(color, -0.15), 0,   0.07, 0)); // crossguard
+  const core = glowBox(0.2, 0.2, 0.2, color, { emissive: color, intensity: 1.1 });
+  core.position.y = -0.05;                                           // pommel (core)
+  g.add(core);
+  return { group: g, core };
+}
+
+function _buildBoots(color) {
+  const g      = new THREE.Group();
+  const lColor = shade(color, -0.1);
+  // Left and right boots (foot + shaft boxes each).
+  g.add(box(0.28, 0.42, 0.32, lColor, -0.2,  0.21,  0));
+  g.add(box(0.28, 0.18, 0.52, lColor, -0.2,  0.02,  0.08));
+  g.add(box(0.28, 0.42, 0.32, lColor,  0.2,  0.21,  0));
+  g.add(box(0.28, 0.18, 0.52, lColor,  0.2,  0.02,  0.08));
+  const core = glowBox(0.14, 0.14, 0.14, color, { emissive: color, intensity: 1.0 });
+  core.position.y = 0.55;                                            // central accent
+  g.add(core);
+  return { group: g, core };
+}
+
+function _buildCrown(color) {
+  const g = new THREE.Group();
+  g.add(box(0.9, 0.22, 0.9, shade(color, -0.12), 0, 0.11, 0));    // base ring
+  const spikeH = [0.52, 0.42, 0.52, 0.42, 0.52];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    g.add(box(0.14, spikeH[i], 0.14, shade(color, 0.05),
+      Math.cos(a) * 0.33, 0.22 + spikeH[i] * 0.5, Math.sin(a) * 0.33));
+  }
+  // Three decorative jewels at evenly-spaced positions around the band.
+  const jewelsA = [0, (2 / 5) * Math.PI * 2, (4 / 5) * Math.PI * 2];
+  for (let i = 0; i < 3; i++) {
+    const a  = jewelsA[i];
+    const jc = i === 0 ? color : tint(color, (i * 0.15) % 0.4, 0.1, 0.05);
+    g.add(glowBox(0.16, 0.16, 0.16, jc, {
+      emissive: jc, intensity: 1.3,
+      x: Math.cos(a) * 0.32, y: 0.28, z: Math.sin(a) * 0.32,
+    }));
+  }
+  const core = glowBox(0.2, 0.2, 0.2, color, { emissive: color, intensity: 1.5, y: 0.55 });
+  g.add(core);
+  return { group: g, core };
+}
+
+// Re-uses the buildRune recipe so buildItemDrop("rune") is visually identical to
+// the standalone buildRune() — a clear migration path for the renderer rune loop.
+function _buildRuneShape(color) {
+  const g    = new THREE.Group();
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.9, 0.25, 0.9),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45 })
+  );
+  const core = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.5, 0.5),
+    new THREE.MeshBasicMaterial({ color })
+  );
+  core.position.y = 0.55;
+  core.rotation.set(0.5, 0.5, 0);
+  g.add(base, core);
+  return { group: g, core };
+}
+
+const ITEM_SHAPES = {
+  orb:   _buildOrb,
+  tome:  _buildTome,
+  blade: _buildBlade,
+  boots: _buildBoots,
+  crown: _buildCrown,
+  rune:  _buildRuneShape,
+};
+
+// Rarity → ring accent color and glow intensity.
+const _RARITY_COLORS = {
+  common:    0x888888,
+  rare:      0x4499ff,
+  epic:      0xbb44ff,
+  legendary: 0xffcc22,
+  unfair:    0xff2277,  // beyond-legendary: hot magenta for meteorScroll, chronoLocket
+};
+const _RARITY_INTENSITY = { common: 0.4, rare: 1.0, epic: 1.4, legendary: 2.0, unfair: 2.8 };
+
+// Flat ring + optional PointLight halo placed at ground level; pulsed by animatePickup.
+// Only epic/legendary drops get a real PointLight to keep the per-frame light budget
+// bounded (WebGL forward rendering recompiles materials per active light count).
+// Common and rare drops rely on the emissive core and ring for visual glow.
+function _rarityHalo(color, rarity = "common") {
+  const g  = new THREE.Group();
+  const rc = _RARITY_COLORS[rarity] ?? _RARITY_COLORS.common;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.38, 0.52, 24),
+    new THREE.MeshBasicMaterial({
+      color: rc, transparent: true,
+      opacity: rarity === "common" ? 0.25 : 0.55,
+      side: THREE.DoubleSide,
+    })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.06;
+  g.add(ring);
+  // Only high-rarity drops get a real PointLight; others keep their emissive core.
+  let light = null;
+  if (rarity === "epic" || rarity === "legendary" || rarity === "unfair") {
+    light = new THREE.PointLight(rc, _RARITY_INTENSITY[rarity] ?? 0.6, 4);
+    light.position.y = 0.8;
+    g.add(light);
+  }
+  g.userData.pulse = { ring, light, rarity };
+  return g;
+}
+
+// Float bob + slow spin + glow pulse. Reads group.userData.pickup. Idempotent,
+// allocation-free. Drives userData.core bob (same 0.55 + sin contract the renderer
+// currently hand-codes for runes) so it can replace that inline code later.
+//
+// Time handling: accumulates p.t internally each call so update(dt) (single-arg,
+// matching the renderer's effects-loop convention) works correctly. The optional
+// second argument `t` is an absolute-time override; when omitted or NaN (as when
+// called from g.userData.update(dt)), the internal accumulator is used instead.
+export function animatePickup(group, t, dt) {
+  const p = group.userData.pickup;
+  if (!p) return;
+  // Accumulate internal clock; fall back to it when absolute t is not provided.
+  p.t = (p.t ?? 0) + dt;
+  const time = (t !== undefined && !isNaN(t)) ? t : p.t;
+  group.rotation.y += dt * Math.PI * 2 * ((p.spinHz ?? 1.4) / 6);
+  if (group.userData.core) {
+    group.userData.core.position.y =
+      (p.baseY ?? 0.55) + Math.sin(time * (p.floatHz ?? 1.6) * 2) * (p.floatAmp ?? 0.12);
+  }
+  // Pulse rarity halo ring + light on any child that carries userData.pulse.
+  for (const child of group.children) {
+    const ph = child.userData.pulse;
+    if (!ph) continue;
+    const base = _RARITY_INTENSITY[ph.rarity] ?? 0.6;
+    if (ph.light) ph.light.intensity = base * (0.75 + Math.sin(time * 3.5) * 0.25);
+    if (ph.ring && ph.ring.material) {
+      ph.ring.material.opacity =
+        (ph.rarity === "common" ? 0.2 : 0.45) + Math.sin(time * 3.5) * 0.12;
+    }
+  }
+  animateSecondary(group, time, dt);
+}
+
+// kind ∈ "orb" | "tome" | "blade" | "boots" | "crown" | "rune"
+// opts: { rarity="common"|"rare"|"epic"|"legendary", glow=true, scale=1,
+//         floatAmp, floatHz, spinHz }
+// Returns a self-animating Group; tick via g.userData.update(dt, t) or
+// call animatePickup(g, t, dt) directly from the game loop.
+export function buildItemDrop(kind = "orb", color = 0xffffff, opts = {}) {
+  const g      = new THREE.Group();
+  const shapeFn = ITEM_SHAPES[kind] || ITEM_SHAPES.orb;
+  const body   = shapeFn(color, opts);
+  g.add(body.group);
+
+  if (opts.glow !== false) g.add(_rarityHalo(color, opts.rarity));
+
+  // Note: the rune standalone builder (buildRune) adds its own PointLight, but
+  // buildItemDrop("rune") already gets one from _rarityHalo for epic/legendary
+  // rarity, and common/rare rely on the emissive core. No extra light needed here.
+
+  g.userData.kind   = kind;
+  g.userData.rarity = opts.rarity || "common";
+  g.userData.core   = body.core;   // mirrors buildRune's userData.core contract
+  g.userData.pickup = {
+    floatAmp: opts.floatAmp ?? 0.12,
+    floatHz:  opts.floatHz  ?? 1.6,
+    spinHz:   opts.spinHz   ?? 1.4,
+    baseY:    0.55,
+    t:        0,   // internal time accumulator — driven by animatePickup
+  };
+  // Single-arg update(dt) matches the renderer effects-loop convention
+  // (buildBurst/buildLightning use the same pattern). animatePickup accumulates
+  // time internally so no absolute-t argument is needed.
+  g.userData.update = (dt2) => animatePickup(g, undefined, dt2);
+
+  // Expose dispose() so the renderer can clean up BufferGeometry/Material/Lights
+  // when culling drops, rather than leaking them on churn.
+  g.userData.dispose = () => {
+    g.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+        else obj.material.dispose();
+      }
+    });
+  };
+
+  if (opts.scale && opts.scale !== 1) g.scale.setScalar(opts.scale);
   return g;
 }
 

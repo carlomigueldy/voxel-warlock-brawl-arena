@@ -88,8 +88,8 @@ test("stunned player cannot fire", () => {
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const p = sim.players.get("a");
   p.status.stunned = 1.5;
-  p.cooldown = 0;
-  assert.strictEqual(p.canFire(), false, "canFire() should return false while stunned");
+  p.cooldowns = {};
+  assert.strictEqual(p.canCast("fireball"), false, "canCast() should return false while stunned");
 });
 
 test("stunned player cannot cast spells", () => {
@@ -111,7 +111,7 @@ test("stun duration ticks down to zero", () => {
   p.status.stunned = 0.5;
   advance(sim, 0.8); // longer than stun
   assert.strictEqual(p.status.stunned, 0, "stun should expire");
-  assert.strictEqual(p.canFire(), true, "player should be able to fire after stun expires");
+  assert.strictEqual(p.canCast("fireball"), true, "player should be able to cast after stun expires");
 });
 
 test("snapshot includes st field mirroring stun remaining", () => {

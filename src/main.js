@@ -63,11 +63,13 @@ function startHosting(name, options = {}) {
   ui.setMenuStatus("Creating room…");
 
   const sim = new Simulation({
-    allAbilitiesAtStart: options.allAbilitiesAtStart,
     mobsEnabled: options.mobsEnabled,
     arenaWorld: options.arenaWorld,
     landSize: options.landSize,
     enabledObstacles: options.enabledObstacles,
+    // Spell draft is always-on for multiplayer matches; practice mode jumps
+    // straight to gameplay so skips the draft phase entirely.
+    draftEnabled: !options.practice,
   });
 
   host = new Host({
@@ -134,6 +136,12 @@ function startHosting(name, options = {}) {
   });
 
   host.onInput((peerId, msg) => sim.setInput(peerId, msg));
+  host.onDraft((peerId, msg) => sim.applyDraft(peerId, msg));
+
+  // Host handles draft picks from its own UI locally; clients send them over the wire.
+  ui.on("draft", (action) => {
+    sim.applyDraft(localId, action);
+  });
 
   ui.on("bots", () => {
     applyBotSettings();
@@ -210,6 +218,7 @@ function startHosting(name, options = {}) {
       ui.handleEvents(snap.events, snap.t);
       syncLocalSpellSlots(snap);
       ui.updateAbilityBar(snap, localId);
+      ui.updateItemBar(snap, localId);
       playTransitionAudio(snap);
 
       // On match end: submit result + close the online room.
@@ -277,6 +286,11 @@ function startJoining(name, code, character, { userId, region } = {}) {
     },
   });
 
+  // Client-side draft: UI picks are sent over the existing data channel to the host.
+  ui.on("draft", (action) => {
+    client.sendDraft(action);
+  });
+
   // ---- Client loop: send input, render last snapshot ----
   const inputMs = 1000 / CFG.INPUT_RATE;
   let lastInput = 0;
@@ -296,7 +310,9 @@ function startJoining(name, code, character, { userId, region } = {}) {
       if (latestSnapshot.phase !== PHASE.LOBBY) {
         ui.updateHUD(latestSnapshot, localId, playerMeta);
         ui.handleEvents(latestSnapshot.events, latestSnapshot.t);
+        syncLocalSpellSlots(latestSnapshot);
         ui.updateAbilityBar(latestSnapshot, localId);
+        ui.updateItemBar(latestSnapshot, localId);
         playTransitionAudio(latestSnapshot);
       }
     }
@@ -369,6 +385,7 @@ function metaToArray() {
 function syncLocalSpellSlots(snap) {
   const me = snap.players.find((p) => p.id === localId);
   if (me?.spellSlots) input.setSpellSlots(me.spellSlots);
+  if (me?.items)      input.setItemSlots(me.items);
 }
 
 // ---------- UI event wiring ----------
@@ -551,7 +568,6 @@ ui.on("signOut", async () => {
 function resetMatchState() {
   ui.hidePause();
   input.paused = false;
-  input.fire = false;
   try { host?.destroy(); } catch { /* ignore */ }
   try { client?.destroy(); } catch { /* ignore */ }
   playerMeta.clear();
@@ -568,14 +584,16 @@ function leaveMatch() {
   ui.showMenu();
 }
 
-// ESC toggles the pause menu during active play (not in lobby/menu).
+// ESC toggles the pause menu during active play (not in lobby/menu/spell-draft).
 addEventListener("keydown", (e) => {
   if (e.code !== "Escape") return;
   if (!inGame || !latestSnapshot || latestSnapshot.phase === PHASE.LOBBY) return;
+  // During spell selection the draft overlay owns Escape (clear picks); let it
+  // handle the event and do not also open the pause menu.
+  if (latestSnapshot.phase === PHASE.SPELL_SELECTION) return;
   e.preventDefault();
   const paused = ui.togglePause();
   input.paused = paused;
-  if (paused) input.fire = false;
 });
 
 ui.on("host", startHosting);

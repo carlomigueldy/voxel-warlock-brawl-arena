@@ -1,6 +1,6 @@
 // Local input collection (keyboard/mouse + touch). Produces an input object
 // that gets sent to the host (or applied directly if we are the host).
-import { CFG, SPELLS, SPELL_ORDER } from "./config.js";
+import { CFG, SPELLS, SPELL_ORDER, ITEMS } from "./config.js";
 
 export const SPELL_SLOT_HOTKEY_STORAGE_KEY = "vwb-spell-slot-hotkeys";
 
@@ -45,7 +45,6 @@ export class InputController {
     this.keys = {};
     this.mouseX = window.innerWidth / 2;
     this.mouseY = window.innerHeight / 2;
-    this.fire = false;
     this.seq = 0;
     this.castId = 0;
     this.pendingCasts = [];     // queued {id, spell, tx, tz} awaiting send
@@ -53,8 +52,10 @@ export class InputController {
     this.keyMap = buildKeyMap();
     this.spellSlotHotkeys = loadSpellSlotHotkeys();
     this.spellSlots = Array(CFG.SPELL_SLOT_COUNT).fill(null);
+    // Item slot bindings — active-item granted spells, keyed by item hotkey (7–0).
+    this.itemSlotHotkeys = CFG.DEFAULT_ITEM_SLOT_HOTKEYS.slice();
+    this.itemSlots = Array(CFG.ITEM_SLOT_COUNT).fill(null);
     this.touchMove = [0, 0];
-    this.touchFire = false;
     this.onCast = null;          // optional callback (e.g. resume audio)
     this.selectedSpell = "fireball"; // touch ability selection
     this.paused = false;         // when true (pause menu open) input is neutralized
@@ -65,16 +66,15 @@ export class InputController {
   _bind() {
     addEventListener("keydown", (e) => {
       this.keys[e.code] = true;
-      // While the pause menu is open, swallow gameplay keys (no fire/casts).
+      // While the pause menu is open, swallow gameplay keys (no casts).
       if (this.paused) return;
-      if (e.code === "Space") this.fire = true;
+      if (e.code === "Space" && !e.repeat) this.queueCast(this.selectedSpell);
       // Ability hotkeys queue a cast at the current aim/target point.
       const spell = this.spellForCode(e.code);
       if (spell && !e.repeat) this.queueCast(spell);
     });
     addEventListener("keyup", (e) => {
       this.keys[e.code] = false;
-      if (e.code === "Space") this.fire = false;
     });
     addEventListener("mousemove", (e) => {
       this.mouseX = e.clientX;
@@ -82,11 +82,10 @@ export class InputController {
     });
     addEventListener("mousedown", (e) => {
       if (this.paused) return;  // ignore clicks while paused
-      if (e.button === 0) this.fire = true;
-      // Right-click casts the currently selected ability at the cursor.
+      // LMB and RMB both cast the selected spell; LMB is the primary trigger.
+      if (e.button === 0) this.queueCast(this.selectedSpell);
       if (e.button === 2) this.queueCast(this.selectedSpell);
     });
-    addEventListener("mouseup", (e) => { if (e.button === 0) this.fire = false; });
     addEventListener("contextmenu", (e) => e.preventDefault());
 
     this._bindTouch();
@@ -98,6 +97,12 @@ export class InputController {
     this.spellSlots = Array.from({ length: CFG.SPELL_SLOT_COUNT }, (_, i) => slots[i] || null);
   }
 
+  // Map equipped active-item keys → their granted spells for hotkey dispatch.
+  // Passive items produce null so their slot is a no-op on keypress.
+  setItemSlots(itemKeys = []) {
+    this.itemSlots = Array.from({ length: CFG.ITEM_SLOT_COUNT }, (_, i) => itemKeys[i] || null);
+  }
+
   setSpellSlotHotkey(index, key) {
     if (index < 0 || index >= CFG.SPELL_SLOT_COUNT) return false;
     const normalized = normalizeSpellSlotHotkeys(Object.assign([...this.spellSlotHotkeys], { [index]: key }));
@@ -107,6 +112,18 @@ export class InputController {
   }
 
   spellForCode(code) {
+    // Item slot hotkeys take priority only when an active item actually occupies
+    // the slot. If the slot is empty or the item is passive, fall through to the
+    // spell-slot lookup so direct spell hotkeys (e.g. Digit8 → meteor) still work.
+    const itemSlot = this.itemSlotHotkeys.findIndex((key) => keyToCode(key) === code);
+    if (itemSlot >= 0) {
+      const itemKey = this.itemSlots[itemSlot];
+      if (itemKey) {
+        const it = ITEMS[itemKey];
+        if (it?.kind === "active" && it.grantsSpell) return it.grantsSpell;
+      }
+      // Slot empty or passive item — do NOT return null; fall through below.
+    }
     const slot = this.spellSlotHotkeys.findIndex((key) => keyToCode(key) === code);
     if (slot >= 0) return this.spellSlots[slot] || null;
     return this.keyMap[code];
@@ -165,8 +182,7 @@ export class InputController {
     joystick.addEventListener("touchmove", move, { passive: false });
     joystick.addEventListener("touchend", end);
 
-    fireBtn.addEventListener("touchstart", (e) => { this.touchFire = true; e.preventDefault(); }, { passive: false });
-    fireBtn.addEventListener("touchend", (e) => { this.touchFire = false; e.preventDefault(); }, { passive: false });
+    fireBtn.addEventListener("touchstart", (e) => { this.queueCast(this.selectedSpell); e.preventDefault(); }, { passive: false });
   }
 
   // Build the current input snapshot to send/apply.
@@ -177,7 +193,7 @@ export class InputController {
     if (this.paused) {
       this._castWindow = [];
       this.pendingCasts = [];
-      return { move: [0, 0], aim: aimNow, fire: false, seq: ++this.seq, casts: [] };
+      return { move: [0, 0], aim: aimNow, seq: ++this.seq, casts: [] };
     }
     let mx = 0, mz = 0;
     if (this.keys["KeyW"] || this.keys["ArrowUp"]) mz -= 1;
@@ -192,7 +208,6 @@ export class InputController {
     }
 
     const aim = this.renderer.screenToAim(this.mouseX, this.mouseY);
-    const fire = this.fire || this.touchFire;
 
     // Move new casts into a short resend window. Input is sent unreliably, so we
     // include each cast in a few consecutive packets; the host dedupes by id.
@@ -203,6 +218,6 @@ export class InputController {
     const casts = this._castWindow.map((e) => e.c);
     this._castWindow = this._castWindow.filter((e) => --e.ttl > 0);
 
-    return { move: [mx, mz], aim, fire, seq: ++this.seq, casts };
+    return { move: [mx, mz], aim, seq: ++this.seq, casts };
   }
 }

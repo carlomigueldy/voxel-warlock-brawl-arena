@@ -40,6 +40,20 @@ export const ABILITY_ARCHETYPE = {
   // Targeted channels (pull/bind a foe)
   drain: "channel",
   link: "channel",
+  // Step 3 DOTA-inspired roster
+  projectile: "attack",
+  target: "attack",
+  stun: "attack",
+  push: "slam",
+  explode: "slam",
+  blink: "dash",
+  pull: "channel",
+  drag: "channel",
+  vacuum: "channel",
+  heal: "channel",
+  invisible: "buff",
+  speed: "buff",
+  summon: "buff",
 };
 
 // How long each archetype plays before locomotion fully takes back over.
@@ -72,6 +86,17 @@ const EVENT_ARCHETYPE = {
   drain: "channel",
   link: "channel",
   lightning: "attack",
+  // Step 3 events
+  target: "attack",
+  stun: "attack",
+  explode: "slam",
+  push: "slam",
+  pull: "channel",
+  drag: "channel",
+  vacuumTick: "channel",
+  invisible: "buff",
+  speed: "buff",
+  summon: "buff",
 };
 
 export function archetypeForEvent(ev) {
@@ -80,6 +105,12 @@ export function archetypeForEvent(ev) {
   // Generic projectile/auto-attack casts carry the spell id explicitly.
   if (ev.type === "cast") {
     const archetype = archetypeForAbility(ev.spell) || "attack";
+    return ev.id != null ? { id: ev.id, archetype } : null;
+  }
+
+  // Cast wind-up / channel start: trigger the spell's archetype pose.
+  if (ev.type === "castStart") {
+    const archetype = archetypeForAbility(ev.spell) || "channel";
     return ev.id != null ? { id: ev.id, archetype } : null;
   }
 

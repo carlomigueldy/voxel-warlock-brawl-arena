@@ -137,15 +137,15 @@ test("renderer passes falling and time to GLB character animations", () => {
   assert.match(match[1], /time: t/);
 });
 
-test("simulation emits cast events for held-fire auto-attacks", () => {
-  const sim = fs.readFileSync("src/sim.js", "utf8");
-  assert.match(sim, /type: "cast"[\s\S]*spell: "fireball"/);
+test("fireball cast events are emitted via spells.js castSpell pipeline", () => {
+  const spells = fs.readFileSync("src/spells.js", "utf8");
+  assert.match(spells, /type: "cast"[\s\S]*spell: "fireball"/);
 });
 
-test("host menu exposes all-abilities-at-start toggle", () => {
-  assert.match(html, /id="all-abilities-toggle"/);
-  assert.match(ui, /allAbilitiesAtStart/);
-  assert.match(main, /allAbilitiesAtStart: options\.allAbilitiesAtStart/);
+test("host menu no longer exposes an all-abilities toggle (strict slots only)", () => {
+  assert.doesNotMatch(html, /id="all-abilities-toggle"/);
+  assert.doesNotMatch(ui, /allAbilitiesAtStart/);
+  assert.doesNotMatch(main, /allAbilitiesAtStart/);
 });
 
 test("menu exposes a character-select UI with cards and a live preview", () => {
@@ -192,8 +192,8 @@ test("live character preview module exists and spins the model", () => {
   assert.match(preview, /buildCharacterInstance/);
 });
 
-test("ability bar filters slots by acquired spells from snapshots", () => {
-  assert.match(ui, /me\?\.spells/);
+test("ability bar renders spell slots from snapshot spellSlots array", () => {
+  assert.match(ui, /me\?\.spellSlots/);
   assert.match(ui, /slot\.classList\.toggle\("locked"/);
 });
 
@@ -404,6 +404,36 @@ test("renderer shows stun VFX keyed off the snapshot st field", () => {
   assert.match(renderer, /stunEffect/);
   // The halo spins every frame in the update loop.
   assert.match(renderer, /stunEffect\.rotation\.y/);
+});
+
+// --- Step 4: lootable items ---
+
+test("config declares ITEM_SLOT_COUNT of 4", () => {
+  assert.strictEqual(CFG.ITEM_SLOT_COUNT, 4, "ITEM_SLOT_COUNT must be 4");
+});
+
+test("index.html contains item-bar element", () => {
+  assert.match(html, /id="item-bar"/, "index.html must have #item-bar");
+});
+
+test("renderer imports and calls buildItemDrop", () => {
+  assert.match(renderer, /buildItemDrop/, "renderer must import/call buildItemDrop");
+});
+
+// --- Step 8: A1 regression guard — syncLocalSpellSlots in both loops ---
+
+test("syncLocalSpellSlots (or setSpellSlots) is called inside both host and client rAF loops in main.js", () => {
+  // The host loop already had syncLocalSpellSlots; the client loop got it in Step 8 (A1 fix).
+  // We search for the function name appearing at least twice in the file so either loop can
+  // use it (the function itself counts as one occurrence; each call-site is another).
+  const matches = main.match(/syncLocalSpellSlots/g) || [];
+  assert.ok(matches.length >= 3,
+    `syncLocalSpellSlots must appear at least 3 times in main.js (definition + host call + client call); found ${matches.length}`);
+  // Additionally confirm the client loop block specifically contains it.
+  // The client loop is identified by the clientLoop function definition.
+  const clientLoopBlock = main.match(/function clientLoop[\s\S]*?requestAnimationFrame\(clientLoop\)/)?.[0] || "";
+  assert.match(clientLoopBlock, /syncLocalSpellSlots/,
+    "syncLocalSpellSlots must appear inside the clientLoop function body");
 });
 
 console.log(`\n${passed} source checks passed.`);

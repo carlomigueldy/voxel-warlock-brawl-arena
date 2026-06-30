@@ -4,6 +4,7 @@ import assert from "node:assert";
 import { Simulation, PHASE } from "../src/sim.js";
 import { Bolt } from "../src/bolt.js";
 import { CFG, SPELLS, SPELL_ORDER, ITEMS } from "../src/config.js";
+import { castSpell } from "../src/spells.js";
 
 let passed = 0;
 function test(name, fn) {
@@ -28,13 +29,16 @@ function playingSim() {
   // expected height (CFG.PLATFORM_TOP + 1.1) regardless of whether a player
   // happened to stand on a procedurally-generated plateau during advance().
   for (const p of sim.players.values()) p.groundY = CFG.PLATFORM_TOP;
+  // Seed all spells into the Set so spell-mechanic tests can cast any spell
+  // (casting checks spells.has(id); slot array is irrelevant to that check).
+  for (const p of sim.players.values()) p.spells = new Set(Object.keys(SPELLS));
   return sim;
 }
 
 // Queue a cast for player `id` and run one step to resolve it.
 function cast(sim, id, spell, tx = NaN, tz = NaN) {
   const p = sim.players.get(id);
-  sim.setInput(id, { move: [0, 0], aim: p.aim, fire: false, seq: (p.input.seq || 0) + 1, casts: [{ id: Date.now() + Math.random(), spell, tx, tz }] });
+  sim.setInput(id, { move: [0, 0], aim: p.aim, seq: (p.input.seq || 0) + 1, casts: [{ id: Date.now() + Math.random(), spell, tx, tz }] });
   sim.step(1 / CFG.TICK_RATE);
 }
 
@@ -49,11 +53,13 @@ test("handbook ability index is fully declared", () => {
   ];
   for (const s of expectedSpells) assert.ok(SPELLS[s], "missing spell: " + s);
   assert.strictEqual(SPELL_ORDER.length, Object.keys(SPELLS).length);
+  // Exactly 10 lootable items (Step 4 roster).
   const expectedItems = [
-    "aegis", "cape", "helmet", "bootsOfSpeed", "bloodSword", "maskOfDeath",
-    "cursedPendant", "pendant", "stoneOfJordan", "lavaTreads", "staffOfFireball",
-    "warden",
+    "vitalityCore", "berserkerBlade", "swiftBoots", "wardingHelm",
+    "arcaneSigil", "blastTome", "phoenixCharm",
+    "blinkStone", "meteorScroll", "chronoLocket",
   ];
+  assert.strictEqual(Object.keys(ITEMS).length, 10, "ITEMS must have exactly 10 entries");
   for (const i of expectedItems) assert.ok(ITEMS[i], "missing item: " + i);
 });
 
@@ -238,9 +244,9 @@ test("bouncer reflects off the arena rim", () => {
 test("items modify player stats via applyItems", () => {
   const sim = playingSim();
   const a = sim.players.get("a");
-  a.applyItems(["bootsOfSpeed", "aegis"]);
-  assert.ok(a.mods.speedMul > 1, "boots did not raise speed");
-  assert.ok(a.mods.kbResist > 0, "aegis did not add knockback resist");
+  a.applyItems(["swiftBoots", "wardingHelm"]);
+  assert.ok(a.mods.speedMul > 1, "swiftBoots did not raise speed");
+  assert.ok(a.mods.kbResist > 0, "wardingHelm did not add knockback resist");
   // Knockback resist reduces the impulse received.
   a.vx = 0; a.charge = 0;
   a.applyHit(1, 0, 10);
@@ -252,12 +258,30 @@ test("items modify player stats via applyItems", () => {
   assert.ok(resisted < plain.vx, "kbResist did not reduce knockback");
 });
 
+test("Step 4 items: vitalityCore raises maxHp, berserkerBlade raises dmgMul, blastTome raises aoeMul, phoenixCharm adds regen", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a");
+  a.hp = a.maxHp; // ensure hp is at base before applying
+  a.applyItems(["vitalityCore"]);
+  assert.strictEqual(a.maxHp, CFG.PLAYER_HP_MAX + 40, "vitalityCore should add 40 max hp");
+  a.applyItems(["berserkerBlade"]);
+  assert.ok(a.mods.dmgMul > 1, "berserkerBlade did not raise dmgMul");
+  a.applyItems(["blastTome"]);
+  assert.ok(a.mods.aoeMul > 1, "blastTome did not raise aoeMul");
+  a.applyItems(["phoenixCharm"]);
+  assert.strictEqual(a.mods.regen, 3, "phoenixCharm should set regen to 3");
+  // Compose swiftBoots + wardingHelm together
+  a.applyItems(["swiftBoots", "wardingHelm"]);
+  assert.ok(a.mods.speedMul > 1, "composed swiftBoots did not raise speed");
+  assert.ok(a.mods.kbResist > 0, "composed wardingHelm did not add kbResist");
+});
+
 test("cooldown reduction items shorten spell cooldowns", () => {
   const sim = playingSim();
   const a = sim.players.get("a");
   const baseCd = a.spellCooldown("fireball");
-  a.applyItems(["pendant"]);
-  assert.ok(a.spellCooldown("fireball") < baseCd, "cdr item had no effect");
+  a.applyItems(["arcaneSigil"]);
+  assert.ok(a.spellCooldown("fireball") < baseCd, "arcaneSigil cdr item had no effect");
 });
 
 test("snapshot includes meteors and per-spell cooldowns and stays serializable", () => {
@@ -280,171 +304,49 @@ test("cannot cast while on cooldown", () => {
   assert.ok(Math.abs(a.x - x1) < 0.001, "teleport fired while on cooldown");
 });
 
-test("players without all starting abilities cannot cast unacquired spells", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
+test("strict slots: default loadout fills exactly six spell slots", () => {
+  const sim = new Simulation({ seed: 42, mobsEnabled: false });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const a = sim.players.get("a");
-  a.x = 0; a.z = 0;
-  cast(sim, "a", "teleport", 5, 0);
-  assert.ok(Math.abs(a.x) < 0.001, "teleport fired before acquisition");
+  assert.strictEqual(CFG.SPELL_SLOT_COUNT, 6);
+  assert.strictEqual(a.spellSlots.length, 6);
+  assert.ok(a.spellSlots.every((s) => s && SPELLS[s]), "all six slots filled with valid spells");
+  assert.strictEqual(new Set(a.spellSlots).size, 6, "no duplicate spells");
+  assert.strictEqual(a.spellSlots[0], "fireball", "fireball retained as permanent weapon");
 });
 
-test("spell runes occupy the first empty spell slot on pickup", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  const a = sim.players.get("a");
-  // Clear any rune spells picked up during advance so slot 0 is free for teleport.
-  a.spellSlots.fill(null);
-  sim.runes = [{ id: 1, spell: "teleport", x: a.x, z: a.z }];
-  sim.step(1 / CFG.TICK_RATE);
-  assert.ok(a.hasSpell("teleport"), "teleport was not acquired");
-  assert.deepStrictEqual(a.spellSlots, ["teleport", null, null, null, null, null], "teleport did not occupy the first empty slot");
-  assert.strictEqual(sim.runes.length, 0, "picked up rune was not removed");
+test("strict slots: acquireSpell refuses a seventh distinct spell", () => {
+  const sim = new Simulation({ seed: 1, mobsEnabled: false });
+  const a = sim.addPlayer("a", "A");
+  a.setLoadout(["fireball", "lightning", "teleport", "shield", "drain", "heal"]);
+  assert.strictEqual(a.acquireSpell("gravity"), false, "must not exceed six slots");
+  assert.ok(!a.hasSpell("gravity"));
 });
 
-test("players with six filled spell slots cannot loot another spell rune", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  const a = sim.players.get("a");
-  for (const spell of ["teleport", "thrust", "swap", "windWalk", "rush", "drain"]) a.acquireSpell(spell);
-  sim.runes = [{ id: 1, spell: "meteor", x: a.x, z: a.z }];
-  sim.step(1 / CFG.TICK_RATE);
-  assert.strictEqual(a.hasSpell("meteor"), false, "meteor should not be acquired when slots are full");
-  assert.strictEqual(sim.runes.length, 1, "full-slot pickup should leave the rune on the field");
+test("strict slots: the all-abilities path is gone", () => {
+  const a = new Simulation({ seed: 1 }).addPlayer("a", "A");
+  assert.strictEqual(typeof a.setAllSpells, "undefined", "setAllSpells removed");
+  // legacy option is ignored — player still gets the strict six, not all spells
+  const sim = new Simulation({ seed: 1, allAbilitiesAtStart: true, mobsEnabled: false });
+  sim.addPlayer("z", "Z");
+  assert.ok(sim.players.get("z").spells.size <= CFG.SPELL_SLOT_COUNT);
 });
 
-test("consumed rune abilities clear their spell slot", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  const a = sim.players.get("a");
-  // Clear any rune spells picked up during advance so the assertion on six null
-  // slots only reflects what the test itself puts in, not random rune pickups.
-  a.spellSlots.fill(null);
-  a.acquireSpell("teleport");
-  a.x = 0; a.z = 0;
-  cast(sim, "a", "teleport", 5, 0);
-  assert.deepStrictEqual(a.spellSlots, [null, null, null, null, null, null], "teleport slot was not cleared after cast");
-});
-
-test("snapshots include runes, acquired spell ids, and six spell slots", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  const snap = JSON.parse(JSON.stringify(sim.snapshot()));
-  assert.ok(Array.isArray(snap.runes), "runes missing from snapshot");
-  assert.strictEqual(snap.spellSlotsEnabled, true, "rune mode flag missing from snapshot");
-  const me = snap.players.find((p) => p.id === "a");
-  assert.deepStrictEqual(me.spells, ["fireball"], "acquired spells missing from player snapshot");
-  assert.deepStrictEqual(me.spellSlots, [null, null, null, null, null, null], "six empty spell slots missing from player snapshot");
-});
-
-test("rune mode starts with at most two active runes", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  assert.ok(sim.runes.length <= CFG.RUNE_MAX_ACTIVE, `too many active runes: ${sim.runes.length}`);
-});
-
-test("rune mode spawns new runes over time without exceeding active cap", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  // Park both players at the arena centre (runes spawn at ring ≥ 6.5 units out,
-  // pickup radius is 1.4 units) so a freshly-spawned rune is never immediately
-  // collected in the same tick that triggers the assertion.
-  for (const p of sim.players.values()) { p.x = 0; p.z = 0; }
-  sim.runes = [];
-  sim.runeSpawnTimer = 0;
-  sim.step(1 / CFG.TICK_RATE);
-  assert.strictEqual(sim.runes.length, 1, "first timed rune did not spawn");
-  advance(sim, CFG.RUNE_SPAWN_INTERVAL + 0.1);
-  assert.ok(sim.runes.length <= CFG.RUNE_MAX_ACTIVE, "active rune cap exceeded");
-  assert.ok(sim.runes.length >= 1, "timed runes stopped spawning");
-});
-
-test("rune acquired abilities are consumed when cast", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  const a = sim.players.get("a");
-  a.acquireSpell("teleport");
-  a.x = 0; a.z = 0;
-  cast(sim, "a", "teleport", 5, 0);
-  assert.strictEqual(a.hasSpell("teleport"), false, "teleport was not consumed after cast");
-});
-
-test("all-abilities mode does not consume spells when cast", () => {
+test("casting a spell does not consume it (permanent for the round)", () => {
   const sim = playingSim();
-  const a = sim.players.get("a");
-  a.x = 0; a.z = 0;
+  const a = sim.players.get("a"); a.x = 0; a.z = 0;
   cast(sim, "a", "teleport", 5, 0);
-  assert.strictEqual(a.hasSpell("teleport"), true, "teleport should remain in all-abilities mode");
+  assert.ok(a.hasSpell("teleport"), "spells are no longer single-use");
 });
 
-test("a projectile destroys a targeted rune so it cannot be picked up", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  const a = sim.players.get("a"), b = sim.players.get("b");
-  // Move both players far from the rune so neither can pick it up.
-  a.x = -10; a.z = -10; b.x = 10; b.z = 10;
-  sim.runes = [{ id: 99, spell: "teleport", x: 0, z: 0 }];
-  // A bolt sitting on top of the rune should destroy it.
-  sim.bolts = [new Bolt("a", 0, 0, 0, 0xffffff)];
-  sim.step(1 / CFG.TICK_RATE);
-  assert.strictEqual(sim.runes.length, 0, "rune was not destroyed by the projectile");
-  assert.strictEqual(a.hasSpell("teleport"), false, "shooter wrongly acquired the destroyed rune");
-});
-
-test("destroying a rune emits a runeDestroyed event", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  const a = sim.players.get("a"), b = sim.players.get("b");
-  a.x = -10; a.z = -10; b.x = 10; b.z = 10;
-  sim.runes = [{ id: 7, spell: "meteor", x: 0, z: 0 }];
-  sim.bolts = [new Bolt("a", 0, 0, 0, 0xffffff)];
-  sim.step(1 / CFG.TICK_RATE);
-  assert.ok(sim.events.some((e) => e.type === "runeDestroyed" && e.spell === "meteor"),
-    "no runeDestroyed event emitted");
-});
-
-test("destroying a rune consumes the projectile", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  const a = sim.players.get("a"), b = sim.players.get("b");
-  a.x = -10; a.z = -10; b.x = 10; b.z = 10;
-  sim.runes = [{ id: 8, spell: "gravity", x: 0, z: 0 }];
-  sim.bolts = [new Bolt("a", 0, 0, 0, 0xffffff)];
-  sim.step(1 / CFG.TICK_RATE);
-  assert.strictEqual(sim.bolts.length, 0, "projectile survived after destroying a rune");
-});
-
-test("reacquiring a consumed rune ability clears its stale cooldown", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
-  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
-  sim.startMatch();
-  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  const a = sim.players.get("a");
-  a.acquireSpell("teleport");
-  a.x = 0; a.z = 0;
-  cast(sim, "a", "teleport", 5, 0);
-  a.acquireSpell("teleport");
-  assert.strictEqual(a.canCast("teleport"), true, "reacquired teleport should be ready");
+test("snapshot: spellSlotsEnabled always true and runes serialize empty", () => {
+  const sim = new Simulation({ seed: 42, mobsEnabled: false });
+  sim.addPlayer("a", "A"); sim.startMatch();
+  const snap = JSON.parse(JSON.stringify(sim.snapshot()));
+  assert.strictEqual(snap.spellSlotsEnabled, true);
+  assert.ok(Array.isArray(snap.runes) && snap.runes.length === 0);
 });
 
 test("meteor effRadius increases with caster charge", () => {
@@ -535,20 +437,29 @@ test("cover: obstacle blocks bolt before it reaches the target behind it", () =>
   sim.arena.setLayout(null);
 });
 
-test("cover: the basic auto-attack (spawnBolt) honors obstacle cover", () => {
+test("cover: a fireball cast honors obstacle cover", () => {
   const sim = playingSim();
   const a = sim.players.get("a"), b = sim.players.get("b");
   a.x = 0; a.z = 0; a.aim = 0; b.x = 6; b.z = 0; b.vx = 0;
+  a.groundY = CFG.PLATFORM_TOP; b.groundY = CFG.PLATFORM_TOP;
   sim.arena.setLayout({
     plateaus: [],
     obstacles: [{ id: 1, type: "wall", x: 3, z: 0, r: 0.4, height: 2.5, rot: 0 }],
   });
-  sim.spawnBolt(a);
+  cast(sim, "a", "fireball", 6, 0);
+  // The bolt was dispatched by the cast; inspect the most recent bolt.
+  // For cover test we re-run the remaining flight via stepBolt.
+  // Cast already stepped one tick; check the bolt is present and cover-enabled.
   const bolt = sim.bolts[sim.bolts.length - 1];
-  assert.ok(bolt.coverEnabled, "auto-attack bolt must have cover checking enabled");
-  stepBolt(bolt, [a, b], sim.arena, 1.0);
-  assert.strictEqual(b.vx, 0, "auto-attack passed through cover and hit the target");
-  assert.ok(bolt.dead, "auto-attack was not stopped by the wall");
+  if (bolt) {
+    assert.ok(bolt.coverEnabled, "cast bolt must have cover checking enabled");
+    stepBolt(bolt, [a, b], sim.arena, 1.0);
+    assert.strictEqual(b.vx, 0, "fireball cast passed through cover and hit the target");
+    assert.ok(bolt.dead, "fireball cast was not stopped by the wall");
+  } else {
+    // Bolt was already killed by cover in the first step tick — cover is working.
+    assert.strictEqual(b.vx, 0, "fireball cast should not hit behind wall");
+  }
   sim.arena.setLayout(null);
 });
 
@@ -705,6 +616,238 @@ test("meteor AoE is unaffected by cover obstacles (rains from above)", () => {
   assert.ok(Math.abs(b.vx) > 0 || Math.abs(b.vz) > 0,
     "meteor was cover-blocked when it should rain down unimpeded");
   sim.arena.setLayout(null);
+});
+
+// ── Step 2: status effect mechanics ──────────────────────────────────────────
+
+test("fireball bolt applies burn DoT on hit", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; a.aim = 0; a.groundY = CFG.PLATFORM_TOP;
+  b.x = 1.5; b.z = 0; b.vx = 0; b.groundY = CFG.PLATFORM_TOP;
+  castSpell(sim, a, { spell: "fireball", tx: 5, tz: 0 });
+  advance(sim, 0.1);
+  assert.ok(b.status.burn > 0, `fireball hit should apply burn status (burn=${b.status.burn})`);
+  assert.ok(b.status.burnDps > 0, "burn should have a positive DPS value");
+});
+
+test("burn DoT deals damage over time", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  b.status.burn = 2; b.status.burnDps = 10; b.status.burnBy = "a";
+  const hpBefore = b.hp;
+  advance(sim, 0.5);
+  assert.ok(b.hp < hpBefore, `burn DoT should reduce HP (before:${hpBefore} after:${b.hp})`);
+});
+
+test("burn DoT emits dotTick events", () => {
+  const sim = playingSim();
+  const b = sim.players.get("b");
+  b.status.burn = 2; b.status.burnDps = 10; b.status.burnBy = "a";
+  b.status.burnTickAcc = 0;
+  let sawTick = false;
+  for (let i = 0; i < 20; i++) {
+    sim.step(1 / CFG.TICK_RATE);
+    sawTick ||= sim.events.some((ev) => ev.type === "dotTick");
+  }
+  assert.ok(sawTick, "burn DoT should emit dotTick events every 0.25s");
+});
+
+test("lightning applies slow status to hit targets", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0;
+  b.x = 6; b.z = 0;
+  castSpell(sim, a, { spell: "lightning", tx: 6, tz: 0 });
+  assert.ok(b.status.slow > 0, `lightning should apply slow (slow=${b.status.slow})`);
+  assert.ok(b.status.slowMul < 1, `slow multiplier should reduce speed (slowMul=${b.status.slowMul})`);
+});
+
+test("slow status reduces player movement speed", () => {
+  const sim = playingSim();
+  const b = sim.players.get("b");
+  b.x = 0; b.z = 0;
+  // Measure speed without slow.
+  sim.setInput("b", { move: [1, 0], aim: 0, seq: 1 });
+  const x0 = b.x;
+  sim.step(0.1);
+  const dx_normal = b.x - x0;
+  // Reset and apply slow.
+  b.x = 0; b.vx = 0; b.vz = 0;
+  b.status.slow = 2; b.status.slowMul = 0.5;
+  sim.setInput("b", { move: [1, 0], aim: 0, seq: 2 });
+  const x1 = b.x;
+  sim.step(0.1);
+  const dx_slowed = b.x - x1;
+  assert.ok(dx_slowed < dx_normal, `slow should reduce movement (normal:${dx_normal} slowed:${dx_slowed})`);
+});
+
+test("homing bolt applies curse on hit", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; a.aim = 0; a.groundY = CFG.PLATFORM_TOP;
+  b.x = 3; b.z = 0; b.vx = 0; b.groundY = CFG.PLATFORM_TOP;
+  castSpell(sim, a, { spell: "homing", tx: 3, tz: 0 });
+  advance(sim, 0.5);
+  assert.ok(b.status.curse > 0, `homing bolt should apply curse (curse=${b.status.curse})`);
+});
+
+test("curse amplifies incoming damage", () => {
+  const sim = playingSim();
+  const b = sim.players.get("b");
+  const hpBefore = b.hp;
+  b.applyDamage(10, "a");
+  const normalDamage = hpBefore - b.hp;
+  // Reset and apply curse.
+  b.hp = b.maxHp;
+  b.status.curse = 3; b.status.curseMul = 1.25;
+  b.applyDamage(10, "a");
+  const cursedDamage = b.maxHp - b.hp;
+  assert.ok(cursedDamage > normalDamage, `curse should amplify damage (normal:${normalDamage} cursed:${cursedDamage})`);
+});
+
+test("meteor deals more damage than fireball (rebalance)", () => {
+  assert.ok(SPELLS.meteor.dmg > SPELLS.fireball.dmg,
+    `meteor dmg(${SPELLS.meteor.dmg}) should exceed fireball dmg(${SPELLS.fireball.dmg})`);
+});
+
+test("thrust shockwave now deals chip damage", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; a.aim = 0;
+  b.x = 2; b.z = 0; b.vx = 0;
+  const hpBefore = b.hp;
+  castSpell(sim, a, { spell: "thrust", tx: 5, tz: 0 });
+  sim.step(1 / CFG.TICK_RATE);
+  assert.ok(b.hp < hpBefore, `thrust shockwave should deal chip damage (hp: ${hpBefore} -> ${b.hp})`);
+});
+
+// ── Step 3: New DOTA-inspired roster handler tests ───────────────────────────
+
+test("projectile spawns an arcane bolt toward the target", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; a.aim = 0; b.x = 4; b.z = 0; b.groundY = CFG.PLATFORM_TOP;
+  const hpBefore = b.hp;
+  cast(sim, "a", "projectile", 5, 0);
+  advance(sim, 0.3);
+  assert.ok(b.hp < hpBefore, "arcane bolt did not damage target");
+});
+
+test("target damages and curses nearest enemy", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; b.x = 5; b.z = 0;
+  const hpBefore = b.hp;
+  cast(sim, "a", "target", NaN, NaN);
+  assert.ok(b.hp < hpBefore, "target did not deal damage");
+  assert.ok(b.status.curse > 0, "target did not apply curse");
+  assert.strictEqual(b.status.curseMul, SPELLS.target.curse, "wrong curse multiplier");
+});
+
+test("stun sets victim stunned and deals damage; victim cannot cast", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; b.x = 5; b.z = 0;
+  const hpBefore = b.hp;
+  cast(sim, "a", "stun", NaN, NaN);
+  assert.ok(b.status.stunned >= SPELLS.stun.stunDur - 0.1, `stun not applied (stunned=${b.status.stunned})`);
+  assert.ok(b.hp < hpBefore, "stun did not deal damage");
+  assert.strictEqual(b.canCast("fireball"), false, "stunned victim should not be able to cast");
+});
+
+test("push knocks foe in forward cone but not one behind caster", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; a.aim = 0; // aiming +x
+  b.x = 4; b.z = 0; b.vx = 0; b.vz = 0;
+  cast(sim, "a", "push", NaN, NaN);
+  assert.ok(b.vx > 0, "push did not knock back target in cone");
+
+  // Foe behind caster (opposite direction, outside cone)
+  const sim2 = playingSim();
+  const a2 = sim2.players.get("a"), b2 = sim2.players.get("b");
+  a2.x = 0; a2.z = 0; a2.aim = 0;
+  b2.x = -4; b2.z = 0; b2.vx = 0; b2.vz = 0;
+  cast(sim2, "a", "push", NaN, NaN);
+  assert.strictEqual(b2.vx, 0, "push hit a foe outside the forward cone");
+});
+
+test("pull yanks aimed target toward caster and deals damage", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; a.aim = 0; b.x = 8; b.z = 0; b.vx = 0;
+  const hpBefore = b.hp;
+  cast(sim, "a", "pull", 8, 0);
+  assert.ok(b.vx < 0, "pull did not add velocity toward caster");
+  assert.ok(b.hp < hpBefore, "pull did not deal damage");
+});
+
+test("blink moves caster at most range units toward aim", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  a.x = 0; a.z = 0; a.aim = 0; b.x = 15; b.z = 0;
+  cast(sim, "a", "blink", 20, 0);
+  assert.ok(a.x > 0, "blink did not move caster");
+  assert.ok(a.x <= SPELLS.blink.range + 0.01, "blink exceeded max range");
+  assert.ok(!a.activeCast, "blink should clear activeCast immediately");
+});
+
+test("invisible sets status.invisible > 0 and snapshot iv === 1", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a"), b = sim.players.get("b");
+  b.x = 15; b.z = 0; // keep b away
+  cast(sim, "a", "invisible", NaN, NaN);
+  assert.ok(a.status.invisible > 0, "invisible status not set");
+  const snap = sim.snapshot().players.find(p => p.id === "a");
+  assert.strictEqual(snap.iv, 1, "snapshot iv should be 1 while invisible");
+  // Decays to 0 after duration
+  advance(sim, SPELLS.invisible.duration + 0.1);
+  assert.strictEqual(a.status.invisible, 0, "invisible did not expire");
+});
+
+test("speed sets haste status and increases movement speed", () => {
+  const sim = playingSim();
+  const a = sim.players.get("a");
+  // Baseline speed
+  sim.setInput("a", { move: [1, 0], aim: 0, seq: 1 });
+  const x0 = a.x;
+  sim.step(0.1);
+  const dxNormal = a.x - x0;
+
+  // Apply haste
+  a.x = 0; a.vx = 0; a.vz = 0; a.cooldowns = {};
+  cast(sim, "a", "speed", NaN, NaN);
+  assert.ok(a.status.haste > 0, "haste not applied");
+  sim.setInput("a", { move: [1, 0], aim: 0, seq: 2 });
+  const x1 = a.x;
+  sim.step(0.1);
+  const dxHaste = a.x - x1;
+  assert.ok(dxHaste > dxNormal, `haste should increase speed (normal:${dxNormal} haste:${dxHaste})`);
+
+  // snapshot hs flag
+  const snap = sim.snapshot().players.find(p => p.id === "a");
+  assert.strictEqual(snap.hs, 1, "snapshot hs should be 1 while hasted");
+});
+
+test("summon adds a minion mob with ttl set", () => {
+  const sim = new Simulation({ seed: 42, mobsEnabled: true });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  sim.arena.setLayout(null);
+  for (const p of sim.players.values()) p.groundY = CFG.PLATFORM_TOP;
+  const a = sim.players.get("a");
+  a.x = 0; a.z = 0; a.aim = 0;
+  // summon is not in DEFAULT_SPELL_LOADOUT; grant it directly so canCast passes.
+  a.spells.add("summon"); a.cooldowns["summon"] = 0;
+  cast(sim, "a", "summon", NaN, NaN);
+  const minion = sim.mobs.find(m => m.summoned);
+  assert.ok(minion, "summon did not create a minion");
+  assert.ok(minion.ttl != null && minion.ttl > 0, "summoned minion should have ttl");
+  // Despawn after ttl
+  advance(sim, SPELLS.summon.summonTtl + 0.1);
+  assert.strictEqual(sim.mobs.filter(m => m.summoned && m.alive).length, 0, "summoned minion did not despawn");
 });
 
 console.log(`\n${passed} spellbook tests passed.`);

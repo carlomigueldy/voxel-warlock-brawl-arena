@@ -1,6 +1,6 @@
 // All DOM/UI wiring: menus, lobby, HUD, room code, invite link, QR code.
 // QRCode is loaded globally from a <script> tag (window.QRCode).
-import { CFG, SPELLS, SPELL_ORDER, getArenaHazard } from "./config.js";
+import { CFG, SPELLS, SPELL_ORDER, SPELL_TEMPLATES, ITEMS, getArenaHazard } from "./config.js";
 
 const $ = (id) => document.getElementById(id);
 const escapeHTML = (value) => String(value).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -13,7 +13,6 @@ export class UI {
       nameInput: $("name-input"), btnHost: $("btn-host"),
       charCards: $("char-cards"), charPreview: $("char-preview"),
       charPreviewName: $("char-preview-name"),
-      allAbilitiesToggle: $("all-abilities-toggle"),
       arenaWorld: $("arena-world"), landSize: $("land-size"),
       joinCode: $("join-code"), btnJoin: $("btn-join"),
       menuStatus: $("menu-status"),
@@ -24,12 +23,15 @@ export class UI {
       lobbyStatus: $("lobby-status"),
       roundInfo: $("round-info"), timer: $("timer"),
       scoreboard: $("scoreboard"), chargeBar: $("charge-bar"),
+      hpBar: $("hp-bar"), hpText: $("hp-text"),
       hazardWarning: $("hazard-warning"),
       centerMsg: $("center-msg"), touch: $("touch-controls"),
       abilityBar: $("ability-bar"),
+      itemBar: $("item-bar"),
+      castWrap: $("cast-wrap"), castBar: $("cast-bar"), castLabel: $("cast-label"),
+      statusIcons: $("status-icons"),
       btnSfx: $("btn-sfx"), btnMusic: $("btn-music"),
       // Custom control shells (native inputs above remain the source of truth).
-      abilitiesToggleUi: $("abilities-toggle-ui"),
       mobsToggleUi: $("mobs-toggle-ui"),
       mobsToggle: $("mobs-toggle"),
       landSizeUi: $("land-size-ui"),
@@ -62,6 +64,13 @@ export class UI {
       pauseLeave: $("pause-leave"),
       // Big-mob incoming announcement banner.
       mobBanner: $("mob-banner"),
+      // Step 6: spell draft overlay elements.
+      spellDraft: $("spell-draft"),
+      draftTimer: $("draft-timer"),
+      draftTemplates: $("draft-templates"),
+      draftSlots: $("draft-slots"),
+      draftGrid: $("draft-grid"),
+      draftReady: $("draft-ready"),
     };
     this.handlers = {};
     this.audio = null;
@@ -69,7 +78,9 @@ export class UI {
     this._mobBannerTimer = null;
     this._lastHandledSnapTime = null;
     this._abilityEls = null;
-    this._abilityMode = null;
+    this._draftBuilt = false;         // tracks whether the draft overlay grid has been rendered
+    this._draftKeyBound = false;      // Escape + Tab trap listener attached once per element lifetime
+    this._draftPreviousFocus = null;  // element to restore focus to when the overlay closes
     this.spellSlotHotkeys = [...CFG.DEFAULT_SPELL_SLOT_HOTKEYS];
     this.preview = null;
     this.selectedCharacter = this._initialCharacter();
@@ -91,7 +102,6 @@ export class UI {
 
   // ---- Custom (non-native) menu controls ----------------------------------
   _buildCustomControls() {
-    this._buildAbilitiesToggle();
     this._buildMobsToggle();
     this._buildArenaCards();
     this._buildLandSizeSegmented();
@@ -100,21 +110,6 @@ export class UI {
     this._buildRegionSelector();
     this._buildLeaderboardControls();
     this._initAuthForm();
-  }
-
-  _buildAbilitiesToggle() {
-    const btn = this.el.abilitiesToggleUi;
-    const native = this.el.allAbilitiesToggle;
-    if (!btn || !native) return;
-    const sync = () => {
-      const on = native.checked;
-      btn.classList.toggle("is-on", on);
-      btn.setAttribute("aria-checked", String(on));
-      const state = btn.querySelector(".rune-toggle-state");
-      if (state) state.textContent = on ? "ON" : "OFF";
-    };
-    btn.addEventListener("click", () => { native.checked = !native.checked; sync(); });
-    sync();
   }
 
   _buildMobsToggle() {
@@ -812,35 +807,72 @@ export class UI {
 
   setSpellSlotHotkeys(keys = CFG.DEFAULT_SPELL_SLOT_HOTKEYS) {
     this.spellSlotHotkeys = CFG.DEFAULT_SPELL_SLOT_HOTKEYS.map((fallback, i) => keys[i] || fallback);
-    if (this._abilityMode === "slots") this._buildAbilityBar(true);
+    this._buildAbilityBar(true);
+  }
+
+  setItemSlotHotkeys(keys = CFG.DEFAULT_ITEM_SLOT_HOTKEYS) {
+    this.itemSlotHotkeys = CFG.DEFAULT_ITEM_SLOT_HOTKEYS.map((fallback, i) => keys[i] || fallback);
+    this._buildItemBar(true);
+  }
+
+  _buildItemBar(force = false) {
+    if (!this.el.itemBar) return;
+    if (!force && this._itemEls) return;
+    this._itemEls = {};
+    this.el.itemBar.replaceChildren();
+    for (let i = 0; i < CFG.ITEM_SLOT_COUNT; i++) this._buildItemSlot(i);
+  }
+
+  _buildItemSlot(index) {
+    if (!this.itemSlotHotkeys) this.itemSlotHotkeys = CFG.DEFAULT_ITEM_SLOT_HOTKEYS.slice();
+    const key = this.itemSlotHotkeys[index] || CFG.DEFAULT_ITEM_SLOT_HOTKEYS[index];
+    // Passive slots show no hotkey in the label; active slots show the bound key.
+    const slot = this._slotShell(`Item slot ${index + 1}`, null, "Empty", 0x444444);
+    slot.el.dataset.itemSlot = String(index);
+    slot.el.classList.add("empty");
+    this.el.itemBar.appendChild(slot.el);
+    this._itemEls[index] = { slot: slot.el, cd: slot.cd, nm: slot.nm, swatch: slot.swatch, key };
+  }
+
+  updateItemBar(snapshot, localId) {
+    if (!this.el.itemBar) return;
+    this._buildItemBar(false);
+    if (!this._itemEls) return;
+    const me = snapshot.players.find((p) => p.id === localId);
+    const equippedKeys = me?.items || [];
+    const cds = me?.cds || {};
+    for (let i = 0; i < CFG.ITEM_SLOT_COUNT; i++) {
+      const elSet = this._itemEls[i];
+      if (!elSet) continue;
+      const { slot, cd, nm, swatch } = elSet;
+      const key = equippedKeys[i];
+      const it = key ? ITEMS[key] : null;
+      const empty = !it;
+      slot.dataset.itemKey = empty ? "" : key;
+      nm.textContent = empty ? "Empty" : it.name;
+      swatch.style.background = "#" + ((empty ? 0x444444 : it.color).toString(16).padStart(6, "0"));
+      // Active items show cooldown overlay using the granted spell's cooldown.
+      if (!empty && it.kind === "active" && it.grantsSpell) {
+        const remain = cds[it.grantsSpell] || 0;
+        const total = SPELLS[it.grantsSpell]?.cd || 1;
+        cd.style.height = Math.max(0, Math.min(100, (remain / total) * 100)) + "%";
+      } else {
+        cd.style.height = "0%";
+      }
+      slot.classList.toggle("empty", empty);
+      slot.classList.toggle("ready", !empty && (it.kind !== "active" || (cds[it.grantsSpell] || 0) <= 0));
+    }
   }
 
   // Build the ability bar once, then refresh cooldown overlays each frame.
-  _buildAbilityBar(force = false, mode = this._abilityMode || "spellbook") {
+  // Always builds the strict 6-slot layout (spellbook path removed in Step 5).
+  _buildAbilityBar(force = false) {
     if (!this.el.abilityBar) return;
-    if (force || this._abilityMode !== mode) {
-      this._abilityEls = null;
-      this._abilityMode = mode;
-    }
+    if (force) this._abilityEls = null;
     if (this._abilityEls) return;
     this._abilityEls = {};
     this.el.abilityBar.replaceChildren();
-    if (mode === "slots") {
-      for (let i = 0; i < CFG.SPELL_SLOT_COUNT; i++) this._buildSpellSlot(i);
-      return;
-    }
-    for (const id of SPELL_ORDER) this._buildSpellbookSlot(id);
-  }
-
-  _buildSpellbookSlot(id) {
-    const s = SPELLS[id];
-    if (!s) return;
-    const slot = this._slotShell(s.name, s.key, s.name, s.color || 0x8888ff);
-    slot.el.dataset.spell = id;
-    slot.el.onclick = () => this.handlers.selectSpell?.(id);
-    this._attachTooltip(slot.el);
-    this.el.abilityBar.appendChild(slot.el);
-    this._abilityEls[id] = { slot: slot.el, cd: slot.cd };
+    for (let i = 0; i < CFG.SPELL_SLOT_COUNT; i++) this._buildSpellSlot(i);
   }
 
   _buildSpellSlot(index) {
@@ -999,40 +1031,25 @@ export class UI {
 
   updateAbilityBar(snapshot, localId) {
     const me = snapshot.players.find((p) => p.id === localId);
-    const slotMode = snapshot.spellSlotsEnabled && Array.isArray(me?.spellSlots);
-    this._buildAbilityBar(false, slotMode ? "slots" : "spellbook");
+    this._buildAbilityBar(false);
     if (!this._abilityEls) return;
     const cds = me?.cds || {};
-    if (slotMode) {
-      const spellSlots = me.spellSlots;
-      for (let i = 0; i < CFG.SPELL_SLOT_COUNT; i++) {
-        const id = spellSlots[i];
-        const { slot, cd, nm, swatch } = this._abilityEls[i];
-        const empty = !id || !SPELLS[id];
-        const remain = empty ? 0 : (cds[id] || 0);
-        const total = empty ? 1 : (SPELLS[id].cd || 1);
-        const pct = Math.max(0, Math.min(100, (remain / total) * 100));
-        slot.dataset.spell = empty ? "" : id;
-        slot.title = empty ? `Empty spell slot ${i + 1}` : "";
-        nm.textContent = empty ? "Empty" : SPELLS[id].name;
-        swatch.style.background = "#" + ((empty ? 0x444466 : (SPELLS[id].color || 0x8888ff)).toString(16).padStart(6, "0"));
-        cd.style.height = empty ? "100%" : pct + "%";
-        slot.classList.toggle("empty", empty);
-        slot.classList.toggle("locked", empty);
-        slot.classList.toggle("ready", !empty && remain <= 0);
-      }
-      return;
-    }
-    const acquired = new Set(me?.spells || SPELL_ORDER);
-    for (const id in this._abilityEls) {
-      const { slot, cd } = this._abilityEls[id];
-      const locked = !acquired.has(id);
-      const remain = cds[id] || 0;
-      const total = SPELLS[id].cd || 1;
+    const spellSlots = Array.isArray(me?.spellSlots) ? me.spellSlots : [];
+    for (let i = 0; i < CFG.SPELL_SLOT_COUNT; i++) {
+      const id = spellSlots[i];
+      const { slot, cd, nm, swatch } = this._abilityEls[i];
+      const empty = !id || !SPELLS[id];
+      const remain = empty ? 0 : (cds[id] || 0);
+      const total = empty ? 1 : (SPELLS[id].cd || 1);
       const pct = Math.max(0, Math.min(100, (remain / total) * 100));
-      cd.style.height = locked ? "100%" : pct + "%";
-      slot.classList.toggle("locked", locked);
-      slot.classList.toggle("ready", !locked && remain <= 0);
+      slot.dataset.spell = empty ? "" : id;
+      slot.title = empty ? `Empty spell slot ${i + 1}` : "";
+      nm.textContent = empty ? "Empty" : SPELLS[id].name;
+      swatch.style.background = "#" + ((empty ? 0x444466 : (SPELLS[id].color || 0x8888ff)).toString(16).padStart(6, "0"));
+      cd.style.height = empty ? "100%" : pct + "%";
+      slot.classList.toggle("empty", empty);
+      slot.classList.toggle("locked", empty);
+      slot.classList.toggle("ready", !empty && remain <= 0);
     }
   }
 
@@ -1052,7 +1069,6 @@ export class UI {
         const name = this._name();
         if (!name) return this.setMenuStatus("Enter a name first.");
         this.handlers.hostLan?.(name, {
-          allAbilitiesAtStart: this.allAbilitiesAtStart(),
           mobsEnabled: this.mobsEnabled(),
           character: this.selectedCharacter,
           ...this.getArenaSettings(),
@@ -1066,7 +1082,6 @@ export class UI {
         const name = this._name();
         if (!name) return this.setMenuStatus("Enter a name first.");
         this.handlers.hostOnline?.(name, {
-          allAbilitiesAtStart: this.allAbilitiesAtStart(),
           mobsEnabled: this.mobsEnabled(),
           character: this.selectedCharacter,
           ...this.getArenaSettings(),
@@ -1124,8 +1139,6 @@ export class UI {
   }
 
   _name() { return this.el.nameInput?.value.trim().slice(0, 14) || ""; }
-
-  allAbilitiesAtStart() { return this.el.allAbilitiesToggle?.checked !== false; }
 
   mobsEnabled() { return this.el.mobsToggle?.checked !== false; }
 
@@ -1241,6 +1254,8 @@ export class UI {
     this.el.hud.classList.remove("hidden");
     this._buildAbilityBar();
     if (this.el.abilityBar) this.el.abilityBar.classList.remove("hidden");
+    this._buildItemBar();
+    if (this.el.itemBar) this.el.itemBar.classList.remove("hidden");
     if (this._touchEnabled && this.el.touch) this.el.touch.classList.remove("hidden");
   }
 
@@ -1255,6 +1270,211 @@ export class UI {
     if (this.el.pauseMenu) this.el.pauseMenu.classList.add("hidden");
     if (this.el.pauseControls) this.el.pauseControls.classList.add("hidden");
     this._paused = false;
+  }
+
+  // ---- Step 6: Spell Draft overlay ----
+
+  /**
+   * Show (and lazily build) the spell draft overlay.
+   * Called every frame from updateHUD when phase === "spellSelection".
+   * onAction: fn({action, spell?, template?}) — routed to sim or net by the caller.
+   */
+  showSpellDraft(snapshot, localId, onAction) {
+    const overlay = this.el.spellDraft;
+    if (!overlay) return;
+    if (!this._draftBuilt) {
+      this._buildDraftOverlay(onAction);
+      this._draftBuilt = true;
+      overlay.classList.remove("hidden");
+      // Accessibility: save the previously-focused element so we can restore it
+      // when the overlay closes, then move focus into the dialog.
+      this._draftPreviousFocus = document.activeElement;
+      const firstBtn = overlay.querySelector("button:not([disabled])");
+      if (firstBtn) firstBtn.focus();
+    }
+    this._refreshDraftOverlay(snapshot, localId);
+  }
+
+  /** Hide the draft overlay and mark it for rebuild next time (new match). */
+  hideSpellDraft() {
+    if (!this.el.spellDraft) return;
+    this.el.spellDraft.classList.add("hidden");
+    this._draftBuilt = false;
+    // Restore keyboard focus to wherever it was before the overlay opened.
+    if (this._draftPreviousFocus) {
+      this._draftPreviousFocus.focus();
+      this._draftPreviousFocus = null;
+    }
+  }
+
+  /** Build the static skeleton of the draft overlay once per match. */
+  _buildDraftOverlay(onAction) {
+    // ---- Template quick-pick buttons ----
+    const tplWrap = this.el.draftTemplates;
+    if (tplWrap) {
+      tplWrap.replaceChildren();
+      SPELL_TEMPLATES.forEach((tpl, i) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "draft-tpl-btn";
+        btn.setAttribute("aria-label", `${tpl.name} template — ${tpl.desc}`);
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "draft-tpl-name";
+        nameSpan.textContent = tpl.name;
+        const descSpan = document.createElement("span");
+        descSpan.className = "draft-tpl-desc";
+        descSpan.textContent = tpl.desc;
+        btn.append(nameSpan, descSpan);
+        btn.addEventListener("click", () => onAction?.({ action: "template", template: i }));
+        tplWrap.appendChild(btn);
+      });
+    }
+
+    // ---- Slot indicators (6 empty slots) ----
+    const slotsWrap = this.el.draftSlots;
+    if (slotsWrap) {
+      slotsWrap.replaceChildren();
+      for (let i = 0; i < CFG.SPELL_SLOT_COUNT; i++) {
+        const s = document.createElement("div");
+        s.className = "draft-slot-pip";
+        s.setAttribute("aria-hidden", "true");
+        s.dataset.draftSlot = String(i);
+        slotsWrap.appendChild(s);
+      }
+    }
+
+    // ---- Spell grid (all spells except fireball) ----
+    const grid = this.el.draftGrid;
+    if (grid) {
+      grid.replaceChildren();
+      // Use SPELL_ORDER but skip fireball (always-on free basic).
+      for (const id of SPELL_ORDER) {
+        if (id === "fireball") continue;
+        const s = SPELLS[id];
+        if (!s) continue;
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "draft-spell-card";
+        card.role = "option";
+        card.setAttribute("aria-selected", "false");
+        card.dataset.spell = id;
+        card.setAttribute("aria-label", `${s.name} — ${s.desc}`);
+        const swatch = document.createElement("span");
+        swatch.className = "dsc-swatch";
+        swatch.style.background = hex(s.color || 0x6c4cff);
+        const nm = document.createElement("span");
+        nm.className = "dsc-name";
+        nm.textContent = s.name;
+        const cd = document.createElement("span");
+        cd.className = "dsc-cd";
+        cd.textContent = s.cd + "s";
+        const desc = document.createElement("span");
+        desc.className = "dsc-desc";
+        desc.textContent = s.desc;
+        card.append(swatch, nm, cd, desc);
+        card.addEventListener("click", () => onAction?.({ action: "toggle", spell: id }));
+        grid.appendChild(card);
+      }
+    }
+
+    // ---- Ready button ----
+    const readyBtn = this.el.draftReady;
+    if (readyBtn) {
+      // Remove any previous listener by cloning (avoids duplicate listeners on rebuild).
+      const fresh = readyBtn.cloneNode(true);
+      readyBtn.replaceWith(fresh);
+      this.el.draftReady = fresh;
+      fresh.addEventListener("click", () => onAction?.({ action: "ready" }));
+    }
+
+    // ---- Keyboard handlers (attached once per overlay element lifetime) ----
+    // Escape clears picks; Tab is trapped inside the dialog; both prevent the
+    // global Escape handler in main.js from also opening the pause menu.
+    const overlay = this.el.spellDraft;
+    if (overlay && !this._draftKeyBound) {
+      this._draftKeyBound = true;
+      overlay.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          e.preventDefault();
+          onAction?.({ action: "clear" });
+          return;
+        }
+        // Basic focus trap: cycle Tab within the visible overlay.
+        if (e.key === "Tab") {
+          const focusable = [
+            ...overlay.querySelectorAll('button:not([disabled]),input:not([disabled]),[tabindex="0"]'),
+          ];
+          if (focusable.length < 2) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (e.shiftKey) {
+            if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+          } else {
+            if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+          }
+        }
+      }, { capture: true });
+    }
+  }
+
+  /** Refresh timer, slot pips, card highlights, and ready state each frame. */
+  _refreshDraftOverlay(snapshot, localId) {
+    if (!snapshot) return;
+    // Timer.
+    if (this.el.draftTimer) {
+      this.el.draftTimer.textContent = Math.ceil(Math.max(0, snapshot.timer));
+      const urgent = snapshot.timer < 8;
+      this.el.draftTimer.classList.toggle("draft-timer-urgent", urgent);
+    }
+
+    const me = snapshot.players?.find((p) => p.id === localId);
+    if (!me) return;
+
+    const picks = me.draftPick || [];
+    const isReady = !!me.draftReady;
+
+    // Slot pips: show picked spell names.
+    const slotsWrap = this.el.draftSlots;
+    if (slotsWrap) {
+      const pips = slotsWrap.querySelectorAll(".draft-slot-pip");
+      pips.forEach((pip, i) => {
+        const id = picks[i];
+        const s = id ? SPELLS[id] : null;
+        pip.textContent = s ? s.name : "";
+        pip.classList.toggle("draft-slot-filled", !!s);
+        if (s) pip.style.setProperty("--swatch", hex(s.color || 0x6c4cff));
+        else pip.style.removeProperty("--swatch");
+      });
+    }
+
+    // Spell cards: highlight selected, dim over-cap, disable when ready.
+    const grid = this.el.draftGrid;
+    if (grid) {
+      const atCap = picks.length >= CFG.SPELL_SLOT_COUNT;
+      grid.querySelectorAll(".draft-spell-card").forEach((card) => {
+        const id = card.dataset.spell;
+        const selected = picks.includes(id);
+        card.classList.toggle("is-selected", selected);
+        card.setAttribute("aria-selected", String(selected));
+        card.classList.toggle("at-cap", !selected && atCap);
+        card.disabled = isReady;
+      });
+    }
+
+    // Template buttons: disable when ready.
+    if (this.el.draftTemplates) {
+      this.el.draftTemplates.querySelectorAll(".draft-tpl-btn").forEach((btn) => {
+        btn.disabled = isReady;
+      });
+    }
+
+    // Ready button: reflect committed state.
+    if (this.el.draftReady) {
+      this.el.draftReady.disabled = isReady;
+      this.el.draftReady.classList.toggle("is-ready", isReady);
+      this.el.draftReady.querySelector(".btn-label").textContent = isReady ? "Locked In" : "Ready";
+    }
   }
 
   /** Toggle the pause overlay; returns the new paused (visible) state. */
@@ -1337,7 +1557,15 @@ export class UI {
 
   // ---- in-game HUD ----
   updateHUD(snapshot, localId, meta) {
+    // Step 6: spell draft overlay — show when drafting, hide otherwise.
+    if (snapshot.phase === "spellSelection") {
+      this.showSpellDraft(snapshot, localId, (action) => this.handlers.draft?.(action));
+    } else {
+      this.hideSpellDraft();
+    }
+
     const phaseLabel = {
+      spellSelection: "Spell Draft",
       countdown: "Get Ready", playing: "Brawl!",
       roundEnd: "Round Over", matchEnd: "Match Over", lobby: "",
     }[snapshot.phase] || "";
@@ -1345,6 +1573,8 @@ export class UI {
 
     if (snapshot.phase === "countdown") {
       this.el.timer.textContent = Math.ceil(snapshot.timer) + "";
+    } else if (snapshot.phase === "spellSelection") {
+      this.el.timer.textContent = Math.ceil(Math.max(0, snapshot.timer)) + "s";
     } else {
       this.el.timer.textContent = this._fmtTime(snapshot.playTime || 0);
     }
@@ -1378,10 +1608,45 @@ export class UI {
     const me = snapshot.players.find((p) => p.id === localId);
     const pct = me ? Math.min(100, (me.c / CFG.CHARGE_MAX) * 100) : 0;
     this.el.chargeBar.style.width = pct + "%";
+    if (this.el.hpBar && me) {
+      const hpPct = me.mhp ? Math.max(0, Math.min(100, (me.hp / me.mhp) * 100)) : 0;
+      this.el.hpBar.style.width = hpPct + "%";
+      if (this.el.hpText) this.el.hpText.textContent = `${Math.ceil(me.hp ?? 0)}/${me.mhp ?? 0}`;
+    }
     if (this.el.hazardWarning) {
       const hazardTime = me?.hz || 0;
       this.el.hazardWarning.classList.toggle("hidden", hazardTime <= 0);
       this.el.hazardWarning.textContent = hazardTime > 0 ? `HAZARD ${hazardTime.toFixed(1)}s` : "";
+    }
+
+    // Step-3: cast/channel progress bar
+    if (this.el.castWrap) {
+      const ca = me?.ca;
+      this.el.castWrap.classList.toggle("hidden", !ca);
+      if (ca) {
+        this.el.castBar.style.width = Math.round(ca.p * 100) + "%";
+        this.el.castWrap.classList.toggle("channeling", ca.c === 1);
+        this.el.castWrap.classList.toggle("casting", ca.c === 0);
+        this.el.castLabel.textContent = (SPELLS[ca.s]?.name || "") + (ca.c ? " (channeling)" : " (casting)");
+      }
+    }
+    // Step-3: status-effect icons
+    if (this.el.statusIcons && me) {
+      const defs = [
+        ["sl", "Slow", "#66ccff"], ["bu", "Burn", "#ff7a2e"], ["cu", "Curse", "#9c2bff"],
+        ["st", "Stun", "#ffe14c"], ["iv", "Invis", "#88aacc"], ["hs", "Haste", "#ffd23c"],
+      ];
+      this.el.statusIcons.replaceChildren();
+      for (const [k, label, col] of defs) {
+        const on = k === "st" ? (me.st > 0) : (me[k] === 1);
+        if (!on) continue;
+        const chip = document.createElement("span");
+        chip.className = "status-chip";
+        chip.style.background = col;
+        chip.title = label;
+        chip.textContent = label[0];
+        this.el.statusIcons.appendChild(chip);
+      }
     }
 
     // Center messages.
@@ -1394,6 +1659,7 @@ export class UI {
       const w = meta?.get(snapshot.matchWinner)?.name;
       this.showCenter(w ? `${escapeHTML(w)} WINS THE MATCH!` : "Match Over", "Refresh to play again");
     } else {
+      // spellSelection and playing both suppress the center overlay.
       this.hideCenter();
     }
   }
@@ -1454,7 +1720,6 @@ export class UI {
       this.el.btnPractice.onclick = () => {
         const name = this._name() || "Warlock";
         this.handlers.practice?.(name, {
-          allAbilitiesAtStart: this.allAbilitiesAtStart(),
           character: this.selectedCharacter,
           ...this.getArenaSettings(),
         });
