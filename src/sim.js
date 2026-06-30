@@ -3,10 +3,11 @@
 import { CFG, SPELLS, SPELL_ORDER, getArenaLandSize, getArenaWorld, isOnArenaWorld } from "./config.js";
 import { MapQuery } from "./arena-query.js";
 import { generateMap } from "./mapgen.js";
-import { Player } from "./player.js";
+import { Player, resolveKillCredit } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
 import { BotBrain, BOT_PROFILES, closestApproach as _closestApproach } from "./bot.js";
+import { makePrng } from "./rng.js";
 import { makeMobPrng, stepMobPhysics, spawnMob } from "./mob.js";
 
 // Re-wrap so the local call sites keep their original shape (returns .x/.z midpoint too).
@@ -64,6 +65,9 @@ function botDisplayName(skill, index) {
 
 export class Simulation {
   constructor(options = {}) {
+    // Injectable RNG: pass options.seed (number) for a deterministic PRNG;
+    // omit it (or pass undefined/null) to keep the default random behaviour.
+    this._rng = typeof options.seed === "number" ? makePrng(options.seed) : Math.random;
     this.allAbilitiesAtStart = options.allAbilitiesAtStart !== false;
     this.world = getArenaWorld(options.arenaWorld);
     this.landSize = getArenaLandSize(options.landSize);
@@ -201,12 +205,18 @@ export class Simulation {
 
   startMatch() {
     if (!this.canStartMatch()) return false;
-    for (const p of this.players.values()) p.score = 0;
+    for (const p of this.players.values()) {
+      p.score = 0;
+      p.kills = 0;
+      p.deaths = 0;
+      p.lastAttackerId = null;
+      p.lastAttackerAt = 0;
+    }
     this.matchWinnerId = null;
     this.round = 0;
     // New random base seed for the whole match; each round mixes it with the
     // round number so every round gets a distinct but reproducible layout.
-    this._matchSeed = Math.floor(Math.random() * 0xffffffff);
+    this._matchSeed = Math.floor(this._rng() * 0xffffffff);
     this.beginRound();
     return true;
   }
@@ -289,8 +299,8 @@ export class Simulation {
     if (this.runes.length >= CFG.RUNE_MAX_ACTIVE) return null;
     if (!this.runePool.length) return null;
     const spell = this.runePool.shift();
-    const angle = Math.random() * Math.PI * 2;
-    const ring = Math.min(CFG.RUNE_SPAWN_RADIUS, this.arena.radius * 0.72) * (0.5 + 0.4 * Math.random());
+    const angle = this._rng() * Math.PI * 2;
+    const ring = Math.min(CFG.RUNE_SPAWN_RADIUS, this.arena.radius * 0.72) * (0.5 + 0.4 * this._rng());
     const rune = {
       id: this._runeId++,
       spell,
@@ -304,7 +314,7 @@ export class Simulation {
   _shuffle(arr) {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(this._rng() * (i + 1));
       [a[i], a[j]] = [a[j], a[i]];
     }
     return a;
@@ -527,7 +537,12 @@ export class Simulation {
             const l = Math.hypot(ndx, ndz) || 1;
             // Raised knockback floor (0.55 instead of 0.4) so edge-caught
             // players still get flung meaningfully.
-            p.applyHit((ndx / l), (ndz / l), m.kb * (0.55 + 0.45 * falloff));
+            const meteorHit = p.applyHit((ndx / l), (ndz / l), m.kb * (0.55 + 0.45 * falloff));
+            // Record the attacker for kill-credit attribution (meteors do not
+            // emit per-victim hit events, so we record here directly).
+            if (meteorHit && m.ownerId && m.ownerId !== p.id) {
+              p.recordAttacker(m.ownerId, Date.now());
+            }
           }
         }
         this.events.push({ type: "meteorImpact", x: m.x, z: m.z, radius: blastR, by: m.ownerId });
@@ -542,10 +557,29 @@ export class Simulation {
 
     if (this.mobsEnabled) this.stepMobs(dt);
 
+    // Record the latest attacker for each victim from all hit events emitted this
+    // frame — covers bolt hits, lightning, thrust, gravity implosion, and any
+    // other spell that emits {type:"hit", victim, by}.  Meteor hits are recorded
+    // directly in the meteor processing loop above (no per-victim hit event there).
+    const _hitNow = Date.now();
+    for (const ev of this.events) {
+      if (ev.type === "hit" && ev.by && ev.victim && ev.by !== ev.victim) {
+        const victim = this.players.get(ev.victim);
+        if (victim) victim.recordAttacker(ev.by, _hitNow);
+      }
+    }
+
     // Death detection (falling players that reached lava become !alive in step()).
     for (const p of this.players.values()) {
       if (!p.alive && p._countedDeath !== this.round) {
         p._countedDeath = this.round;
+        p.deaths++;
+        // Credit the kill to the last attacker if within the attribution window.
+        const killerId = resolveKillCredit(p.lastAttackerId, p.lastAttackerAt, Date.now(), CFG.KILL_CREDIT_WINDOW);
+        if (killerId) {
+          const killer = this.players.get(killerId);
+          if (killer) killer.kills++;
+        }
         this.events.push({ type: "death", id: p.id });
       }
     }

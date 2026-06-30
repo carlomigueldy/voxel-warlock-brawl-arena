@@ -19,7 +19,7 @@ function advance(sim, seconds, dt = 1 / CFG.TICK_RATE) {
 // The procedural map layout is cleared so existing tests run in a flat, obstacle-
 // free arena — Phase 4 cover/LoS tests set their own layouts explicitly.
 function playingSim() {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -281,7 +281,7 @@ test("cannot cast while on cooldown", () => {
 });
 
 test("players without all starting abilities cannot cast unacquired spells", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -292,7 +292,7 @@ test("players without all starting abilities cannot cast unacquired spells", () 
 });
 
 test("spell runes occupy the first empty spell slot on pickup", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -307,7 +307,7 @@ test("spell runes occupy the first empty spell slot on pickup", () => {
 });
 
 test("players with six filled spell slots cannot loot another spell rune", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -320,7 +320,7 @@ test("players with six filled spell slots cannot loot another spell rune", () =>
 });
 
 test("consumed rune abilities clear their spell slot", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -335,7 +335,7 @@ test("consumed rune abilities clear their spell slot", () => {
 });
 
 test("snapshots include runes, acquired spell ids, and six spell slots", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   const snap = JSON.parse(JSON.stringify(sim.snapshot()));
@@ -347,14 +347,14 @@ test("snapshots include runes, acquired spell ids, and six spell slots", () => {
 });
 
 test("rune mode starts with at most two active runes", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   assert.ok(sim.runes.length <= CFG.RUNE_MAX_ACTIVE, `too many active runes: ${sim.runes.length}`);
 });
 
 test("rune mode spawns new runes over time without exceeding active cap", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -372,7 +372,7 @@ test("rune mode spawns new runes over time without exceeding active cap", () => 
 });
 
 test("rune acquired abilities are consumed when cast", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -392,7 +392,7 @@ test("all-abilities mode does not consume spells when cast", () => {
 });
 
 test("a projectile destroys a targeted rune so it cannot be picked up", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -408,7 +408,7 @@ test("a projectile destroys a targeted rune so it cannot be picked up", () => {
 });
 
 test("destroying a rune emits a runeDestroyed event", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -422,7 +422,7 @@ test("destroying a rune emits a runeDestroyed event", () => {
 });
 
 test("destroying a rune consumes the projectile", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -435,7 +435,7 @@ test("destroying a rune consumes the projectile", () => {
 });
 
 test("reacquiring a consumed rune ability clears its stale cooldown", () => {
-  const sim = new Simulation({ allAbilitiesAtStart: false });
+  const sim = new Simulation({ allAbilitiesAtStart: false, seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);

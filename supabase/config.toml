@@ -1,0 +1,55 @@
+# supabase/config.toml — minimal local dev config for Voxel Warlock Brawl Arena
+# Full reference: https://supabase.com/docs/guides/local-development/overview
+
+project_id = "voxel-warlock-brawl-arena"
+
+[api]
+enabled = true
+port    = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+
+[db]
+port     = 54322
+shadow_port = 54320
+major_version = 17
+
+[studio]
+enabled = true
+port    = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:8000"
+# Allow anonymous sign-ins for guest play
+enable_anonymous_sign_ins = true
+
+# Enable email/password auth
+[auth.email]
+enable_signup    = true
+enable_confirmations = false  # set true in production
+
+# Web3 wallet auth — no secrets needed; signature verification is handled by Supabase
+[auth.web3.ethereum]
+enabled = true
+
+[auth.web3.solana]
+enabled = true
+
+# Rate-limit Web3 logins (per 5-minute interval per IP; 30 is the Supabase default)
+[auth.rate_limit]
+web3 = 30
+
+[edge_runtime]
+enabled = true
+policy  = "oneshot"
+inspector_port = 8083
+
+[storage]
+enabled = true
+
+[realtime]
+enabled = true
+
+[analytics]
+enabled = false

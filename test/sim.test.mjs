@@ -94,7 +94,7 @@ test("countdown transitions to playing", () => {
 });
 
 test("firing spawns a bolt that travels", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -139,7 +139,7 @@ test("a bolt hit applies knockback velocity to the victim", () => {
 });
 
 test("opposing projectiles cancel each other without damaging players", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -270,7 +270,7 @@ test("swap can recover a player from the hazard zone", () => {
 });
 
 test("projectiles can hit players recovering in the hazard zone", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -294,7 +294,7 @@ test("projectiles can hit players recovering in the hazard zone", () => {
 });
 
 test("players recovering in the hazard zone can fire back at players on land", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -310,7 +310,7 @@ test("players recovering in the hazard zone can fire back at players on land", (
 });
 
 test("hazard zone movement is slowed but still allows spell recovery", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -420,7 +420,7 @@ test("host can configure brilliant bots up to open player slots", () => {
 });
 
 test("smart expert bots produce combat input against each other", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.setBotRoster(2, "expert");
   assert.strictEqual(sim.startMatch(), true);
   // advance() already clears the layout at its end (see helper above).
@@ -442,7 +442,7 @@ test("smart expert bots produce combat input against each other", () => {
 });
 
 test("expert bots use handbook abilities against targets", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.setBotRoster(2, "expert");
   assert.strictEqual(sim.startMatch(), true);
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
@@ -457,7 +457,7 @@ test("expert bots use handbook abilities against targets", () => {
 
 test("every bot tier casts handbook abilities (no dead range checks)", () => {
   function countAbilityCasts(skill, seconds) {
-    const sim = new Simulation();
+    const sim = new Simulation({ seed: 42 });
     sim.setBotRoster(2, skill);
     assert.strictEqual(sim.startMatch(), true);
     advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
@@ -482,7 +482,7 @@ test("bot difficulty tiers fire at distinct cadences (expert > brilliant > smart
   // cadence constant (the actual invariant) from positioning noise caused by
   // balance tuning (KB values, friction, spell ranges, etc.).
   function countShots(skill, seconds) {
-    const sim = new Simulation();
+    const sim = new Simulation({ seed: 42 });
     sim.setBotRoster(2, skill);
     assert.strictEqual(sim.startMatch(), true);
     advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
@@ -532,7 +532,7 @@ test("bot archetype loadouts are applied as item modifiers", () => {
 });
 
 test("bot uses escape spell when pushed near the arena edge", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.setBotRoster(2, "expert");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
@@ -556,7 +556,7 @@ test("bot uses escape spell when pushed near the arena edge", () => {
 test("expert bot leads aim ahead of a moving target", () => {
   // With leadFactor=0.9, an expert bot watching a target move perpendicularly
   // should aim ahead of the direct bearing by ~0.3 radians.
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.setBotRoster(1, "expert");
   sim.addPlayer("human", "Human");
   sim.startMatch();
@@ -580,7 +580,7 @@ test("expert bot leads aim ahead of a moving target", () => {
 });
 
 test("expert bot lands hits on a moving target via lead-aim", () => {
-  const sim = new Simulation();
+  const sim = new Simulation({ seed: 42 });
   sim.setBotRoster(1, "expert");
   sim.addPlayer("human", "Human");
   sim.startMatch();
@@ -607,7 +607,7 @@ test("bot selects KO spell when target has high charge near the arena edge", () 
   // the KO branch, lightning would win, not meteor.  The test therefore asserts
   // specifically "meteorCast" so deleting the KO-burst block would cause failure.
   function runScenario(charge) {
-    const sim = new Simulation();
+    const sim = new Simulation({ seed: 42 });
     sim.setBotRoster(2, "expert");
     sim.startMatch();
     advance(sim, CFG.ROUND.COUNTDOWN + 0.05);

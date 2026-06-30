@@ -37,6 +37,21 @@ export class UI {
       botCountUi: $("bot-count-ui"), botCountValue: $("bot-count-value"),
       botSkillUi: $("bot-skill-ui"),
       mapObjectsUi: $("map-objects-ui"),
+      // Online / matchmaking elements.
+      btnHostOnline: $("btn-host-online"),
+      btnQuickMatch: $("btn-quick-match"),
+      roomsList: $("rooms-list"),
+      regionSelect: $("region-select"),
+      onlineNotice: $("online-disabled-notice"),
+      // Leaderboard elements.
+      lbMetricUi: $("lb-metric-ui"),
+      lbScopeUi: $("lb-scope-ui"),
+      leaderboardTable: $("leaderboard-table"),
+      lbNotice: $("leaderboard-disabled-notice"),
+      // Account elements.
+      identityBadge: $("identity-badge"),
+      authForm: $("auth-form"),
+      accountNotice: $("account-disabled-notice"),
       // Tutorial
       tutSpellbookList: $("tut-spellbook-list"),
       btnPractice: $("btn-practice"),
@@ -58,7 +73,10 @@ export class UI {
     this.spellSlotHotkeys = [...CFG.DEFAULT_SPELL_SLOT_HOTKEYS];
     this.preview = null;
     this.selectedCharacter = this._initialCharacter();
-    this._menuScreen = "play";
+    this._menuScreen = "online";
+    this._onlineEnabled = false;
+    this._lbMetric = "wins";
+    this._lbScope = "global";
     this._populateArenaControls();
     this._buildCustomControls();
     this._buildCharacterCards();
@@ -72,9 +90,6 @@ export class UI {
   }
 
   // ---- Custom (non-native) menu controls ----------------------------------
-  // Each custom widget writes through to a hidden native <input>/<select> so the
-  // existing getters (getArenaSettings/getBotSettings/allAbilitiesAtStart) and
-  // the source test-suite contracts keep working unchanged.
   _buildCustomControls() {
     this._buildAbilitiesToggle();
     this._buildMobsToggle();
@@ -82,6 +97,9 @@ export class UI {
     this._buildLandSizeSegmented();
     this._buildBotControls();
     this._buildMapObjectsToggles();
+    this._buildRegionSelector();
+    this._buildLeaderboardControls();
+    this._initAuthForm();
   }
 
   _buildAbilitiesToggle() {
@@ -225,7 +243,6 @@ export class UI {
   _buildMapObjectsToggles() {
     const wrap = this.el.mapObjectsUi;
     if (!wrap || !CFG.OBSTACLE_TYPES) return;
-    // Load saved state from localStorage, merge over defaults so new types start enabled.
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem("vwb-map-objects") || "{}"); } catch {}
     const state = { ...CFG.DEFAULT_OBSTACLE_TOGGLES, ...saved };
@@ -238,8 +255,6 @@ export class UI {
       input.className = "obs-toggle-check";
       input.dataset.id = id;
       input.checked = state[id] !== false;
-      // Accessible label is provided by the sibling text node; redundant aria-label
-      // on the input prevents screen readers from reading it twice.
       input.setAttribute("aria-label", label);
       const track = document.createElement("span");
       track.className = "obs-toggle-track";
@@ -249,7 +264,6 @@ export class UI {
       const text = document.createElement("span");
       text.className = "obs-toggle-label";
       text.textContent = label;
-      // Sync visual class with checkbox state.
       const sync = () => lbl.classList.toggle("is-on", input.checked);
       sync();
       input.addEventListener("change", () => { sync(); this._saveMapObjects(); });
@@ -280,7 +294,408 @@ export class UI {
     return result;
   }
 
-  // Floating ember particle bed — the menu/lobby signature ambience.
+  // ---- Region selector -------------------------------------------------------
+
+  _buildRegionSelector() {
+    const sel = this.el.regionSelect;
+    if (!sel) return;
+    sel.replaceChildren();
+    // Fallback list — overridden at runtime if CFG.REGIONS is populated by the data team.
+    const regions = (Array.isArray(CFG.REGIONS) && CFG.REGIONS.length > 0)
+      ? CFG.REGIONS
+      : [
+          { id: "sea",     label: "Southeast Asia" },
+          { id: "us-east", label: "US East" },
+          { id: "us-west", label: "US West" },
+          { id: "eu",      label: "Europe" },
+          { id: "sa",      label: "South America" },
+          { id: "oce",     label: "Oceania" },
+        ];
+    regions.forEach(({ id, label }) => {
+      const opt = new Option(label, id);
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", () => {
+      this.handlers.regionChange?.(sel.value);
+    });
+  }
+
+  /** Sync the region dropdown to a stored/detected value (called from main.js after getRegion()). */
+  setRegion(id) {
+    if (this.el.regionSelect && id) this.el.regionSelect.value = id;
+  }
+
+  // ---- Leaderboard controls -------------------------------------------------
+
+  _buildLeaderboardControls() {
+    const metricWrap = this.el.lbMetricUi;
+    if (metricWrap) {
+      const metrics = [
+        { id: "wins",      label: "Wins"    },
+        { id: "kd",        label: "K/D"     },
+        { id: "roundWins", label: "Rounds"  },
+        { id: "rating",    label: "Rating"  },
+      ];
+      metricWrap.replaceChildren();
+      metrics.forEach(({ id, label }) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "seg-option";
+        btn.setAttribute("role", "radio");
+        btn.dataset.metric = id;
+        btn.textContent = label;
+        btn.addEventListener("click", () => {
+          this._lbMetric = id;
+          this._syncLbSegmented();
+          this.handlers.leaderboardChange?.({ metric: this._lbMetric, scope: this._lbScope });
+        });
+        metricWrap.appendChild(btn);
+      });
+    }
+
+    const scopeWrap = this.el.lbScopeUi;
+    if (scopeWrap) {
+      scopeWrap.replaceChildren();
+      [{ id: "global", label: "Global" }, { id: "region", label: "My Region" }].forEach(({ id, label }) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "seg-option";
+        btn.setAttribute("role", "radio");
+        btn.dataset.scope = id;
+        btn.textContent = label;
+        btn.addEventListener("click", () => {
+          this._lbScope = id;
+          this._syncLbSegmented();
+          this.handlers.leaderboardChange?.({ metric: this._lbMetric, scope: this._lbScope });
+        });
+        scopeWrap.appendChild(btn);
+      });
+    }
+
+    this._syncLbSegmented();
+  }
+
+  _syncLbSegmented() {
+    this.el.lbMetricUi?.querySelectorAll(".seg-option").forEach((btn) => {
+      const on = btn.dataset.metric === this._lbMetric;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-checked", String(on));
+    });
+    this.el.lbScopeUi?.querySelectorAll(".seg-option").forEach((btn) => {
+      const on = btn.dataset.scope === this._lbScope;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-checked", String(on));
+    });
+  }
+
+  // ---- Auth form ------------------------------------------------------------
+
+  _initAuthForm() {
+    if (this.el.authForm) this._renderAuthTabs(this.el.authForm);
+  }
+
+  _renderAuthTabs(container) {
+    container.replaceChildren();
+    const tabs = document.createElement("div");
+    tabs.className = "auth-tabs";
+    [{ mode: "signin", label: "Sign In" }, { mode: "signup", label: "Sign Up" }, { mode: "guest", label: "Play as Guest" }].forEach(({ mode, label }) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "auth-tab-btn seg-option";
+      btn.dataset.mode = mode;
+      btn.textContent = label;
+      btn.addEventListener("click", () => this._renderAuthForm(container, mode));
+      tabs.appendChild(btn);
+    });
+    container.appendChild(tabs);
+    this._renderAuthForm(container, "signin");
+  }
+
+  _renderAuthForm(container, mode) {
+    container.querySelector(".auth-fields")?.remove();
+    const fields = document.createElement("div");
+    fields.className = "auth-fields";
+
+    if (mode === "guest") {
+      const guestBtn = document.createElement("button");
+      guestBtn.type = "button";
+      guestBtn.className = "btn btn-forge btn-hero";
+      guestBtn.textContent = "Play as Guest";
+      guestBtn.addEventListener("click", () => this.handlers.guest?.());
+      fields.appendChild(guestBtn);
+    } else {
+      const emailField = this._makeAuthField("email", "Email", "email");
+      const pwField = this._makeAuthField("password", mode === "signup" ? "Password" : "Password", "password");
+      if (mode === "signup") {
+        const userField = this._makeAuthField("username", "Username", "text");
+        fields.append(emailField, userField, pwField);
+      } else {
+        fields.append(emailField, pwField);
+      }
+
+      const submitBtn = document.createElement("button");
+      submitBtn.type = "button";
+      submitBtn.className = "btn btn-forge btn-hero";
+      submitBtn.textContent = mode === "signup" ? "Create Account" : "Sign In";
+      submitBtn.addEventListener("click", () => {
+        const email    = container.querySelector('[name="email"]')?.value?.trim();
+        const password = container.querySelector('[name="password"]')?.value;
+        const username = container.querySelector('[name="username"]')?.value?.trim();
+        if (mode === "signup") {
+          this.handlers.signUp?.({ email, password, username });
+        } else {
+          this.handlers.signIn?.({ email, password });
+        }
+      });
+
+      const walletDivider = document.createElement("p");
+      walletDivider.className = "auth-wallet-divider";
+      walletDivider.textContent = "or connect a wallet";
+
+      const ethBtn = document.createElement("button");
+      ethBtn.type = "button";
+      ethBtn.className = "btn btn-ghost auth-wallet-btn auth-eth-btn";
+      ethBtn.textContent = "Sign in with Ethereum";
+      ethBtn.addEventListener("click", () => this.handlers.ethSignIn?.());
+
+      const solBtn = document.createElement("button");
+      solBtn.type = "button";
+      solBtn.className = "btn btn-ghost auth-wallet-btn auth-sol-btn";
+      solBtn.textContent = "Sign in with Solana";
+      solBtn.addEventListener("click", () => this.handlers.solSignIn?.());
+
+      fields.append(submitBtn, walletDivider, ethBtn, solBtn);
+    }
+
+    container.appendChild(fields);
+
+    // Sync tab active states.
+    container.querySelectorAll(".auth-tab-btn").forEach((btn) => {
+      const on = btn.dataset.mode === mode;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-checked", String(on));
+    });
+  }
+
+  _renderUpgradeForm(container) {
+    container.replaceChildren();
+    const title = document.createElement("p");
+    title.className = "auth-upgrade-title";
+    title.textContent = "Link an account to save your stats:";
+
+    const emailField   = this._makeAuthField("email",    "Email",    "email");
+    const userField    = this._makeAuthField("username",  "Username", "text");
+    const pwField      = this._makeAuthField("password",  "Password", "password");
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-forge";
+    btn.textContent = "Upgrade Account";
+    btn.addEventListener("click", () => {
+      const email    = container.querySelector('[name="email"]')?.value?.trim();
+      const password = container.querySelector('[name="password"]')?.value;
+      const username = container.querySelector('[name="username"]')?.value?.trim();
+      this.handlers.upgrade?.({ email, password, username });
+    });
+
+    container.append(title, emailField, userField, pwField, btn);
+  }
+
+  _makeAuthField(name, label, type) {
+    const wrap = document.createElement("div");
+    wrap.className = "field";
+    const lbl = document.createElement("label");
+    lbl.className = "field-label";
+    lbl.htmlFor = `auth-${name}`;
+    lbl.textContent = label;
+    const rune = document.createElement("div");
+    rune.className = "rune-field";
+    const input = document.createElement("input");
+    input.type = type;
+    input.name = name;
+    input.id = `auth-${name}`;
+    input.autocomplete = type === "password" ? "current-password" : (name === "email" ? "email" : "username");
+    const line = document.createElement("span");
+    line.className = "rune-field-line";
+    rune.append(input, line);
+    wrap.append(lbl, rune);
+    return wrap;
+  }
+
+  // ---- Online-enabled flag --------------------------------------------------
+
+  /**
+   * Called by main.js on boot with isEnabled() result.
+   * Shows/hides disabled notices and enables/disables online-only controls.
+   */
+  setOnlineEnabled(enabled) {
+    this._onlineEnabled = enabled;
+    // Notices: visible when NOT enabled.
+    document.querySelectorAll(".supabase-notice").forEach((el) => {
+      el.classList.toggle("hidden", enabled);
+    });
+    // Online buttons: disabled when not enabled.
+    if (this.el.btnQuickMatch)  this.el.btnQuickMatch.disabled  = !enabled;
+    if (this.el.btnHostOnline)  this.el.btnHostOnline.disabled  = !enabled;
+    if (this.el.regionSelect)   this.el.regionSelect.disabled   = !enabled;
+    // Auth form: hidden when not enabled.
+    if (this.el.authForm)      this.el.authForm.classList.toggle("hidden", !enabled);
+    if (this.el.identityBadge) this.el.identityBadge.classList.toggle("hidden", true);
+  }
+
+  // ---- Render helpers -------------------------------------------------------
+
+  /** Render the live rooms list in the Online sub-screen. */
+  renderRooms(list) {
+    const el = this.el.roomsList;
+    if (!el) return;
+    el.replaceChildren();
+
+    if (!list || list.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "rooms-empty";
+      empty.textContent = "No open rooms. Be the first to host!";
+      el.appendChild(empty);
+      return;
+    }
+
+    list.forEach((room) => {
+      const row = document.createElement("div");
+      row.className = "room-row";
+      row.setAttribute("role", "listitem");
+
+      const host = document.createElement("span");
+      host.className = "room-host";
+      host.textContent = escapeHTML(room.hostName || "Unknown");
+
+      const map = document.createElement("span");
+      map.className = "room-map";
+      map.textContent = escapeHTML(room.map || "—");
+
+      const players = document.createElement("span");
+      players.className = "room-players";
+      players.textContent = `${room.playerCount ?? "?"}/${room.maxPlayers ?? "?"}`;
+
+      const joinBtn = document.createElement("button");
+      joinBtn.type = "button";
+      joinBtn.className = "btn btn-ghost room-join-btn";
+      joinBtn.textContent = "Join";
+      joinBtn.addEventListener("click", () => {
+        const name = this._name();
+        if (!name) { this.setMenuStatus("Enter a name first."); return; }
+        this.handlers.joinRoom?.(room.code);
+      });
+
+      row.append(host, map, players, joinBtn);
+      el.appendChild(row);
+    });
+  }
+
+  /** Render leaderboard rows. rows is the array from fetchLeaderboard(). */
+  renderLeaderboard(rows, { metric, scope } = {}) {
+    const el = this.el.leaderboardTable;
+    if (!el) return;
+    el.replaceChildren();
+
+    // Sync controls to reflect the rendered metric/scope.
+    if (metric) this._lbMetric = metric;
+    if (scope)  this._lbScope  = scope;
+    this._syncLbSegmented();
+
+    if (!rows || rows.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "lb-empty";
+      empty.textContent = "No data yet — play some matches!";
+      el.appendChild(empty);
+      return;
+    }
+
+    const metricLabel = { wins: "Wins", kd: "K/D", roundWins: "Rounds", rating: "Rating" }[metric] || "Score";
+
+    const header = document.createElement("div");
+    header.className = "lb-row lb-header";
+    header.setAttribute("role", "row");
+    const hRank  = document.createElement("span"); hRank.className  = "lb-rank";  hRank.textContent  = "#";
+    const hName  = document.createElement("span"); hName.className  = "lb-name";  hName.textContent  = "Warlock";
+    const hValue = document.createElement("span"); hValue.className = "lb-value"; hValue.textContent = metricLabel;
+    header.append(hRank, hName, hValue);
+    el.appendChild(header);
+
+    rows.forEach((row, i) => {
+      const r = document.createElement("div");
+      r.className = "lb-row" + (i === 0 ? " lb-top" : "");
+      r.setAttribute("role", "row");
+
+      const rank  = document.createElement("span"); rank.className  = "lb-rank";
+      const name  = document.createElement("span"); name.className  = "lb-name";
+      const value = document.createElement("span"); value.className = "lb-value";
+
+      rank.textContent  = i + 1;
+      name.textContent  = escapeHTML(row.username || (row.userId ? row.userId.slice(0, 8) + "…" : "—"));
+      value.textContent = row[metric] ?? "—";
+
+      r.append(rank, name, value);
+      el.appendChild(r);
+    });
+  }
+
+  /**
+   * Render identity badge + auth form based on the current user.
+   * user: {id, email, username, isGuest} | null
+   */
+  renderAuthState(user) {
+    const badge = this.el.identityBadge;
+    const form  = this.el.authForm;
+    if (!badge || !form) return;
+
+    if (!this._onlineEnabled) {
+      badge.classList.add("hidden");
+      return;
+    }
+
+    if (user) {
+      // Signed-in (real or guest).
+      badge.classList.remove("hidden");
+      badge.replaceChildren();
+
+      const icon = document.createElement("span");
+      icon.className = user.isGuest ? "identity-icon identity-guest" : "identity-icon identity-account";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = user.isGuest ? "◎" : "◉";
+
+      const info = document.createElement("span");
+      info.className = "identity-info";
+      info.textContent = user.isGuest
+        ? "Playing as Guest"
+        : (user.username || user.email || "Signed In");
+
+      const signOutBtn = document.createElement("button");
+      signOutBtn.type = "button";
+      signOutBtn.className = "btn btn-ghost identity-signout";
+      signOutBtn.textContent = "Sign Out";
+      signOutBtn.addEventListener("click", () => this.handlers.signOut?.());
+
+      badge.append(icon, info, signOutBtn);
+
+      if (user.isGuest) {
+        this._renderUpgradeForm(form);
+        form.classList.remove("hidden");
+      } else {
+        form.replaceChildren();
+        form.classList.add("hidden");
+      }
+    } else {
+      // Not signed in.
+      badge.classList.add("hidden");
+      form.classList.remove("hidden");
+      this._renderAuthTabs(form);
+    }
+  }
+
+  /** Public name accessor — used by main.js for quickMatch / joinRoom flows. */
+  getName() { return this._name(); }
+
+  // ---- Floating ember particle bed ----------------------------------------
   _spawnEmbers() {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const colors = ["var(--ember)", "var(--arcane)", "var(--gold)", "var(--rune)"];
@@ -467,8 +882,6 @@ export class UI {
     el.className = "ability-slot";
     el.tabIndex = 0;
     el.setAttribute("role", "button");
-    // title attribute intentionally omitted for filled slots — custom tooltip supersedes it.
-    // Empty / non-spell slots may set it after construction.
     const key = document.createElement("span");
     key.className = "ability-key";
     key.textContent = keyText;
@@ -492,7 +905,6 @@ export class UI {
 
   // ---- Spell tooltip -------------------------------------------------------
 
-  /** Lazily create (once) the shared tooltip DOM node and append to the HUD. */
   _initTooltip() {
     if (this._tooltipEl) return this._tooltipEl;
     const tt = document.createElement("div");
@@ -504,10 +916,6 @@ export class UI {
     return tt;
   }
 
-  /**
-   * Build tooltip content for a given spell id using safe DOM methods only —
-   * no innerHTML, no dynamic HTML strings. Returns a DocumentFragment or null.
-   */
   _buildTooltipContent(id) {
     const s = SPELLS[id];
     if (!s) return null;
@@ -544,7 +952,6 @@ export class UI {
     return frag;
   }
 
-  /** Position the tooltip above (or below if clipped) the anchor element. */
   _positionTooltip(tt, anchor) {
     tt.style.visibility = "hidden";
     tt.style.display = "block";
@@ -578,11 +985,6 @@ export class UI {
     this._tooltipEl.setAttribute("aria-hidden", "true");
   }
 
-  /**
-   * Wire mouseenter/mouseleave + focus/blur on a slot element.
-   * The hotkey-picker child is excluded: hovering it does not incorrectly show
-   * a spell tooltip because we always re-read dataset.spell at event time.
-   */
   _attachTooltip(slotEl) {
     slotEl.addEventListener("mouseenter", (e) => {
       if (e.target !== slotEl && e.target.classList.contains("hotkey-picker")) return;
@@ -644,23 +1046,68 @@ export class UI {
   }
 
   _bind() {
-    this.el.btnHost.onclick = () => {
-      const name = this._name();
-      if (!name) return this.setMenuStatus("Enter a name first.");
-      this.handlers.host?.(name, { allAbilitiesAtStart: this.allAbilitiesAtStart(), mobsEnabled: this.mobsEnabled(), character: this.selectedCharacter, ...this.getArenaSettings() });
-    };
-    this.el.btnJoin.onclick = () => this._tryJoin();
-    this.el.joinCode.addEventListener("input", () => {
-      this.el.joinCode.value = this.el.joinCode.value.toUpperCase();
-    });
-    this.el.joinCode.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") this._tryJoin();
-    });
-    this.el.btnStart.onclick = () => this.handlers.start?.();
+    // LAN Host — fires hostLan event.
+    if (this.el.btnHost) {
+      this.el.btnHost.onclick = () => {
+        const name = this._name();
+        if (!name) return this.setMenuStatus("Enter a name first.");
+        this.handlers.hostLan?.(name, {
+          allAbilitiesAtStart: this.allAbilitiesAtStart(),
+          mobsEnabled: this.mobsEnabled(),
+          character: this.selectedCharacter,
+          ...this.getArenaSettings(),
+        });
+      };
+    }
+
+    // Online Host — fires hostOnline event.
+    if (this.el.btnHostOnline) {
+      this.el.btnHostOnline.onclick = () => {
+        const name = this._name();
+        if (!name) return this.setMenuStatus("Enter a name first.");
+        this.handlers.hostOnline?.(name, {
+          allAbilitiesAtStart: this.allAbilitiesAtStart(),
+          mobsEnabled: this.mobsEnabled(),
+          character: this.selectedCharacter,
+          ...this.getArenaSettings(),
+        });
+      };
+    }
+
+    // Quick Match — fires quickMatch event.
+    if (this.el.btnQuickMatch) {
+      this.el.btnQuickMatch.onclick = () => {
+        const name = this._name();
+        if (!name) return this.setMenuStatus("Enter a name first.");
+        this.handlers.quickMatch?.();
+      };
+    }
+
+    // LAN Join — fires joinByCode event.
+    if (this.el.btnJoin) {
+      this.el.btnJoin.onclick = () => this._tryJoin();
+    }
+    if (this.el.joinCode) {
+      this.el.joinCode.addEventListener("input", () => {
+        this.el.joinCode.value = this.el.joinCode.value.toUpperCase();
+      });
+      this.el.joinCode.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") this._tryJoin();
+      });
+    }
+
+    // Lobby controls.
+    if (this.el.btnStart) {
+      this.el.btnStart.onclick = () => this.handlers.start?.();
+    }
     this.el.botCount?.addEventListener("input", () => this.handlers.bots?.(this.getBotSettings()));
     this.el.botSkill?.addEventListener("change", () => this.handlers.bots?.(this.getBotSettings()));
-    this.el.btnCopyCode.onclick = () => this._copy(this.currentCode, this.el.btnCopyCode, "Copy Code");
-    this.el.btnCopyLink.onclick = () => this._copy(this._inviteLink(), this.el.btnCopyLink, "Copy Invite Link");
+    if (this.el.btnCopyCode) {
+      this.el.btnCopyCode.onclick = () => this._copy(this.currentCode, this.el.btnCopyCode, "Copy Code");
+    }
+    if (this.el.btnCopyLink) {
+      this.el.btnCopyLink.onclick = () => this._copy(this._inviteLink(), this.el.btnCopyLink, "Copy Invite Link");
+    }
 
     // ESC pause menu buttons.
     if (this.el.pauseResume) this.el.pauseResume.onclick = () => { this.hidePause(); this.handlers.resume?.(); };
@@ -670,13 +1117,13 @@ export class UI {
 
   _tryJoin() {
     const name = this._name();
-    const code = this.el.joinCode.value.trim().toUpperCase();
+    const code = this.el.joinCode?.value.trim().toUpperCase() || "";
     if (!name) return this.setMenuStatus("Enter a name first.");
     if (code.length < 4) return this.setMenuStatus("Enter a valid room code.");
-    this.handlers.join?.(name, code, this.selectedCharacter);
+    this.handlers.joinByCode?.(name, code, this.selectedCharacter);
   }
 
-  _name() { return this.el.nameInput.value.trim().slice(0, 14); }
+  _name() { return this.el.nameInput?.value.trim().slice(0, 14) || ""; }
 
   allAbilitiesAtStart() { return this.el.allAbilitiesToggle?.checked !== false; }
 
@@ -700,11 +1147,13 @@ export class UI {
     const params = new URLSearchParams(location.search);
     const code = params.get("room");
     if (code) {
-      this.el.joinCode.value = code.toUpperCase();
+      if (this.el.joinCode) this.el.joinCode.value = code.toUpperCase();
       this.setMenuStatus(`Room ${code.toUpperCase()} ready — enter your name and Join.`);
+      // Navigate to LAN screen so the join field is visible.
+      this._showMenuScreen("lan");
     }
     const savedName = localStorage.getItem("vwb-name");
-    if (savedName) this.el.nameInput.value = savedName;
+    if (savedName && this.el.nameInput) this.el.nameInput.value = savedName;
   }
 
   _maybeShowTouch() {
@@ -730,7 +1179,10 @@ export class UI {
 
   // ---- Cinematic menu sub-screen navigation ----
 
-  /** Switch to one of the four named sub-screens ("play" | "characters" | "settings" | "join"). */
+  /**
+   * Switch to one of the named sub-screens.
+   * Valid names: "online" | "lan" | "characters" | "settings" | "leaderboards" | "account"
+   */
   _showMenuScreen(name) {
     this._menuScreen = name;
     // Toggle sub-screens.
@@ -745,6 +1197,8 @@ export class UI {
       btn.classList.toggle("is-active", on);
       btn.setAttribute("aria-current", on ? "true" : "false");
     });
+    // Notify main.js so it can subscribe/unsubscribe as needed.
+    this.handlers.screenChange?.(name);
   }
 
   /** Wire the vertical spine nav buttons to sub-screen switching. */
@@ -752,8 +1206,8 @@ export class UI {
     this.el.menu.querySelectorAll(".spine-btn").forEach((btn) => {
       btn.addEventListener("click", () => this._showMenuScreen(btn.dataset.screen));
     });
-    // Initialise to "play" sub-screen.
-    this._showMenuScreen("play");
+    // Initialise to "online" sub-screen.
+    this._showMenuScreen("online");
   }
 
   // ---- screen transitions ----
@@ -763,8 +1217,8 @@ export class UI {
     this.el.lobby.classList.add("hidden");
     this.el.hud.classList.add("hidden");
     if (this.el.touch) this.el.touch.classList.add("hidden");
-    // Reset to the root "play" sub-screen so returning from lobby feels clean.
-    this._showMenuScreen("play");
+    // Return to online sub-screen when coming back from lobby.
+    this._showMenuScreen("online");
     this.preview?.start();
   }
 
@@ -855,8 +1309,8 @@ export class UI {
     });
   }
 
-  setMenuStatus(t) { this.el.menuStatus.textContent = t || ""; }
-  setLobbyStatus(t) { this.el.lobbyStatus.textContent = t || ""; }
+  setMenuStatus(t) { if (this.el.menuStatus) this.el.menuStatus.textContent = t || ""; }
+  setLobbyStatus(t) { if (this.el.lobbyStatus) this.el.lobbyStatus.textContent = t || ""; }
 
   renderPlayerList(players, hostId) {
     this.el.playerList.innerHTML = "";
@@ -895,7 +1349,7 @@ export class UI {
       this.el.timer.textContent = this._fmtTime(snapshot.playTime || 0);
     }
 
-    // Scoreboard sorted by score.
+    // Scoreboard sorted by score — includes K/D column.
     const rows = [...snapshot.players]
       .map((p) => ({ ...p, meta: meta?.get(p.id) }))
       .sort((a, b) => b.s - a.s);
@@ -903,12 +1357,20 @@ export class UI {
     rows.forEach((p) => {
       const row = document.createElement("div");
       row.className = p.al ? "row" : "row dead";
+
       const name = document.createElement("span");
       name.textContent = `${p.meta?.name || "warlock"}${p.id === localId ? " (you)" : ""}`;
+
+      // K/D column — uses snapshot k/d fields; falls back to 0 if absent.
+      const kd = document.createElement("span");
+      kd.className = "pkd";
+      kd.textContent = `${p.k ?? 0}/${p.d ?? 0}`;
+
       const score = document.createElement("span");
       score.className = "pscore";
       score.textContent = p.s;
-      row.append(name, score);
+
+      row.append(name, kd, score);
       this.el.scoreboard.appendChild(row);
     });
 

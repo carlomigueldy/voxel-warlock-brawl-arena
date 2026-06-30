@@ -8,7 +8,10 @@
       "area": "ui",
       "status": "review",
       "priority": "P2",
-      "labels": ["ui", "gameplay"],
+      "labels": [
+        "ui",
+        "gameplay"
+      ],
       "summary": "In-match ESC pause menu overlay with Resume Game, Leave Match, SFX/Music toggles, and a How-to-Play controls reference. Local-only pause (neutralizes the local player's input while the host-authoritative match continues live for everyone).",
       "acceptance_criteria": [
         "Pressing ESC during an active match (not in lobby) opens a centered pause overlay; pressing ESC or Resume closes it.",
@@ -17,6 +20,80 @@
         "How to Play shows an accurate keybind reference built from the live spellbook and slot hotkeys.",
         "Leave Match disconnects (host or client) and returns cleanly to the main menu with no leaked render loop; re-host/re-join works afterward.",
         "An involuntary disconnect resets match state so the pause overlay cannot appear over the main menu."
+      ]
+    },
+    {
+      "id": "feat-region-matchmaking",
+      "type": "epic",
+      "phase": "v1",
+      "status": "in_progress",
+      "priority": "P1",
+      "labels": [
+        "multiplayer",
+        "leaderboard"
+      ],
+      "summary": "Region-based online matchmaking, persistent leaderboards, and account system backed by Supabase",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "Players can host online rooms that appear in the room browser for their region",
+        "Quick Match finds the best open room in the player's region",
+        "Match results are submitted to Supabase and surfaced in the leaderboard",
+        "ELO rating is computed server-side per submit-match edge function",
+        "Guest/LAN play works fully without Supabase credentials",
+        "Supabase-disabled notices appear on online/leaderboard/account screens when not configured"
+      ],
+      "sub_issues": [
+        {
+          "id": "feat-region-matchmaking-backend",
+          "scope": "Supabase migrations, RLS policies, geo edge function, submit-match edge function",
+          "files": [
+            "supabase/migrations/0001_init.sql",
+            "supabase/migrations/0002_rls.sql",
+            "supabase/functions/geo/index.ts",
+            "supabase/functions/submit-match/index.ts",
+            "supabase/config.toml"
+          ],
+          "status": "done"
+        },
+        {
+          "id": "feat-region-matchmaking-data",
+          "scope": "Client data modules: supabase.js, auth.js, region.js, matchmaking.js, leaderboard.js, net.js assembleMatchResult, player kill/death tracking, stats.test.mjs",
+          "files": [
+            "src/supabase-config.js",
+            "src/supabase-config.example.js",
+            "src/supabase.js",
+            "src/region.js",
+            "src/auth.js",
+            "src/matchmaking.js",
+            "src/leaderboard.js",
+            "src/stats.test.mjs",
+            "src/config.js",
+            "src/player.js",
+            "src/sim.js",
+            "src/net.js"
+          ],
+          "status": "done"
+        },
+        {
+          "id": "feat-region-matchmaking-ui",
+          "scope": "UI screens (online/lan/leaderboards/account), wiring in main.js",
+          "files": [
+            "index.html",
+            "src/ui.js",
+            "src/main.js"
+          ],
+          "status": "done"
+        },
+        {
+          "id": "feat-region-matchmaking-integration",
+          "scope": "Integration pass: reconcile payload shapes, snake_case transform in leaderboard.js, fix onPlayerJoin 4th-arg pass-through, fix _buildMatchPayload field names",
+          "files": [
+            "src/net.js",
+            "src/main.js",
+            "src/leaderboard.js"
+          ],
+          "status": "done"
+        }
       ]
     }
   ]

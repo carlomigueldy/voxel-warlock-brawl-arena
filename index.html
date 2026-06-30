@@ -102,12 +102,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="./src/style.css" />
-<!-- Three.js + addons via import map (no build step required) -->
+<!-- Three.js + addons + Supabase via import map (no build step required) -->
 <script type="importmap">
 {
   "imports": {
     "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
   }
 }
 </script>
@@ -162,7 +163,7 @@
         <p class="tag">Blast rivals off the platform. Last warlock standing wins.</p>
       </header>
 
-      <!-- Warlock name — shared by Host and Join flows -->
+      <!-- Warlock name — shared by all play flows -->
       <div class="field name-field">
         <label class="field-label" for="name-input">Warlock name</label>
         <div class="rune-field">
@@ -174,9 +175,15 @@
       <!-- Vertical navigation spine -->
       <ul class="spine-nav" role="list">
         <li>
-          <button class="spine-btn spine-btn-play" data-screen="play" aria-current="true">
+          <button class="spine-btn spine-btn-play" data-screen="online" aria-current="true">
             <span class="spine-play-arrow" aria-hidden="true">▶</span>
-            <span>PLAY</span>
+            <span>ONLINE</span>
+          </button>
+        </li>
+        <li>
+          <button class="spine-btn" data-screen="lan" aria-current="false">
+            <span class="spine-icon" aria-hidden="true">⌁</span>
+            <span>LAN</span>
           </button>
         </li>
         <li>
@@ -192,9 +199,15 @@
           </button>
         </li>
         <li>
-          <button class="spine-btn" data-screen="join" aria-current="false">
-            <span class="spine-icon" aria-hidden="true">⤵</span>
-            <span>JOIN GAME</span>
+          <button class="spine-btn" data-screen="leaderboards" aria-current="false">
+            <span class="spine-icon" aria-hidden="true">⊞</span>
+            <span>RANKS</span>
+          </button>
+        </li>
+        <li>
+          <button class="spine-btn" data-screen="account" aria-current="false">
+            <span class="spine-icon" aria-hidden="true">◉</span>
+            <span>ACCOUNT</span>
           </button>
         </li>
         <li>
@@ -217,14 +230,62 @@
     <!-- Right area: swappable sub-screens slide in/out over the stage -->
     <div class="menu-right" aria-live="polite">
 
-      <!-- PLAY sub-screen (shown by default) -->
-      <div class="sub-screen" id="screen-play" role="region" aria-label="Host a game" aria-hidden="false">
-        <h2 class="sub-screen-title">HOST GAME</h2>
-        <p class="sub-screen-desc">Forge the room — up to 8 warlocks join your arena.</p>
+      <!-- ONLINE sub-screen (shown by default) -->
+      <div class="sub-screen" id="screen-online" role="region" aria-label="Online play" aria-hidden="false">
+        <h2 class="sub-screen-title">ONLINE PLAY</h2>
+
+        <!-- Shown when Supabase is not configured -->
+        <div id="online-disabled-notice" class="supabase-notice hidden" role="alert">
+          <span class="supabase-notice-icon" aria-hidden="true">⚠</span>
+          <p>Connect a Supabase project to enable online play &amp; leaderboards.</p>
+        </div>
+
+        <!-- Region selector -->
+        <div class="field">
+          <label class="field-label" for="region-select">Region</label>
+          <div class="rune-select-wrap">
+            <select id="region-select" class="rune-select" aria-label="Select matchmaking region"></select>
+            <span class="rune-select-arrow" aria-hidden="true">▾</span>
+          </div>
+        </div>
+
+        <!-- Primary CTA: Quick Match -->
+        <button id="btn-quick-match" class="btn btn-forge btn-hero">
+          <span class="btn-label">Quick Match</span>
+          <span class="btn-spark" aria-hidden="true"></span>
+        </button>
+
+        <!-- Secondary: Host Online -->
+        <button id="btn-host-online" class="btn btn-ghost">Host Online Game</button>
+
+        <!-- Live room browser -->
+        <div class="field">
+          <span class="field-label">Open Rooms</span>
+          <div id="rooms-list" class="rooms-list" role="list" aria-label="Open rooms">
+            <p class="rooms-empty">No open rooms. Be the first to host!</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- LAN / PRIVATE sub-screen -->
+      <div class="sub-screen sub-screen-hidden" id="screen-lan" role="region" aria-label="LAN or private game" aria-hidden="true">
+        <h2 class="sub-screen-title">LAN / PRIVATE</h2>
+        <p class="sub-screen-desc">Host a private game or join by room code — no account needed.</p>
+
         <button id="btn-host" class="btn btn-forge btn-hero">
           <span class="btn-label">Host Game</span>
           <span class="btn-spark" aria-hidden="true"></span>
         </button>
+
+        <div class="lan-divider" aria-hidden="true"><span>— or —</span></div>
+
+        <div class="join-box">
+          <div class="rune-code">
+            <input id="join-code" maxlength="6" placeholder="ROOM CODE" autocomplete="off" spellcheck="false" aria-label="Room code" />
+            <span class="rune-code-cells" aria-hidden="true"></span>
+          </div>
+          <button id="btn-join" class="btn btn-ghost">Join</button>
+        </div>
       </div>
 
       <!-- CHARACTERS sub-screen -->
@@ -275,17 +336,42 @@
         </div>
       </div>
 
-      <!-- JOIN sub-screen -->
-      <div class="sub-screen sub-screen-hidden" id="screen-join" role="region" aria-label="Join a game" aria-hidden="true">
-        <h2 class="sub-screen-title">JOIN GAME</h2>
-        <p class="sub-screen-desc">Enter a 6-character room code to join a rival's arena.</p>
-        <div class="join-box">
-          <div class="rune-code">
-            <input id="join-code" maxlength="6" placeholder="ROOM CODE" autocomplete="off" spellcheck="false" />
-            <span class="rune-code-cells" aria-hidden="true"></span>
-          </div>
-          <button id="btn-join" class="btn btn-ghost">Join</button>
+      <!-- LEADERBOARDS sub-screen -->
+      <div class="sub-screen sub-screen-hidden" id="screen-leaderboards" role="region" aria-label="Leaderboards" aria-hidden="true">
+        <h2 class="sub-screen-title">LEADERBOARDS</h2>
+
+        <div id="leaderboard-disabled-notice" class="supabase-notice hidden" role="alert">
+          <span class="supabase-notice-icon" aria-hidden="true">⚠</span>
+          <p>Connect a Supabase project to view leaderboards.</p>
         </div>
+
+        <div class="field">
+          <span class="field-label">Metric</span>
+          <div id="lb-metric-ui" class="segmented" role="radiogroup" aria-label="Leaderboard metric"></div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Scope</span>
+          <div id="lb-scope-ui" class="segmented segmented-sm" role="radiogroup" aria-label="Leaderboard scope"></div>
+        </div>
+
+        <div id="leaderboard-table" class="leaderboard-table" role="table" aria-label="Rankings"></div>
+      </div>
+
+      <!-- ACCOUNT sub-screen -->
+      <div class="sub-screen sub-screen-hidden" id="screen-account" role="region" aria-label="Account" aria-hidden="true">
+        <h2 class="sub-screen-title">ACCOUNT</h2>
+
+        <div id="account-disabled-notice" class="supabase-notice hidden" role="alert">
+          <span class="supabase-notice-icon" aria-hidden="true">⚠</span>
+          <p>Connect a Supabase project to enable accounts &amp; persistent stats.</p>
+        </div>
+
+        <!-- Identity badge — shown when signed in -->
+        <div id="identity-badge" class="identity-badge hidden" aria-live="polite"></div>
+
+        <!-- Auth form — sign in / sign up / guest tabs -->
+        <div id="auth-form" class="auth-form" aria-live="polite"></div>
       </div>
 
       <!-- TUTORIAL sub-screen -->
