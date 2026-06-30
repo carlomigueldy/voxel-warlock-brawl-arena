@@ -93,11 +93,10 @@ test("generated character model is bottom aligned after scaling", () => {
 
 test("generated character clones materials and marks identity with a hero glyph", () => {
   const character = fs.readFileSync("src/character.js", "utf8");
-  // Materials are cloned per instance (no body tint) and flat-shaded so voxel
-  // facets read crisply; player identity is shown by a glowing hero glyph.
+  // Materials are cloned per instance (no body tint, original shading preserved);
+  // player identity is shown by a glowing hero glyph.
   assert.match(character, /const wasArray = Array\.isArray\(o\.material\)/);
   assert.match(character, /o\.material = wasArray \? cloned : cloned\[0\]/);
-  assert.match(character, /flatShading = true/);
   assert.match(character, /makeHeroGlyph/);
 });
 

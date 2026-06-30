@@ -179,10 +179,10 @@ export const CFG = {
   // keyed by id in character.js → CHARACTER_ASSETS). `color` is the signature
   // accent used for the menu preview tint and the card highlight.
   CHARACTERS: [
-    { id: "ember", name: "Undead Warlock", color: 0x8cff66, blurb: "Fel-bound revenant & soul staff" },
-    { id: "frost", name: "Archmage",       color: 0x4cc9ff, blurb: "Arcane scholar & rune staff" },
-    { id: "storm", name: "Orc Shaman",     color: 0xffae3c, blurb: "Elemental totems & storm fists" },
-    { id: "moss",  name: "Blood Elf Mage", color: 0xff3c6a, blurb: "Crimson sorcery & fel crystal" },
+    { id: "ember", name: "Ember Warlock",    color: 0xff5a3c, blurb: "Fiery hood & ember staff" },
+    { id: "frost", name: "Frost Mage",       color: 0x4cc9ff, blurb: "Icy cloak & crystal wand" },
+    { id: "storm", name: "Storm Shaman",     color: 0xc04cff, blurb: "Crackling lightning robes" },
+    { id: "moss",  name: "Moss Necromancer", color: 0x7cff5a, blurb: "Bone mask & cube staff" },
   ],
   DEFAULT_CHARACTER: "ember",
 

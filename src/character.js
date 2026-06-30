@@ -4,32 +4,32 @@ import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { CFG } from "./config.js";
 import { CastAnimator } from "./animations.js";
 
-// Each selectable character is a Meshy voxel low-poly warlock rendered with
-// flat shading (no smoothed normals, no baked normal maps) so cubic MagicaVoxel-
-// style facets read as hard planes. A glowing hero glyph marks each instance;
-// there is no body tint — native Meshy colors are preserved. The skeletons share
-// the same bone layout, so CastAnimator overlays (animations.js) apply uniformly.
+// Each selectable character is a rigged warlock model rendered with its original
+// shading (smoothed normals and baked maps intact). A glowing hero glyph marks
+// each instance; there is no body tint — original model colors are preserved.
+// The skeletons share the same bone layout, so CastAnimator overlays (animations.js)
+// apply uniformly.
 const url = (p) => new URL(p, import.meta.url).href;
 export const CHARACTER_ASSETS = {
   ember: {
-    base: url("../assets/characters/undead-warlock-rigged.glb"),
-    walk: url("../assets/characters/undead-warlock-walking.glb"),
-    run: url("../assets/characters/undead-warlock-running.glb"),
+    base: url("../assets/characters/ember-warlock-rigged.glb"),
+    walk: url("../assets/characters/ember-warlock-walking.glb"),
+    run: url("../assets/characters/ember-warlock-running.glb"),
   },
   frost: {
-    base: url("../assets/characters/archmage-rigged.glb"),
-    walk: url("../assets/characters/archmage-walking.glb"),
-    run: url("../assets/characters/archmage-running.glb"),
+    base: url("../assets/characters/frost-mage-rigged.glb"),
+    walk: url("../assets/characters/frost-mage-walking.glb"),
+    run: url("../assets/characters/frost-mage-running.glb"),
   },
   storm: {
-    base: url("../assets/characters/orc-shaman-rigged.glb"),
-    walk: url("../assets/characters/orc-shaman-walking.glb"),
-    run: url("../assets/characters/orc-shaman-running.glb"),
+    base: url("../assets/characters/storm-shaman-rigged.glb"),
+    walk: url("../assets/characters/storm-shaman-walking.glb"),
+    run: url("../assets/characters/storm-shaman-running.glb"),
   },
   moss: {
-    base: url("../assets/characters/bloodelf-mage-rigged.glb"),
-    walk: url("../assets/characters/bloodelf-mage-walking.glb"),
-    run: url("../assets/characters/bloodelf-mage-running.glb"),
+    base: url("../assets/characters/moss-necromancer-rigged.glb"),
+    walk: url("../assets/characters/moss-necromancer-walking.glb"),
+    run: url("../assets/characters/moss-necromancer-running.glb"),
   },
 };
 export const DEFAULT_CHARACTER = "ember";
@@ -114,18 +114,15 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
   const model = cloneSkinned(template.scene);
   root.add(model);
 
-  // Clone materials per instance (so the renderer's per-player emissive/charge
-  // writes never bleed across players) and force flat shading without baked
-  // normal maps so the voxel facets read as hard cubic planes. Native Meshy
-  // colors are preserved — player identity is shown by the hero glyph below.
+  // Clone materials per instance so the renderer's per-player emissive/charge
+  // writes never bleed across players. Original shading is preserved — no tint,
+  // no shading override. Player identity is shown by the hero glyph below.
   model.traverse((o) => {
     if ((o.isMesh || o.isSkinnedMesh) && o.material) {
       const wasArray = Array.isArray(o.material);
       const mats = wasArray ? o.material : [o.material];
       const cloned = mats.map((m) => {
         const c = m.clone();
-        c.flatShading = true;
-        c.normalMap = null;
         c.needsUpdate = true;
         return c;
       });
