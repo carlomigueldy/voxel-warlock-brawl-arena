@@ -1273,6 +1273,7 @@ html, body {
 /* Reduced motion: instant swap for new screens too. */
 @media (prefers-reduced-motion: reduce) {
   .rooms-list, .leaderboard-table, .identity-badge { animation: none !important; }
+}
 /* ============================================================
    TUTORIAL SUB-SCREEN
    ============================================================ */
@@ -1512,6 +1513,29 @@ kbd {
 .pause-actions { display: flex; flex-direction: column; gap: 16px; }
 .pause-actions .btn-forge,
 .pause-actions .btn-ghost { width: 100%; padding-top: 15px; padding-bottom: 15px; font-size: 16px; min-height: 48px; }
+
+/* Base button treatment for pause buttons (they carry only the variant class, not .btn). */
+.pause-actions .btn-forge,
+.pause-actions .btn-ghost {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: 1px;
+  border-radius: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.12s var(--ease-spring), filter 0.18s, box-shadow 0.2s;
+}
+.pause-actions .btn-forge { border: none; color: #fff; }  /* drop default UA border on the gradient button; set text color (no .btn parent here) */
+.pause-actions .btn-forge:active,
+.pause-actions .btn-ghost:active { transform: translateY(2px) scale(0.99); }
+
+/* Visible keyboard focus for every pause control (none present otherwise). */
+.pause-actions .btn-forge:focus-visible,
+.pause-actions .btn-ghost:focus-visible,
+.pause-audio button:focus-visible {
+  outline: 2px solid var(--arcane);
+  outline-offset: 2px;
+}
 .pause-audio { display: flex; gap: 10px; }
 .pause-audio button {
   flex: 1;
@@ -1555,6 +1579,8 @@ kbd {
 }
 @media (prefers-reduced-motion: reduce) {
   .pause-overlay .panel { animation: none !important; }
+  .pause-actions .btn-forge,
+  .pause-actions .btn-ghost { transition: none !important; }
 }
 
 /* ============================================================
