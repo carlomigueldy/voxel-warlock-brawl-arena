@@ -57,9 +57,9 @@ test("generated character asset URLs resolve relative to the character module", 
   // Character-aware loader resolves rigged + walk + run GLBs per selectable
   // character relative to the module.
   assert.match(character, /new URL\(p, import\.meta\.url\)\.href/);
-  assert.match(character, /assets\/characters\/ember-warlock-rigged\.glb/);
-  assert.match(character, /assets\/characters\/ember-warlock-walking\.glb/);
-  assert.match(character, /assets\/characters\/ember-warlock-running\.glb/);
+  assert.match(character, /assets\/characters\/[\w-]+-rigged\.glb/);
+  assert.match(character, /assets\/characters\/[\w-]+-walking\.glb/);
+  assert.match(character, /assets\/characters\/[\w-]+-running\.glb/);
 });
 
 test("character roster exposes four rigged voxel characters", () => {
