@@ -1,0 +1,50 @@
+# supabase/config.toml — minimal local dev config for Voxel Warlock Brawl Arena
+# Full reference: https://supabase.com/docs/guides/local-development/overview
+
+[project]
+id = "voxel-warlock-brawl-arena"
+
+[api]
+enabled = true
+port    = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+
+[db]
+port     = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port    = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:8000"
+# Allow anonymous sign-ins for guest play
+enable_anonymous_sign_ins = true
+
+# Enable email/password auth
+[auth.email]
+enable_signup    = true
+enable_confirmations = false  # set true in production
+
+# Google OAuth — configure via dashboard; client_id/secret NOT stored here
+[auth.external.google]
+enabled  = false   # flip to true once you add credentials in dashboard
+redirect_uri = ""  # leave empty; Supabase auto-derives from site_url
+
+[edge_runtime]
+enabled = true
+policy  = "oneshot"
+inspector_port = 8083
+
+[storage]
+enabled = true
+
+[realtime]
+enabled = true
+
+[analytics]
+enabled = false

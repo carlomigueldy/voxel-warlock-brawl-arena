@@ -150,6 +150,21 @@ export const CFG = {
     END_DELAY: 3.0,         // seconds to show the round result
   },
 
+  // --- Regions ---
+  REGIONS: [
+    { id: "sea",      label: "Southeast Asia"  },
+    { id: "us-east",  label: "US East"         },
+    { id: "us-west",  label: "US West"         },
+    { id: "eu",       label: "Europe"          },
+    { id: "sa",       label: "South America"   },
+    { id: "oce",      label: "Oceania"         },
+  ],
+  DEFAULT_REGION: "sea",
+
+  // --- Kill attribution ---
+  // A kill is credited to the last attacker within this many seconds of the death.
+  KILL_CREDIT_WINDOW: 5,
+
   // --- Networking ---
   TICK_RATE: 30,             // host simulation broadcast rate (Hz)
   INPUT_RATE: 30,            // client input send rate (Hz)
@@ -274,7 +289,7 @@ export const ITEMS = {
 // Message types exchanged over PeerJS data channels.
 export const MSG = {
   // client -> host
-  JOIN: "join",          // {name, character}
+  JOIN: "join",          // {name, character, userId, region}  userId: string|null; region: string
   INPUT: "input",        // {seq, move:[x,z], aim, fire, casts:[{id,spell,tx,tz}]}
   // host -> client
   WELCOME: "welcome",    // {id, players, hostName}

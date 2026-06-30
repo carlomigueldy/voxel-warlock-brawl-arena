@@ -3,7 +3,7 @@
 import { CFG, SPELLS, SPELL_ORDER, getArenaLandSize, getArenaWorld, isOnArenaWorld } from "./config.js";
 import { MapQuery } from "./arena-query.js";
 import { generateMap } from "./mapgen.js";
-import { Player } from "./player.js";
+import { Player, resolveKillCredit } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell } from "./spells.js";
 import { BotBrain, BOT_PROFILES, closestApproach as _closestApproach } from "./bot.js";
@@ -189,7 +189,13 @@ export class Simulation {
 
   startMatch() {
     if (!this.canStartMatch()) return false;
-    for (const p of this.players.values()) p.score = 0;
+    for (const p of this.players.values()) {
+      p.score = 0;
+      p.kills = 0;
+      p.deaths = 0;
+      p.lastAttackerId = null;
+      p.lastAttackerAt = 0;
+    }
     this.matchWinnerId = null;
     this.round = 0;
     // New random base seed for the whole match; each round mixes it with the
@@ -492,7 +498,12 @@ export class Simulation {
             const l = Math.hypot(ndx, ndz) || 1;
             // Raised knockback floor (0.55 instead of 0.4) so edge-caught
             // players still get flung meaningfully.
-            p.applyHit((ndx / l), (ndz / l), m.kb * (0.55 + 0.45 * falloff));
+            const meteorHit = p.applyHit((ndx / l), (ndz / l), m.kb * (0.55 + 0.45 * falloff));
+            // Record the attacker for kill-credit attribution (meteors do not
+            // emit per-victim hit events, so we record here directly).
+            if (meteorHit && m.ownerId && m.ownerId !== p.id) {
+              p.recordAttacker(m.ownerId, Date.now());
+            }
           }
         }
         this.events.push({ type: "meteorImpact", x: m.x, z: m.z, radius: blastR, by: m.ownerId });
@@ -505,10 +516,29 @@ export class Simulation {
     this.resolveRuneDestruction();
     this.resolveRunePickups();
 
+    // Record the latest attacker for each victim from all hit events emitted this
+    // frame — covers bolt hits, lightning, thrust, gravity implosion, and any
+    // other spell that emits {type:"hit", victim, by}.  Meteor hits are recorded
+    // directly in the meteor processing loop above (no per-victim hit event there).
+    const _hitNow = Date.now();
+    for (const ev of this.events) {
+      if (ev.type === "hit" && ev.by && ev.victim && ev.by !== ev.victim) {
+        const victim = this.players.get(ev.victim);
+        if (victim) victim.recordAttacker(ev.by, _hitNow);
+      }
+    }
+
     // Death detection (falling players that reached lava become !alive in step()).
     for (const p of this.players.values()) {
       if (!p.alive && p._countedDeath !== this.round) {
         p._countedDeath = this.round;
+        p.deaths++;
+        // Credit the kill to the last attacker if within the attribution window.
+        const killerId = resolveKillCredit(p.lastAttackerId, p.lastAttackerAt, Date.now(), CFG.KILL_CREDIT_WINDOW);
+        if (killerId) {
+          const killer = this.players.get(killerId);
+          if (killer) killer.kills++;
+        }
         this.events.push({ type: "death", id: p.id });
       }
     }

@@ -974,3 +974,188 @@ html, body {
   /* Spine button hover: no translate. */
   .spine-btn:hover { transform: none !important; }
 }
+
+
+/* ============================================================
+   REGION-BASED MATCHMAKING — NEW SCREENS
+   (Online, LAN, Leaderboards, Account)
+   Design tokens only: --ember, --arcane, --panel, --panel-2,
+   --text, --muted, --line, --line-strong, --font-display,
+   --font-ui, --ease-spring.
+   ============================================================ */
+
+/* ---- Sub-screen scroll guard (leaderboard can be tall) ---- */
+.sub-screen {
+  overflow-y: auto;
+  max-height: calc(100vh - 80px);
+}
+.sub-screen::-webkit-scrollbar { width: 4px; }
+.sub-screen::-webkit-scrollbar-thumb { background: rgba(108,76,255,0.5); border-radius: 2px; }
+@media (max-width: 800px) {
+  .sub-screen { max-height: none; overflow-y: visible; }
+}
+
+/* ---- Supabase disabled notice ---- */
+.supabase-notice {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: rgba(108,76,255,0.08);
+  border: 1px solid rgba(108,76,255,0.3);
+  border-radius: 12px; padding: 12px 16px;
+  font-size: 13px; color: var(--muted); line-height: 1.5;
+}
+.supabase-notice-icon {
+  flex-shrink: 0; font-size: 16px; color: var(--arcane); margin-top: 1px;
+}
+
+/* ---- Region selector ---- */
+.rune-select-wrap {
+  position: relative; display: flex; align-items: center;
+}
+.rune-select {
+  width: 100%; appearance: none;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+  color: var(--text); font-family: var(--font-ui); font-size: 15px; font-weight: 600;
+  padding: 12px 40px 12px 16px; outline: none; cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.rune-select:focus-visible { border-color: var(--arcane); box-shadow: var(--glow-arcane); }
+.rune-select:disabled { opacity: 0.45; cursor: not-allowed; }
+.rune-select option { background: var(--panel); color: var(--text); }
+.rune-select-arrow {
+  position: absolute; right: 14px; pointer-events: none;
+  font-size: 13px; color: var(--muted);
+}
+
+/* ---- LAN divider ---- */
+.lan-divider {
+  display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px;
+  letter-spacing: 2px; text-transform: uppercase;
+}
+.lan-divider::before, .lan-divider::after {
+  content: ""; flex: 1; height: 1px; background: var(--line);
+}
+
+/* ---- Rooms list ---- */
+.rooms-list {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 220px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 4px;
+  background: var(--panel-2);
+}
+.rooms-list::-webkit-scrollbar { width: 4px; }
+.rooms-list::-webkit-scrollbar-thumb { background: rgba(108,76,255,0.4); border-radius: 2px; }
+.rooms-empty {
+  padding: 16px 12px; text-align: center; font-size: 13px; color: var(--muted);
+}
+.room-row {
+  display: grid; grid-template-columns: 1fr auto auto auto;
+  align-items: center; gap: 10px;
+  background: rgba(108,76,255,0.05);
+  border: 1px solid transparent; border-radius: 9px;
+  padding: 10px 12px;
+  transition: background 0.18s, border-color 0.18s;
+  animation: playerIn 0.28s var(--ease-spring) both;
+}
+.room-row:hover { background: rgba(108,76,255,0.12); border-color: var(--line); }
+.room-host { font-weight: 700; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-map { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+.room-players { font-size: 12px; color: var(--gold); font-weight: 700; white-space: nowrap; }
+.room-join-btn { padding: 7px 14px; font-size: 12px; flex-shrink: 0; }
+
+/* ---- Leaderboard table ---- */
+.leaderboard-table {
+  display: flex; flex-direction: column; gap: 3px;
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+}
+.lb-row {
+  display: grid; grid-template-columns: 32px 1fr auto;
+  gap: 10px; align-items: center;
+  padding: 10px 14px;
+  background: var(--panel-2);
+  transition: background 0.15s;
+}
+.lb-row:hover { background: rgba(108,76,255,0.08); }
+.lb-header {
+  background: rgba(108,76,255,0.1);
+  border-bottom: 1px solid var(--line);
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+  font-weight: 700;
+}
+.lb-top { background: rgba(255,210,60,0.06); }
+.lb-top .lb-rank { color: var(--gold); font-weight: 900; }
+.lb-rank { font-size: 13px; font-weight: 700; color: var(--muted); text-align: center; }
+.lb-name { font-size: 14px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-value { font-size: 14px; font-weight: 700; color: var(--ember); text-align: right; }
+.lb-empty {
+  padding: 20px; text-align: center; font-size: 13px; color: var(--muted);
+}
+
+/* ---- Auth form ---- */
+.auth-form { display: flex; flex-direction: column; gap: 12px; }
+.auth-tabs {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px;
+  background: var(--slot); border: 1px solid var(--line); border-radius: 12px; padding: 4px;
+  margin-bottom: 4px;
+}
+.auth-tab-btn {
+  appearance: none; border: none; cursor: pointer;
+  background: transparent; color: var(--muted);
+  font-family: var(--font-ui); font-weight: 700; font-size: 12px; letter-spacing: 0.5px;
+  padding: 9px 6px; border-radius: 9px; text-transform: uppercase;
+  transition: color 0.18s, background 0.18s;
+  position: relative; z-index: 1;
+}
+.auth-tab-btn:hover { color: var(--text); }
+.auth-tab-btn.is-active { color: #fff; }
+.auth-tab-btn.is-active::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 9px;
+  background: linear-gradient(135deg, var(--arcane), var(--ember));
+  box-shadow: var(--glow-arcane);
+  animation: segPop 0.3s var(--ease-spring);
+}
+.auth-tab-btn:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+.auth-fields { display: flex; flex-direction: column; gap: 10px; }
+.auth-google-btn { margin-top: 2px; }
+.auth-upgrade-title { font-size: 13px; color: var(--muted); margin-bottom: 2px; }
+
+/* ---- Identity badge ---- */
+.identity-badge {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px;
+  padding: 12px 16px;
+  animation: playerIn 0.3s var(--ease-spring) both;
+}
+.identity-icon {
+  font-size: 20px; flex-shrink: 0;
+}
+.identity-guest   { color: var(--muted); }
+.identity-account { color: var(--arcane); text-shadow: var(--glow-arcane); }
+.identity-info {
+  flex: 1; font-size: 13px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.identity-signout {
+  flex-shrink: 0; font-size: 11px; padding: 7px 12px;
+}
+
+/* ---- K/D column in HUD scoreboard ---- */
+#scoreboard .row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 3px 0; }
+#scoreboard .row .pkd { color: var(--muted); font-size: 11px; text-align: right; }
+#scoreboard .row .pscore { color: var(--ember); font-weight: 700; text-align: right; }
+#scoreboard .row.dead .pkd { text-decoration: none; }
+
+/* ---- Responsive — new screens at 800px breakpoint ---- */
+@media (max-width: 800px) {
+  .rooms-list { max-height: 180px; }
+  .room-row { grid-template-columns: 1fr auto auto; }
+  .room-map { display: none; }
+  .lb-row { padding: 8px 10px; gap: 6px; }
+  .lb-name { font-size: 13px; }
+  .auth-tab-btn { font-size: 10px; padding: 8px 4px; }
+  .identity-badge { flex-wrap: wrap; }
+}
+
+/* Reduced motion: instant swap for new screens too. */
+@media (prefers-reduced-motion: reduce) {
+  .rooms-list, .leaderboard-table, .identity-badge { animation: none !important; }
+}

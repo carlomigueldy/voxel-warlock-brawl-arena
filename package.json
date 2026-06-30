@@ -7,7 +7,7 @@
     "start": "python3 -m http.server ${PORT:-8080}",
     "serve": "python3 -m http.server ${PORT:-8080}",
     "dev": "npx --yes serve -l ${PORT:-8080} .",
-    "test": "node test/sim.test.mjs && node test/spells.test.mjs && node test/source.test.mjs && node test/animations.test.mjs && node test/mapgen.test.mjs && node test/collision.test.mjs && node test/physics.test.mjs"
+    "test": "node test/sim.test.mjs && node test/spells.test.mjs && node test/source.test.mjs && node test/animations.test.mjs && node test/mapgen.test.mjs && node test/collision.test.mjs && node test/physics.test.mjs && node src/stats.test.mjs"
   },
   "keywords": ["threejs", "webgl", "voxel", "p2p", "peerjs", "game", "warlock"],
   "license": "MIT"

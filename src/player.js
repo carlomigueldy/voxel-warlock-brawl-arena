@@ -25,6 +25,13 @@ export class Player {
     this.score = 0;          // round wins
     this.roundKills = 0;
 
+    // Match-level kill/death tracking.
+    this.kills = 0;
+    this.deaths = 0;
+    // Last attacker id and timestamp (ms) for kill-credit attribution.
+    this.lastAttackerId = null;
+    this.lastAttackerAt = 0;
+
     // Per-spell cooldown timers (id -> seconds remaining).
     this.cooldowns = {};
     this.spells = new Set(["fireball"]);
@@ -155,6 +162,8 @@ export class Player {
     this.cooldown = 0;
     this.cooldowns = {};
     this.roundKills = 0;
+    this.lastAttackerId = null;
+    this.lastAttackerAt = 0;
     this.timeshift = null;
     this.pendingCasts = [];
     this._castSeen = -1;
@@ -408,6 +417,13 @@ export class Player {
     return this.alive && !this.falling && this.cooldown <= 0 && this.status.disabled <= 0 && this.status.stunned <= 0;
   }
 
+  // Record the most recent attacker for kill-credit attribution.
+  // `now` is a millisecond timestamp (e.g. Date.now()).
+  recordAttacker(attackerId, now) {
+    this.lastAttackerId = attackerId;
+    this.lastAttackerAt = now;
+  }
+
   // Serialize the bits clients need to render.
   snapshot() {
     return {
@@ -423,6 +439,8 @@ export class Player {
       hz: this._hazardTime > 0 && !this.falling ? +Math.max(0, CFG.HAZARD_DEATH_DELAY - this._hazardTime).toFixed(2) : 0,
       st: this.status.stunned > 0 ? +this.status.stunned.toFixed(2) : 0,
       s: this.score,
+      k: this.kills,
+      d: this.deaths,
       // status flags for VFX (1/0 to keep the packet small)
       ww: this.status.windWalk > 0 ? 1 : 0,
       ru: this.status.rush > 0 ? 1 : 0,
@@ -444,4 +462,17 @@ export class Player {
     }
     return out;
   }
+}
+
+// Pure kill-attribution helper — extracted for unit testing without the full sim.
+// Returns the attacker id if the attack occurred within the window, or null.
+// Parameters:
+//   lastAttackerId  - id of the last player that hit the victim (or null)
+//   lastAttackerAt  - timestamp (ms) when that hit landed
+//   now             - current timestamp (ms)
+//   windowSeconds   - attribution window (CFG.KILL_CREDIT_WINDOW)
+export function resolveKillCredit(lastAttackerId, lastAttackerAt, now, windowSeconds) {
+  if (!lastAttackerId) return null;
+  if ((now - lastAttackerAt) >= windowSeconds * 1000) return null;
+  return lastAttackerId;
 }

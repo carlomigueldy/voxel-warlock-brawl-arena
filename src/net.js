@@ -30,6 +30,9 @@ export class Host {
     this.code = makeRoomCode();
     this.peerId = codeToPeerId(this.code);
     this.conns = new Map(); // peerId -> DataConnection
+    // Per-peer identity metadata populated on JOIN: { userId, region }
+    // The host's own entry must be set by the caller via playerMeta.set(host.localId, {...}).
+    this.playerMeta = new Map();
     this.callbacks = { onLobby, onPlayerJoin, onPlayerLeave, onReady, onError };
     this.localId = this.peerId; // host plays too
     this._initPeer();
@@ -70,10 +73,12 @@ export class Host {
     conn.on("data", (msg) => this._onData(conn, msg));
     conn.on("close", () => {
       this.conns.delete(conn.peer);
+      this.playerMeta.delete(conn.peer);
       this.callbacks.onPlayerLeave?.(conn.peer);
     });
     conn.on("error", () => {
       this.conns.delete(conn.peer);
+      this.playerMeta.delete(conn.peer);
       this.callbacks.onPlayerLeave?.(conn.peer);
     });
   }
@@ -84,7 +89,10 @@ export class Host {
       case MSG.JOIN:
         conn._playerName = sanitizeName(msg.name);
         conn._character = typeof msg.character === "string" ? msg.character : null;
-        this.callbacks.onPlayerJoin?.(conn.peer, conn._playerName, conn._character);
+        conn._userId = typeof msg.userId === "string" ? msg.userId : null;
+        conn._region = typeof msg.region === "string" ? msg.region : null;
+        this.playerMeta.set(conn.peer, { userId: conn._userId, region: conn._region });
+        this.callbacks.onPlayerJoin?.(conn.peer, conn._playerName, conn._character, { userId: conn._userId, region: conn._region });
         // Acknowledge with the player's authoritative id.
         conn.send({ type: MSG.WELCOME, id: conn.peer, hostName: this.name });
         break;
@@ -115,9 +123,11 @@ export class Host {
 
 // ---------------- CLIENT ----------------
 export class Client {
-  constructor({ name, code, character, onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose }) {
+  constructor({ name, code, character, userId, region, onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose }) {
     this.name = name;
     this.character = character || null;
+    this.userId = userId || null;
+    this.region = region || null;
     this.code = code.toUpperCase();
     this.hostId = codeToPeerId(this.code);
     this.callbacks = { onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose };
@@ -137,7 +147,7 @@ export class Client {
   _wireConn() {
     this.conn.on("open", () => {
       this.localId = this.peer.id;
-      this.conn.send({ type: MSG.JOIN, name: this.name, character: this.character });
+      this.conn.send({ type: MSG.JOIN, name: this.name, character: this.character, userId: this.userId, region: this.region });
     });
     this.conn.on("data", (msg) => this._onData(msg));
     this.conn.on("close", () => this.callbacks.onClose?.());
@@ -169,3 +179,4 @@ export class Client {
     try { this.peer?.destroy(); } catch {}
   }
 }
+
