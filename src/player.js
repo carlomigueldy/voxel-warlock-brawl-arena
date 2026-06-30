@@ -1,6 +1,6 @@
 // A warlock. The host owns the authoritative state; clients hold a visual
 // proxy that is interpolated toward host snapshots.
-import { CFG, SPELLS, ITEMS } from "./config.js";
+import { CFG, SPELLS, SPELL_TEMPLATES, ITEMS } from "./config.js";
 
 export class Player {
   constructor(id, name, colorIndex, options = {}) {
@@ -18,10 +18,11 @@ export class Player {
     this.peakY   = CFG.PLATFORM_TOP; // highest Y reached since last grounding (for fall-stun)
     this.aim = 0;            // radians, facing direction
     this.charge = 0;         // accumulated knockback vulnerability (Smash %)
+    this.maxHp = CFG.PLAYER_HP_MAX;
+    this.hp = this.maxHp;
     this.alive = true;
     this.spectating = false;
     this.falling = false;    // off the edge, plummeting to lava
-    this.cooldown = 0;       // legacy fireball cooldown (kept for tests)
     this.score = 0;          // round wins
     this.roundKills = 0;
 
@@ -49,6 +50,11 @@ export class Player {
       linkedTo: null,  // id of linked partner
       link: 0,
       stunned: 0,      // fall-stun: blocks move/fire/cast for FALL_STUN_DURATION s
+      slow: 0, slowMul: 1,           // movement speed multiplier while slowed
+      burn: 0, burnDps: 0, burnBy: null, burnTickAcc: 0, // damage-over-time
+      curse: 0, curseMul: 1,         // incoming damage/knockback amplifier
+      invisible: 0,    // step-3: Shadow Veil duration
+      haste: 0, hasteMul: 1,         // step-3: Haste speed boost
     };
     // Feedback events produced during a physics step (e.g. the gravity
     // implosion burst), drained into the sim event queue after each step.
@@ -61,10 +67,14 @@ export class Player {
     this.mods = {
       speedMul: 1, kbResist: 0, cdr: 0, lifesteal: 0,
       dmgMul: 1, takenMul: 1, fireballKbMul: 1, lavaGrace: 0,
+      aoeMul: 1, regen: 0, maxHpBonus: 0,
     };
 
     // Latest input from this player's client (host applies it each tick)
-    this.input = { move: [0, 0], aim: 0, fire: false, seq: 0, casts: [] };
+    this.input = { move: [0, 0], aim: 0, seq: 0, casts: [] };
+
+    // Step-3: active wind-up / channel state (null = idle).
+    this.activeCast = null;
 
     // Internal: round in which a death was already counted.
     this._countedDeath = -1;
@@ -74,12 +84,21 @@ export class Player {
     this._nextBotAbilityAt = 0;
     this._botCastId = 0;
     this._hazardTime = 0;
+
+    // Step 6 — spell draft state (committed to _draftLoadout before beginRound).
+    this.draftPick = [];      // ordered spell ids chosen during the draft (≤6, no fireball)
+    this.draftReady = false;
+    this._draftLoadout = null;
   }
 
   // Recompute modifiers from the player's item loadout.
   applyItems(itemKeys = []) {
     this.items = itemKeys.filter((k) => ITEMS[k]);
-    const m = { speedMul: 1, kbResist: 0, cdr: 0, lifesteal: 0, dmgMul: 1, takenMul: 1, fireballKbMul: 1, lavaGrace: 0 };
+    const m = {
+      speedMul: 1, kbResist: 0, cdr: 0, lifesteal: 0,
+      dmgMul: 1, takenMul: 1, fireballKbMul: 1, lavaGrace: 0,
+      aoeMul: 1, regen: 0, maxHpBonus: 0,
+    };
     for (const key of this.items) {
       const it = ITEMS[key];
       switch (it.kind) {
@@ -90,10 +109,40 @@ export class Player {
         case "glassCannon": m.dmgMul *= it.dealt; m.takenMul *= it.taken; break;
         case "lavaGrace": m.lavaGrace += it.value; break;
         case "empowerFireball": m.fireballKbMul *= it.kb; break;
+        // Step 4 item stat kinds:
+        case "maxHp":  m.maxHpBonus += it.value; break;
+        case "damage": m.dmgMul     *= it.value; break;
+        case "aoe":    m.aoeMul     *= it.value; break;
+        case "regen":  m.regen      += it.value; break;
+        case "active": /* no stat mod; spell granted in acquireItem() */ break;
       }
     }
     m.kbResist = Math.min(0.75, m.kbResist); // never fully immune
+    // Hook for items that raise max HP; clamp current hp.
+    this.maxHp = CFG.PLAYER_HP_MAX + (m.maxHpBonus || 0);
+    if (this.hp > this.maxHp) this.hp = this.maxHp;
     this.mods = m;
+  }
+
+  // Equip a looted item into the first free item slot (cap = ITEM_SLOT_COUNT).
+  acquireItem(itemKey) {
+    const it = ITEMS[itemKey];
+    if (!it) return false;
+    // Dedup active items before the slot-cap check: a second copy of an
+    // already-owned active item would waste a slot while granting nothing new
+    // (the spells.has guard below skips re-granting the spell). Reject it here
+    // so the field item is left for another player to pick up.
+    if (it.kind === "active" && this.items.includes(itemKey)) return false;
+    if (this.items.length >= CFG.ITEM_SLOT_COUNT) return false;   // 4-slot cap
+    // Stat items cannot stack — owning the same passive twice is an exploit.
+    // Active items keep their existing dup guard (spells.has check below).
+    if (it.kind !== "active" && this.items.includes(itemKey)) return false;
+    this.applyItems([...this.items, itemKey]);                    // recompute mods
+    if (it.kind === "active" && it.grantsSpell && !this.spells.has(it.grantsSpell)) {
+      this.spells.add(it.grantsSpell);          // makes canCast() pass
+      this.cooldowns[it.grantsSpell] = 0;        // ready immediately
+    }
+    return true;
   }
 
   // Cooldown for a spell after applying cooldown-reduction items.
@@ -107,6 +156,7 @@ export class Player {
     return this.spells.has(spellId);
   }
 
+  // acquireSpell: reserved / superseded by item system (Step 4) — kept for Step-7 tests (spells.test.mjs:344-349, sim.test.mjs:841).
   acquireSpell(spellId) {
     if (!SPELLS[spellId]) return false;
     if (this.spells.has(spellId)) return true;
@@ -125,20 +175,92 @@ export class Player {
     if (slot >= 0) this.spellSlots[slot] = null;
   }
 
-  setAllSpells() {
-    this.spells = new Set(Object.keys(SPELLS));
-    this.spellSlots = [];
+  // Assign a full slot loadout (pre-draft default now; Step 6 draft later).
+  // Caps at SPELL_SLOT_COUNT, dedupes, and always retains fireball.
+  //
+  // STEP 6 SEAM NOTE: if fireball is absent from the input list it is prepended,
+  // then the list is sliced to SPELL_SLOT_COUNT. A 6-spell list that omits fireball
+  // will have fireball inserted at slot 0 and the 6th drafted spell silently dropped
+  // (player gets 5 chosen + fireball). To avoid this, any caller passing a full
+  // SPELL_SLOT_COUNT list MUST include fireball, OR pass only SPELL_SLOT_COUNT-1
+  // spells and let this method fill slot 0. botSpellLoadout() in bot.js already
+  // follows the latter convention.
+  setLoadout(spellIds = []) {
+    this.spellSlots = Array(CFG.SPELL_SLOT_COUNT).fill(null);
+    this.spells = new Set();
+    const ids = [];
+    for (const id of spellIds) {
+      if (!SPELLS[id] || ids.includes(id)) continue;
+      ids.push(id);
+      if (ids.length >= CFG.SPELL_SLOT_COUNT) break;
+    }
+    if (!ids.includes("fireball")) ids.unshift("fireball");
+    ids.slice(0, CFG.SPELL_SLOT_COUNT).forEach((id, i) => {
+      this.spellSlots[i] = id;
+      this.spells.add(id);
+      this.cooldowns[id] = 0;
+    });
   }
 
-  setStarterSpells() {
+  // ---- Step 6: spell draft methods ----
+
+  /** Reset draft state at the start of the SPELL_SELECTION phase. */
+  beginDraft() {
+    this.draftPick = [];
+    this.draftReady = false;
+  }
+
+  /** Toggle a spell in/out of the draft picks. No-ops when ready, invalid id, fireball, or over cap. */
+  toggleDraftSpell(id) {
+    if (this.draftReady || !SPELLS[id] || id === "fireball") return;
+    const i = this.draftPick.indexOf(id);
+    if (i >= 0) { this.draftPick.splice(i, 1); return; }
+    if (this.draftPick.length >= CFG.SPELL_SLOT_COUNT) return; // 6-slot cap
+    this.draftPick.push(id);
+  }
+
+  /** Apply one of the three quick-pick templates (index 0/1/2). No-op when ready or index invalid. */
+  applyDraftTemplate(n) {
+    if (this.draftReady) return;
+    const t = SPELL_TEMPLATES?.[n];
+    if (!t) return;
+    this.draftPick = t.spells
+      .filter((id) => SPELLS[id] && id !== "fireball")
+      .slice(0, CFG.SPELL_SLOT_COUNT);
+  }
+
+  /** Clear all picks (only when not yet ready). */
+  clearDraft() {
+    if (!this.draftReady) this.draftPick = [];
+  }
+
+  /** Mark this player as ready to start; host transitions out of draft when all players are ready. */
+  setDraftReady(v) {
+    this.draftReady = !!v;
+  }
+
+  /**
+   * Commit a drafted loadout: fireball stays the free always-on basic (in spells Set,
+   * not in a slot); the 6 slot positions are filled with the provided ids.
+   */
+  setDraftLoadout(ids = []) {
     this.spells = new Set(["fireball"]);
     this.spellSlots = Array(CFG.SPELL_SLOT_COUNT).fill(null);
+    let slot = 0;
+    for (const id of ids) {
+      if (slot >= CFG.SPELL_SLOT_COUNT) break;
+      if (!SPELLS[id] || id === "fireball" || this.spells.has(id)) continue;
+      this.spellSlots[slot++] = id;
+      this.spells.add(id);
+      this.cooldowns[id] = 0;
+    }
   }
 
   canCast(spellId) {
     if (!this.alive || this.falling) return false;
     if (this.status.disabled > 0) return false;
     if (this.status.stunned > 0) return false;
+    if (this.activeCast) return false;   // already winding up / channeling
     if (!this.hasSpell(spellId)) return false;
     return (this.cooldowns[spellId] || 0) <= 0;
   }
@@ -156,15 +278,16 @@ export class Player {
     this.peakY   = CFG.PLATFORM_TOP;
     this.aim = Math.atan2(-this.z, -this.x); // face center
     this.charge = 0;
+    this.hp = this.maxHp;
     this.alive = true;
     this.spectating = false;
     this.falling = false;
-    this.cooldown = 0;
     this.cooldowns = {};
     this.roundKills = 0;
     this.lastAttackerId = null;
     this.lastAttackerAt = 0;
     this.timeshift = null;
+    this.activeCast = null;
     this.pendingCasts = [];
     this._castSeen = -1;
     this._nextBotFireAt = 0;
@@ -175,11 +298,13 @@ export class Player {
     if (this._brain) this._brain.reset();
     this.status = {
       windWalk: 0, rush: 0, shield: 0, shieldCharges: 0, disabled: 0,
-      gravity: 0, gravX: 0, gravZ: 0, gravPull: 0, gravBy: null, linkedTo: null, link: 0,
+      gravity: 0, gravX: 0, gravZ: 0, gravPull: 0, gravBy: null, gravImplDmg: null, linkedTo: null, link: 0,
       stunned: 0,
+      slow: 0, slowMul: 1, burn: 0, burnDps: 0, burnBy: null, burnTickAcc: 0, curse: 0, curseMul: 1,
+      invisible: 0, haste: 0, hasteMul: 1,
     };
     this._events = [];
-    this.input = { move: [0, 0], aim: this.aim, fire: false, seq: 0, casts: [] };
+    this.input = { move: [0, 0], aim: this.aim, seq: 0, casts: [] };
   }
 
   // --- AUTHORITATIVE physics step (host only) ---
@@ -202,6 +327,11 @@ export class Player {
     // Tick down status effects.
     this._tickStatus(dt);
 
+    // Item regen: restore HP per second from Phoenix Charm / regen items.
+    if (this.mods.regen > 0 && this.hp > 0 && this.hp < this.maxHp) {
+      this.hp = Math.min(this.maxHp, this.hp + this.mods.regen * dt);
+    }
+
     // Apply player movement intent (only when not heavily knocked back).
     const [mx, mz] = this.input.move;
     const mlen = Math.hypot(mx, mz);
@@ -214,6 +344,8 @@ export class Player {
     let speed = CFG.MOVE_SPEED * this.mods.speedMul;
     if (this.status.windWalk > 0) speed *= SPELLS.windWalk.speedMul;
     if (this.status.rush > 0) speed *= SPELLS.rush.speedMul;
+    if (this.status.haste > 0) speed *= this.status.hasteMul;
+    if (this.status.slow > 0) speed *= this.status.slowMul;
     if (inHazard) speed *= CFG.HAZARD_MOVE_SPEED_MUL;
     const control = knockSpeed > 2 ? 0.25 : 1.0;
 
@@ -292,8 +424,7 @@ export class Player {
     // Charge slowly decays while alive.
     this.charge = Math.max(0, this.charge - CFG.CHARGE_DECAY * dt);
 
-    // Cooldown ticks (legacy fireball + per-spell).
-    this.cooldown = Math.max(0, this.cooldown - dt);
+    // Per-spell cooldown ticks.
     for (const k in this.cooldowns) {
       if (this.cooldowns[k] > 0) this.cooldowns[k] = Math.max(0, this.cooldowns[k] - dt);
     }
@@ -360,7 +491,7 @@ export class Player {
 
   _tickStatus(dt) {
     const s = this.status;
-    for (const k of ["windWalk", "rush", "shield", "disabled", "gravity", "link", "stunned"]) {
+    for (const k of ["windWalk", "rush", "shield", "disabled", "gravity", "link", "stunned", "slow", "curse", "invisible", "haste"]) {
       if (s[k] > 0) {
         const prev = s[k];
         s[k] = Math.max(0, s[k] - dt);
@@ -382,10 +513,23 @@ export class Player {
             // Guard the feedback event on the hit landing (shield can block it)
             // so the client spark/SFX matches the authoritative result.
             if (this.applyHit(dx, dz, SPELLS.gravity.gravKb ?? 14)) {
+              // Prefer mob-sourced implosion damage (set by vacuum ability) over the
+              // player Gravity spell's dmg so mob tuning stays decoupled from spell rebalancing.
+              this.applyDamage(s.gravImplDmg ?? SPELLS.gravity.dmg ?? CFG.BOLT_BASE_DAMAGE, s.gravBy ?? null);
               this._events.push({ type: "hit", x: this.x, z: this.z, victim: this.id, by: s.gravBy ?? this.id });
             }
           }
         }
+      }
+    }
+    // Burn DoT: deals damage per second and emits visual tick events.
+    if (s.burn > 0) {
+      this.applyDamage(s.burnDps * dt, s.burnBy);
+      s.burn = Math.max(0, s.burn - dt);
+      s.burnTickAcc += dt;
+      if (s.burnTickAcc >= 0.25) {
+        s.burnTickAcc = 0;
+        this._events.push({ type: "dotTick", x: this.x, z: this.z, victim: this.id });
       }
     }
   }
@@ -402,6 +546,7 @@ export class Player {
     }
     let impulse = base + this.charge * CFG.KNOCKBACK_CHARGE_SCALE;
     impulse *= this.mods.takenMul;
+    if (this.status.curse > 0) impulse *= this.status.curseMul;
     // Knockback resistance from items / Rush.
     let resist = this.mods.kbResist;
     if (this.status.rush > 0) resist += SPELLS.rush.kbResist;
@@ -413,8 +558,28 @@ export class Player {
     return true;
   }
 
-  canFire() {
-    return this.alive && !this.falling && this.cooldown <= 0 && this.status.disabled <= 0 && this.status.stunned <= 0;
+  // HP damage — SEPARATE from applyHit knockback. Clamps to [0,maxHp]; sets the
+  // player dead at 0 (funnels into sim's existing death-detection loop). Records
+  // the attacker for kill-credit so an HP kill is attributed even with no hit event.
+  applyDamage(amount, byId = null) {
+    if (!this.alive || this.falling) return false; // already doomed; ignore
+    if (!(amount > 0)) return false;
+    if (this.status.curse > 0) amount *= this.status.curseMul;
+    this.hp = Math.max(0, this.hp - amount);
+    if (byId && byId !== this.id) this.recordAttacker(byId, Date.now());
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.alive = false; // hp death — death loop counts it next (sim.js)
+    }
+    return true;
+  }
+
+  // Restore HP (step-3 Mend channel). Clamps to maxHp. Returns false when no-op.
+  applyHeal(amount) {
+    if (!this.alive || this.falling) return false;
+    if (!(amount > 0)) return false;
+    this.hp = Math.min(this.maxHp, this.hp + amount);
+    return true;
   }
 
   // Record the most recent attacker for kill-credit attribution.
@@ -433,6 +598,8 @@ export class Player {
       y: +this.y.toFixed(3),
       a: +this.aim.toFixed(3),
       c: +this.charge.toFixed(2),
+      hp: +this.hp.toFixed(1),
+      mhp: this.maxHp,
       al: this.alive,
       sp: this.spectating,
       f: this.falling,
@@ -448,10 +615,28 @@ export class Player {
       di: this.status.disabled > 0 ? 1 : 0,
       gr: this.status.gravity > 0 ? 1 : 0,
       lk: this.status.linkedTo || null,
+      sl: this.status.slow > 0 ? 1 : 0,
+      bu: this.status.burn > 0 ? 1 : 0,
+      cu: this.status.curse > 0 ? 1 : 0,
+      // step-3 status flags
+      iv: this.status.invisible > 0 ? 1 : 0,
+      hs: this.status.haste > 0 ? 1 : 0,
+      // step-3 cast/channel progress bar (null when idle)
+      ca: this.activeCast ? {
+        p: +Math.min(1, this.activeCast.channeling
+          ? this.activeCast.t / (this.activeCast.channel || 1)
+          : this.activeCast.t / (this.activeCast.castTime || 1)).toFixed(2),
+        s: this.activeCast.spell,
+        c: this.activeCast.channeling ? 1 : 0,
+      } : 0,
       // per-spell cooldowns for the local HUD bar
       cds: this._cdSnapshot(),
       spells: [...this.spells],
       spellSlots: [...this.spellSlots],
+      items: [...this.items],
+      // Step 6 draft state (used by the SPELL_SELECTION overlay)
+      draftPick: [...this.draftPick],
+      draftReady: this.draftReady,
     };
   }
 

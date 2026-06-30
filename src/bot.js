@@ -45,7 +45,7 @@ export const BOT_PROFILES = {
     dodgeRange: 0,         // never looks for incoming projectiles
     dodgeChance: 0,
     aggression: 0.9,       // charges toward target most of the time
-    loadout: ["bloodSword", "bootsOfSpeed"],
+    loadout: ["berserkerBlade", "swiftBoots"],
     abilityWeights: {
       thrust: 0.5, shield: 0.3, meteor: 0, lightning: 0.3,
       gravity: 0, homing: 0.8, bouncer: 0.5, boomerang: 0.4, fireSpray: 0.6,
@@ -68,7 +68,7 @@ export const BOT_PROFILES = {
     dodgeRange: 10,
     dodgeChance: 0.55,
     aggression: 0.5,
-    loadout: ["cape", "stoneOfJordan"],
+    loadout: ["wardingHelm", "swiftBoots"],
     abilityWeights: {
       thrust: 0.4, shield: 0.7, meteor: 0.5, lightning: 0.8,
       gravity: 0.6, homing: 0.6, bouncer: 0.8, boomerang: 0.7, fireSpray: 0.5,
@@ -91,7 +91,7 @@ export const BOT_PROFILES = {
     dodgeRange: 14,
     dodgeChance: 0.85,
     aggression: 0.7,
-    loadout: ["aegis", "pendant"],
+    loadout: ["wardingHelm", "arcaneSigil"],
     abilityWeights: {
       thrust: 0.6, shield: 0.9, meteor: 0.9, lightning: 0.95,
       gravity: 0.85, homing: 0.7, bouncer: 0.7, boomerang: 0.8, fireSpray: 0.4,
@@ -298,6 +298,32 @@ function selectAbility(sim, bot, target, dist, profile) {
   return { spell: best.spell, tx: target.x, tz: target.z };
 }
 
+// ── botSpellLoadout ────────────────────────────────────────────────────────
+// Derive a spell loadout for a bot from its abilityWeights profile.
+// Takes the top (slotCount - 1) spells by weight (weight > 0, must exist in
+// SPELLS), then prepends fireball (setLoadout will also guarantee it, but
+// being explicit here keeps the intent readable).
+// Always guarantees at least one escape spell (thrust or teleport) so the
+// edge-danger branch in selectAbility can fire; if neither appears in the
+// top-N by weight, the last chosen slot is replaced with thrust.
+// Used by sim.js setBotRoster and stored as p._spawnLoadout so beginRound can
+// re-apply the correct loadout each round rather than falling back to DEFAULT.
+export function botSpellLoadout(profile, slotCount = CFG.SPELL_SLOT_COUNT) {
+  const w = profile.abilityWeights || {};
+  const chosen = Object.entries(w)
+    .filter(([id, v]) => v > 0 && SPELLS[id])
+    .sort(([, a], [, b]) => b - a)
+    .map(([id]) => id)
+    .slice(0, slotCount - 1); // leave one slot for fireball
+  // Guarantee an escape spell so selectAbility's edge-danger branch can always fire.
+  const ESCAPE = ["thrust", "teleport"];
+  if (chosen.length > 0 && !ESCAPE.some((id) => chosen.includes(id))) {
+    const escapeId = ESCAPE.find((id) => SPELLS[id]) || "thrust";
+    chosen[chosen.length - 1] = escapeId; // swap out the lowest-ranked chosen spell
+  }
+  return ["fireball", ...chosen];
+}
+
 // ── BotBrain ───────────────────────────────────────────────────────────────
 export class BotBrain {
   constructor(botId, skill) {
@@ -341,7 +367,7 @@ export class BotBrain {
       )[0];
 
     if (!target) {
-      return { move: [0, 0], aim: bot.input.aim, fire: false, seq: bot.input.seq + 1, casts: [] };
+      return { move: [0, 0], aim: bot.input.aim, seq: bot.input.seq + 1, casts: [] };
     }
 
     // EMA velocity estimation from position delta (α=0.5 = moderate smoothing).
@@ -373,17 +399,15 @@ export class BotBrain {
     // ── Movement ──────────────────────────────────────────────────────────
     const [moveX, moveZ] = positioning(sim, bot, target, profile, dodge);
 
-    // ── Fire decision (standard bolt) ─────────────────────────────────────
-    // _botFireCooldown tells spawnBolt how long to set bot.cooldown.
-    bot._botFireCooldown = profile.fireEvery;
-    const fire =
-      dist <= profile.fireRange &&
-      bot.canFire() &&
-      (bot._nextBotFireAt ?? 0) <= sim.playTime;
-    if (fire) bot._nextBotFireAt = sim.playTime + profile.fireEvery;
+    // ── Fireball cast (routes through the standard cast pipeline) ─────────
+    const casts = [];
+    if (dist <= profile.fireRange && bot.canCast("fireball") &&
+        (bot._nextBotFireAt ?? 0) <= sim.playTime) {
+      casts.push({ id: ++bot._botCastId, spell: "fireball", tx: target.x, tz: target.z });
+      bot._nextBotFireAt = sim.playTime + profile.fireEvery;
+    }
 
     // ── Ability selection ──────────────────────────────────────────────────
-    const casts = [];
     if ((bot._nextBotAbilityAt ?? 0) <= sim.playTime) {
       let chosen = null;
 
@@ -424,6 +448,6 @@ export class BotBrain {
       if (this.comboWindow === 0) this.comboSpell = null;
     }
 
-    return { move: [moveX, moveZ], aim, fire, seq: bot.input.seq + 1, casts };
+    return { move: [moveX, moveZ], aim, seq: bot.input.seq + 1, casts };
   }
 }

@@ -426,6 +426,13 @@ html, body {
 #scoreboard .row { display: flex; justify-content: space-between; gap: 14px; padding: 3px 0; }
 #scoreboard .row.dead { opacity: .4; text-decoration: line-through; }
 #scoreboard .row .pscore { color: var(--ember); font-weight: 700; }
+#hp-wrap {
+  position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+  width: 220px; height: 16px; background: rgba(13,11,26,0.7);
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+}
+#hp-bar { width: 100%; height: 100%; background: linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c); transition: width 0.12s; }
+#hp-text { position: absolute; inset: 0; text-align: center; font-size: 11px; font-weight: 700; line-height: 16px; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
 #charge-wrap {
   position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
   width: 220px; height: 14px; background: rgba(13,11,26,0.7);
@@ -433,9 +440,31 @@ html, body {
 }
 #charge-bar { width: 0%; height: 100%; background: linear-gradient(90deg, var(--arcane), var(--ember)); transition: width 0.1s; }
 #hazard-warning {
-  position: absolute; bottom: 54px; left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: 74px; left: 50%; transform: translateX(-50%);
   background: rgba(255,90,60,0.86); color: #fff; padding: 7px 14px; border-radius: 999px;
   font-size: 14px; font-weight: bold; letter-spacing: .5px; text-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
+/* Step-3: cast/channel progress bar */
+#cast-wrap {
+  position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%);
+  width: 220px; height: 14px; background: rgba(13,11,26,0.7);
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  display: flex; align-items: center;
+}
+#cast-wrap.hidden { display: none; }
+#cast-bar { height: 100%; width: 0%; transition: width 0.08s; background: #66ccff; border-radius: 8px; }
+#cast-wrap.channeling #cast-bar { background: #7cff8a; }
+#cast-wrap.casting #cast-bar { background: #66ccff; }
+#cast-label { position: absolute; inset: 0; text-align: center; font-size: 10px; font-weight: 700; line-height: 14px; text-shadow: 0 1px 2px rgba(0,0,0,.6); white-space: nowrap; overflow: hidden; }
+/* Step-3: status-effect chips */
+#status-icons {
+  position: absolute; bottom: 112px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px;
+}
+.status-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%; font-size: 10px; font-weight: 800;
+  color: rgba(0,0,0,0.8); text-shadow: none; border: 1px solid rgba(255,255,255,0.3);
 }
 .center-msg {
   position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%);
@@ -544,6 +573,13 @@ html, body {
   position: fixed; bottom: 54px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 7px; flex-wrap: wrap; justify-content: center;
   max-width: 96vw; z-index: 6; pointer-events: auto;
+}
+
+/* ===== Item bar (4 active-item slots, reuses .ability-slot styling) ===== */
+#item-bar {
+  position: fixed; right: 16px; bottom: 130px; left: auto; transform: none;
+  display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end;
+  max-width: 40vw; z-index: 6; pointer-events: auto;
 }
 .ability-slot {
   position: relative; width: 66px; height: 64px;
@@ -921,9 +957,6 @@ html, body {
   margin-bottom: -10px;
 }
 
-/* Abilities toggle sits below the char-cards with a bit of breathing room. */
-.abilities-field { margin-top: 2px; }
-
 /* Arena-cards in SETTINGS at a slightly smaller size to fit better. */
 .arena-cards-sm .arena-card { padding: 10px 12px 9px; }
 .arena-cards-sm .arena-card-orb { width: 26px; height: 26px; border-radius: 7px; margin-bottom: 7px; }
@@ -1240,6 +1273,7 @@ html, body {
 /* Reduced motion: instant swap for new screens too. */
 @media (prefers-reduced-motion: reduce) {
   .rooms-list, .leaderboard-table, .identity-badge { animation: none !important; }
+}
 /* ============================================================
    TUTORIAL SUB-SCREEN
    ============================================================ */
@@ -1479,6 +1513,29 @@ kbd {
 .pause-actions { display: flex; flex-direction: column; gap: 16px; }
 .pause-actions .btn-forge,
 .pause-actions .btn-ghost { width: 100%; padding-top: 15px; padding-bottom: 15px; font-size: 16px; min-height: 48px; }
+
+/* Base button treatment for pause buttons (they carry only the variant class, not .btn). */
+.pause-actions .btn-forge,
+.pause-actions .btn-ghost {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: 1px;
+  border-radius: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.12s var(--ease-spring), filter 0.18s, box-shadow 0.2s;
+}
+.pause-actions .btn-forge { border: none; color: #fff; }  /* drop default UA border on the gradient button; set text color (no .btn parent here) */
+.pause-actions .btn-forge:active,
+.pause-actions .btn-ghost:active { transform: translateY(2px) scale(0.99); }
+
+/* Visible keyboard focus for every pause control (none present otherwise). */
+.pause-actions .btn-forge:focus-visible,
+.pause-actions .btn-ghost:focus-visible,
+.pause-audio button:focus-visible {
+  outline: 2px solid var(--arcane);
+  outline-offset: 2px;
+}
 .pause-audio { display: flex; gap: 10px; }
 .pause-audio button {
   flex: 1;
@@ -1522,4 +1579,279 @@ kbd {
 }
 @media (prefers-reduced-motion: reduce) {
   .pause-overlay .panel { animation: none !important; }
+  .pause-actions .btn-forge,
+  .pause-actions .btn-ghost { transition: none !important; }
+}
+
+/* ============================================================
+   STEP 6 — SPELL DRAFT OVERLAY
+   ============================================================ */
+.draft-panel {
+  max-width: 860px;
+  width: 100%;
+  padding: 28px 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 92vh;
+  overflow: hidden;
+}
+
+.draft-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.draft-header-left { text-align: left; }
+.draft-title {
+  font-family: var(--font-display);
+  font-size: clamp(16px, 3vw, 24px);
+  color: var(--text);
+  margin-top: 6px;
+  letter-spacing: 1px;
+}
+
+.draft-timer-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 56px;
+}
+.draft-timer-label {
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.draft-timer {
+  font-family: var(--font-display);
+  font-size: clamp(22px, 4vw, 36px);
+  color: var(--rune);
+  text-shadow: 0 0 18px rgba(124, 255, 90, 0.5);
+  line-height: 1;
+  transition: color 0.3s ease;
+}
+.draft-timer.draft-timer-urgent {
+  color: var(--ember);
+  text-shadow: 0 0 18px rgba(255, 90, 60, 0.65);
+  animation: timerUrgent 0.8s ease-in-out infinite;
+}
+@keyframes timerUrgent {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.draft-hint {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: left;
+  line-height: 1.5;
+}
+
+/* ---- Template quick-pick buttons ---- */
+.draft-templates {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.draft-tpl-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+  flex: 1 1 140px;
+  max-width: 220px;
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.draft-tpl-btn:hover:not(:disabled) {
+  border-color: var(--arcane);
+  background: rgba(108, 76, 255, 0.12);
+}
+.draft-tpl-btn:focus-visible {
+  outline: 2px solid var(--arcane);
+  outline-offset: 2px;
+}
+.draft-tpl-btn:disabled { opacity: 0.45; cursor: default; }
+.draft-tpl-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.5px;
+}
+.draft-tpl-desc {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ---- Body: slot pips + spell grid side by side ---- */
+.draft-body {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---- Slot pips: 6 vertical cells showing your current picks ---- */
+.draft-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.draft-slot-pip {
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--slot);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+  transition: border-color 0.18s ease, background 0.18s ease;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.draft-slot-pip.draft-slot-filled {
+  border-color: var(--swatch, var(--arcane));
+  background: rgba(108, 76, 255, 0.1);
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--swatch, var(--arcane));
+}
+
+/* ---- Spell grid ---- */
+.draft-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 7px;
+  overflow-y: auto;
+  max-height: 320px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.draft-spell-card {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: center;
+  padding: 9px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.draft-spell-card:hover:not(:disabled):not(.at-cap) {
+  border-color: var(--arcane);
+  background: rgba(108, 76, 255, 0.1);
+}
+.draft-spell-card:focus-visible {
+  outline: 2px solid var(--arcane);
+  outline-offset: 2px;
+}
+.draft-spell-card.is-selected {
+  border-color: var(--rune);
+  background: rgba(124, 255, 90, 0.08);
+}
+.draft-spell-card.at-cap {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+.draft-spell-card:disabled { opacity: 0.4; cursor: default; }
+.dsc-swatch {
+  grid-row: 1 / 3;
+  grid-column: 1;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  display: block;
+  align-self: center;
+}
+.dsc-name {
+  grid-row: 1;
+  grid-column: 2;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dsc-cd {
+  grid-row: 1;
+  grid-column: 3;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dsc-desc {
+  grid-row: 2;
+  grid-column: 2 / 4;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ---- Ready button ---- */
+.draft-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+.draft-ready-btn {
+  min-width: 160px;
+}
+.draft-ready-btn.is-ready {
+  background: rgba(124, 255, 90, 0.12);
+  border-color: var(--rune);
+  color: var(--rune);
+}
+
+/* ---- Responsive: narrow / touch ---- */
+@media (max-width: 580px) {
+  .draft-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .draft-slots {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .draft-slot-pip {
+    flex: 1 1 80px;
+    height: 30px;
+    font-size: 10px;
+  }
+  .draft-grid {
+    max-height: 240px;
+  }
+  .draft-templates {
+    display: none; /* save vertical space; users can tap cards directly */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draft-panel { animation: none !important; }
+  .draft-timer { transition: none !important; }
+  .draft-timer.draft-timer-urgent { animation: none !important; }
+  .draft-spell-card, .draft-tpl-btn, .draft-slot-pip { transition: none !important; }
 }

@@ -214,6 +214,10 @@ export class Mob {
     // Movement intent set each tick by MobBrain.think(); consumed by stepMobPhysics.
     this._moveX = 0;
     this._moveZ = 0;
+
+    // Active telegraphed-ability channel (null = idle / no channel).
+    // Set by sim._startMobChannel(); ticked and cleared by sim.stepMobs().
+    this.channel = null;
   }
 
   /**
@@ -233,6 +237,12 @@ export class Mob {
       color: CFG.MOB_TYPES[this.type].color,
       f:     this.falling ? 1 : 0,
       ent:   +this.entering.toFixed(2),
+      // Active channel summary for client telegraph rendering under packet loss.
+      // null when idle; compact object when a telegraphed ability is winding up.
+      ch:    this.channel
+        ? { a: this.channel.ability, t: +this.channel.t.toFixed(2),
+            r: this.channel.r, x: +this.channel.tx.toFixed(2), z: +this.channel.tz.toFixed(2) }
+        : null,
     };
   }
 }
@@ -294,8 +304,20 @@ export class MobBrain {
       return { kind: "idle" };
     }
 
+    // ── Mid-channel hold: rooted at cast point, no new actions ──────────
+    // While a telegraphed ability is winding up the mob is frozen in place;
+    // keep facing the locked cast point so the telegraph reads clearly.
+    if (mob.channel) {
+      mob._moveX = 0;
+      mob._moveZ = 0;
+      mob.aim = Math.atan2(mob.channel.tz - mob.z, mob.channel.tx - mob.x);
+      return { kind: "idle" };
+    }
+
     // ── Find nearest alive player / bot ──────────────────────────────────
-    const targets = players.filter(p => p.alive && !p.falling);
+    // Player-summoned minions (mob.ownerPlayerId set) must never target their
+    // own caster — exclude the owner so the minion harries foes, not the summoner.
+    const targets = players.filter(p => p.alive && !p.falling && p.id !== mob.ownerPlayerId);
     if (!targets.length) {
       mob._moveX = 0; mob._moveZ = 0;
       mob.targetId = null;

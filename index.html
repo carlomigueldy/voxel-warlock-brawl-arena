@@ -293,17 +293,6 @@
         <h2 class="sub-screen-title">CHOOSE WARLOCK</h2>
         <p class="char-preview-name" id="char-preview-name"></p>
         <div id="char-cards" class="char-cards" role="radiogroup" aria-label="Choose your warlock"></div>
-        <div class="field field-inline abilities-field">
-          <div class="field-copy">
-            <span class="field-label" id="abilities-label">All abilities at start</span>
-            <span class="field-hint">Off — hunt spell runes mid-brawl</span>
-          </div>
-          <button type="button" id="abilities-toggle-ui" class="rune-toggle is-on" role="switch" aria-checked="true" aria-labelledby="abilities-label">
-            <span class="rune-toggle-track"><span class="rune-toggle-knob"></span></span>
-            <span class="rune-toggle-state">ON</span>
-          </button>
-          <input id="all-abilities-toggle" type="checkbox" checked hidden />
-        </div>
         <div class="field field-inline mobs-field">
           <div class="field-copy">
             <span class="field-label" id="mobs-label">Mob spawns</span>
@@ -563,6 +552,34 @@
     </div>
   </div>
 
+  <!-- ===== Step 6: Spell Draft overlay (shown during SPELL_SELECTION phase) ===== -->
+  <div id="spell-draft" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="draft-title">
+    <div class="panel draft-panel">
+      <header class="draft-header">
+        <div class="draft-header-left">
+          <span class="eyebrow">Pre-Match</span>
+          <h2 id="draft-title" class="draft-title">Spell Draft</h2>
+        </div>
+        <div class="draft-timer-wrap" aria-live="polite" aria-label="Time remaining">
+          <span class="draft-timer-label">Time</span>
+          <div id="draft-timer" class="draft-timer">30</div>
+        </div>
+      </header>
+      <p class="draft-hint">Pick up to 6 spells. Fireball is always free. Click <strong>Ready</strong> when done.</p>
+      <div id="draft-templates" class="draft-templates" aria-label="One-click loadouts"></div>
+      <div class="draft-body">
+        <div id="draft-slots" class="draft-slots" aria-label="Your loadout (6 slots)"></div>
+        <div id="draft-grid" class="draft-grid" role="listbox" aria-label="Available spells" aria-multiselectable="true"></div>
+      </div>
+      <footer class="draft-footer">
+        <button id="draft-ready" class="btn btn-forge draft-ready-btn" type="button">
+          <span class="btn-label">Ready</span>
+          <span class="btn-spark" aria-hidden="true"></span>
+        </button>
+      </footer>
+    </div>
+  </div>
+
   <!-- ===== In-game HUD ===== -->
   <div id="hud" class="hidden">
     <div id="hud-top">
@@ -570,11 +587,15 @@
       <div id="timer">0:00</div>
     </div>
     <div id="scoreboard"></div>
+    <div id="hp-wrap"><div id="hp-bar"></div><span id="hp-text"></span></div>
     <div id="charge-wrap"><div id="charge-bar"></div></div>
     <div id="hazard-warning" class="hidden"></div>
+    <div id="cast-wrap" class="hidden"><div id="cast-bar"></div><span id="cast-label"></span></div>
+    <div id="status-icons"></div>
     <div id="mob-banner" class="mob-banner hidden" role="alert" aria-live="assertive"></div>
     <div id="center-msg" class="center-msg hidden"></div>
     <div id="ability-bar" class="hidden"></div>
+    <div id="item-bar" class="hidden"></div>
     <div id="audio-controls">
       <button id="btn-sfx">SFX: On</button>
       <button id="btn-music">Music: On</button>

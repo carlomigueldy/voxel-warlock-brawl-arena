@@ -7,7 +7,7 @@ import { CFG, SPELLS, isOnArenaWorld } from "./config.js";
 import { Arena } from "./arena.js";
 import {
   buildWarlock, buildBolt, animateWarlock,
-  buildBurst, buildLightning, buildMeteor, buildRune,
+  buildBurst, buildLightning, buildMeteor, buildRune, buildItemDrop,
   buildPlateau, buildRamp,
   buildMobByType, animateMob,
   buildStormClouds,
@@ -19,6 +19,7 @@ import {
   buildCharacterInstance,
 } from "./character.js";
 import { archetypeForEvent } from "./animations.js";
+import { effectPos } from "./renderer-util.js";
 
 export const MESHY_ASSETS = {
   rune: "assets/meshy/ability-rune.glb",
@@ -71,7 +72,9 @@ export class GameRenderer {
     this.boltMeshes = new Map();   // id -> group
     this.meteorMeshes = new Map(); // id -> group
     this.runeMeshes = new Map();   // id -> group
+    this.itemMeshes = new Map();   // id -> group (Step 4 lootable items)
     this.mobMeshes = new Map();    // id -> { group, rx, rz, ry, ra, target, spd }
+    this.mobChannelDecals = new Map(); // mob id -> THREE.Mesh; persistent telegraph under packet loss
     this.effects = [];             // transient VFX groups with .userData.update
     this.linkLines = new Map();    // "a|b" -> line
     this.localId = null;
@@ -226,6 +229,26 @@ export class GameRenderer {
 
   setLocalId(id) { this.localId = id; }
 
+  _makeHpBar(y) {
+    const w = 1.4, h = 0.16;
+    const bg = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.MeshBasicMaterial({ color: 0x14121f, transparent: true, opacity: 0.8, depthTest: false })
+    );
+    const fill = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h * 0.7),
+      new THREE.MeshBasicMaterial({ color: 0x2ecc71, depthTest: false })
+    );
+    fill.position.z = 0.001;
+    const g = new THREE.Group();
+    g.add(bg);
+    g.add(fill);
+    g.position.y = y;
+    g.userData.barWidth = w;
+    g.renderOrder = 999;
+    return { group: g, fill };
+  }
+
   _makeLabel(name, color, y = 3.4) {
     const cv = document.createElement("canvas");
     cv.width = 256; cv.height = 64;
@@ -256,9 +279,11 @@ export class GameRenderer {
       const labelY = usingGLB ? CFG.PLAYER_HEIGHT + 0.55 : 3.4;
       const label = this._makeLabel(meta?.name || "warlock", color, labelY);
       group.add(label);
+      const hpBar = this._makeHpBar(labelY - 0.35);
+      group.add(hpBar.group);
       this.scene.add(group);
       entry = {
-        group, label, color, usingGLB, character,
+        group, label, hpBar, color, usingGLB, character,
         rx: snap.x, rz: snap.z, ry: snap.y, ra: snap.a,
       };
       this.playerMeshes.set(snap.id, entry);
@@ -404,6 +429,7 @@ export class GameRenderer {
       }
     }
 
+    // rune meshes: reserved / superseded by item system (Step 4) — kept for Step-7 test compat (source.test.mjs:310/334).
     const runeSeen = new Set();
     for (const r of snapshot.runes || []) {
       runeSeen.add(r.id);
@@ -422,8 +448,35 @@ export class GameRenderer {
     }
     for (const id of [...this.runeMeshes.keys()]) {
       if (!runeSeen.has(id)) {
-        this.scene.remove(this.runeMeshes.get(id));
+        const g = this.runeMeshes.get(id);
+        g.userData.dispose?.();
+        this.scene.remove(g);
         this.runeMeshes.delete(id);
+      }
+    }
+
+    // Item drops — build-if-absent (uses buildItemDrop for shape/rarity visuals),
+    // position from snapshot, prune when picked up or expired.
+    const itemSeen = new Set();
+    for (const it of snapshot.items || []) {
+      itemSeen.add(it.id);
+      let g = this.itemMeshes.get(it.id);
+      if (!g) {
+        g = buildItemDrop(it.shape || "orb", it.c || 0xffffff, { rarity: it.rarity });
+        const label = this._makeLabel(it.name || "Item", it.c || 0xffffff, 1.65);
+        g.add(label);
+        g.userData.label = label;
+        this.scene.add(g);
+        this.itemMeshes.set(it.id, g);
+      }
+      g.position.set(it.x, 0.25, it.z);
+    }
+    for (const id of [...this.itemMeshes.keys()]) {
+      if (!itemSeen.has(id)) {
+        const g = this.itemMeshes.get(id);
+        g.userData.dispose?.();
+        this.scene.remove(g);
+        this.itemMeshes.delete(id);
       }
     }
 
@@ -444,11 +497,37 @@ export class GameRenderer {
       // Scale the foreground health bar to reflect remaining HP.
       const hb = e.group.userData.healthBar;
       if (hb && mob.max > 0) hb.scale.x = Math.max(0.001, mob.hp / mob.max);
+
+      // Packet-loss-resilient telegraph: maintain a persistent ground decal from the
+      // mob's channel snapshot (mob.ch). This ensures late-joining observers and clients
+      // that missed the one-shot mobTelegraph event still see the warning ring for the
+      // full cast window. The one-shot event is kept only for its 'whoosh' SFX.
+      if (mob.ch) {
+        if (!this.mobChannelDecals.has(mob.id)) {
+          const decal = this._buildChannelDecal(mob.ch);
+          this.mobChannelDecals.set(mob.id, decal);
+          this._addEffect(decal);
+        } else {
+          const decal = this.mobChannelDecals.get(mob.id);
+          if (decal.userData.updateChannel) decal.userData.updateChannel(mob.ch);
+        }
+      } else if (this.mobChannelDecals.has(mob.id)) {
+        // Channel over — mark for removal and untrack.
+        const decal = this.mobChannelDecals.get(mob.id);
+        decal.userData.done = true;
+        this.mobChannelDecals.delete(mob.id);
+      }
     }
     for (const id of [...this.mobMeshes.keys()]) {
       if (!mobSeen.has(id)) {
         this.scene.remove(this.mobMeshes.get(id).group);
         this.mobMeshes.delete(id);
+        // Clean up any lingering channel decal if the mob was removed mid-channel.
+        if (this.mobChannelDecals.has(id)) {
+          const decal = this.mobChannelDecals.get(id);
+          decal.userData.done = true;
+          this.mobChannelDecals.delete(id);
+        }
       }
     }
 
@@ -467,6 +546,15 @@ export class GameRenderer {
       e.group.traverse((o) => { if (o.material && "opacity" in o.material) { o.material.opacity = 1; } });
     }
     e._wasWW = !!ps.ww;
+
+    // Shadow Veil (invisible): enemies see the caster nearly hidden; local player
+    // stays fully opaque so they can see themselves while stealthed.
+    if (ps.iv && ps.id !== this.localId) {
+      e.group.traverse((o) => { if (o.material && "opacity" in o.material) { o.material.transparent = true; o.material.opacity = 0.1; } });
+    } else if (e._wasInvis && !ps.iv) {
+      e.group.traverse((o) => { if (o.material && "opacity" in o.material) { o.material.opacity = 1; } });
+    }
+    e._wasInvis = !!ps.iv;
 
     // Shield bubble.
     if (ps.sh && !e.shield) {
@@ -552,9 +640,9 @@ export class GameRenderer {
       this._triggerCast(ev);
       switch (ev.type) {
         case "hit":
-          this._addEffect(this._burstAt(ev.x, ev.z, 0xffcc44, { count: 16, speed: 7 }));
+          this._addEffect(this._burstAt(ev.x, ev.z, 0xffcc44, { count: 26, speed: 10 }));
           this.audio?.play("hit", this._panFor(ev.x));
-          this._shake = Math.min(0.6, this._shake + 0.15);
+          this._shake = Math.min(0.6, this._shake + 0.22);
           break;
         case "boltFizzle":
           // Projectile dispersed against cover — burst at the impact point,
@@ -569,18 +657,26 @@ export class GameRenderer {
           this.audio?.play("projectileClash", this._panFor(ev.x));
           this._shake = Math.min(0.7, this._shake + 0.2);
           break;
-        case "death":
+        case "death": {
+          // Large colour-matched burst + ring pulse at the player's last position.
+          // effectPos() reads through .group.position (the scene node), not the
+          // raw entry itself, and gracefully falls back when the entry is absent.
+          const deadMesh = this.playerMeshes?.get(ev.id);
+          const { x: deadX, z: deadZ, color: deadColor } = effectPos(deadMesh);
+          this._addEffect(this._burstAt(deadX, deadZ, deadColor, { count: 32, speed: 12, life: 0.9 }));
+          this._addEffect(this._ringPulse(deadX, deadZ, 2.5, deadColor));
           this.audio?.play("death");
           this._shake = Math.min(0.8, this._shake + 0.3);
           break;
+        }
         case "cast": {
           const col = { fireball: 0xff5a1e, boomerang: 0xffe14c, homing: 0xc04cff, bouncer: 0x4cff9c, splitter: 0xff4ca8, fireSpray: 0xff7a2e, disable: 0xbbbbbb }[ev.spell] || 0xffffff;
-          this._addEffect(this._burstAt(ev.x, ev.z, col, { count: 8, speed: 4, life: 0.35 }));
+          this._addEffect(this._burstAt(ev.x, ev.z, col, { count: 14, speed: 6, life: 0.35 }));
           break;
         }
         case "lightning":
           for (const s of ev.segs || []) this._addEffect(buildLightning(s.x1, s.z1, s.x2, s.z2, ev.color || 0x9fe6ff));
-          this.audio?.play("lightning");
+          // SFX handled by the sfx relay (redundant direct play removed — C7).
           break;
         case "teleport":
           this._addEffect(this._burstAt(ev.x1, ev.z1, 0x66ccff, { count: 14 }));
@@ -598,28 +694,126 @@ export class GameRenderer {
           break;
         case "gravity":
           this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, 0x6c4cff));
+          this.audio?.play("gravity", this._panFor(ev.x));
           break;
+        case "meteorCast": {
+          // Timed ground decal: a ring at the target that pulses faster as the meteor falls.
+          const fallDur = ev.fall || 1.0;
+          const decalR  = ev.radius || 7;
+          const decalEff = new THREE.Group();
+          let decalElapsed = 0;
+          let decalNext = 0;
+          decalEff.userData.done = false;
+          decalEff.userData.update = (dt) => {
+            decalElapsed += dt;
+            const k = Math.min(1, decalElapsed / fallDur);
+            const interval = 0.35 * (1 - k * 0.6); // pulses accelerate toward impact
+            if (decalElapsed >= decalNext) {
+              decalNext += interval;
+              this._addEffect(this._ringPulse(ev.x, ev.z, decalR * (0.6 + 0.4 * k), 0xff3a1e));
+            }
+            if (decalElapsed >= fallDur + 0.05) decalEff.userData.done = true;
+          };
+          this._addEffect(decalEff);
+          this.audio?.play("meteor", this._panFor(ev.x));
+          break;
+        }
         case "meteorImpact":
-          this._addEffect(this._burstAt(ev.x, ev.z, 0xff3a1e, { count: 24, speed: 9, life: 0.7 }));
+          this._addEffect(this._burstAt(ev.x, ev.z, 0xff3a1e, { count: 40, speed: 12, life: 0.7 }));
           this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, 0xff3a1e));
           this.audio?.play("meteorImpact", this._panFor(ev.x));
-          this._shake = Math.min(1.0, this._shake + 0.5);
+          this._shake = Math.min(1.0, this._shake + 0.8);
           break;
+        case "castStart":
+          this._addEffect(this._ringPulse(ev.x ?? 0, ev.z ?? 0, 1.5, (SPELLS[ev.spell]?.color ?? 0x88ddff)));
+          this.audio?.play("whoosh", this._panFor(ev.x ?? 0));
+          break;
+        case "castInterrupt":
+          this._addEffect(this._burstAt(ev.x ?? 0, ev.z ?? 0, 0xff4444, { count: 10, speed: 5, life: 0.35 }));
+          this.audio?.play("hit", this._panFor(ev.x || 0));
+          this._shake = Math.min(0.4, this._shake + 0.08);
+          break;
+        case "castFinish":
+          this._addEffect(this._burstAt(ev.x ?? 0, ev.z ?? 0, 0xffffff, { count: 6, speed: 4, life: 0.25 }));
+          this.audio?.play("whoosh", this._panFor(ev.x ?? 0));
+          break;
+        case "explode":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0xff6a1e, { count: 40, speed: 12, life: 0.7 }));
+          this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, 0xff6a1e));
+          this.audio?.play("meteorImpact", this._panFor(ev.x));
+          this._shake = Math.min(1.0, this._shake + 0.6);
+          break;
+        case "vacuumTick":
+          this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, 0x6c4cff));
+          break;
+        case "pull":
+          this._addEffect(buildLightning(ev.x1, ev.z1, ev.x2, ev.z2, 0x8fffc4));
+          break;
+        case "drag":
+          this._addEffect(buildLightning(ev.x1, ev.z1, ev.x2, ev.z2, 0x4cff9c));
+          break;
+        case "push":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0xaef0ff, { count: 14, speed: 8, life: 0.4 }));
+          break;
+        case "target":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0x9c2bff, { count: 16, speed: 7, life: 0.45 }));
+          break;
+        case "heal":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0x7cff8a, { count: 6, speed: 3, life: 0.4 }));
+          break;
+        case "link": {
+          // Link tether cast: burst at both ends (caster a and target b).
+          const aMesh = this.playerMeshes?.get(ev.a);
+          const bMesh = this.playerMeshes?.get(ev.b);
+          if (aMesh) this._addEffect(this._burstAt(aMesh.group.position.x, aMesh.group.position.z, 0xff66cc, { count: 14, speed: 7, life: 0.45 }));
+          if (bMesh) this._addEffect(this._burstAt(bMesh.group.position.x, bMesh.group.position.z, 0xff66cc, { count: 14, speed: 7, life: 0.45 }));
+          break;
+        }
+        case "pocketwatch": {
+          // Pocket Watch: golden burst at the caster.
+          const pwMesh = this.playerMeshes?.get(ev.id);
+          const pwX = pwMesh ? pwMesh.group.position.x : 0;
+          const pwZ = pwMesh ? pwMesh.group.position.z : 0;
+          this._addEffect(this._burstAt(pwX, pwZ, 0xffd23c, { count: 20, speed: 8, life: 0.5 }));
+          this._addEffect(this._ringPulse(pwX, pwZ, 2.0, 0xffd23c));
+          break;
+        }
+        case "timeshiftReturn":
+          this._addEffect(this._burstAt(ev.x ?? 0, ev.z ?? 0, 0x88ddff, { count: 10 }));
+          this.audio?.play("timeshift", this._panFor(ev.x ?? 0));
+          break;
+        case "invisible":
+        case "speed":
+        case "summon":
         case "shield":
         case "windwalk":
         case "rush":
         case "timeshift":
-        case "timeshiftReturn":
           this._addEffect(this._burstAt(ev.x ?? 0, ev.z ?? 0, 0x88ddff, { count: 10 }));
           break;
         case "runePickup":
           this._addEffect(this._burstAt(ev.x, ev.z, 0x7cff5a, { count: 18, speed: 6 }));
           this.audio?.play("cast", this._panFor(ev.x || 0));
           break;
+        case "itemPickup":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0xffd23c, { count: 20, speed: 7, life: 0.5 }));
+          this._addEffect(this._ringPulse(ev.x, ev.z, 1.8, 0xffd23c));
+          this.audio?.play("cast", this._panFor(ev.x || 0));
+          break;
         case "runeDestroyed":
           this._addEffect(this._burstAt(ev.x, ev.z, 0xff3a1e, { count: 22, speed: 8, life: 0.6 }));
           this._addEffect(this._ringPulse(ev.x, ev.z, 2.5, 0xff3a1e));
           this.audio?.play("hit", this._panFor(ev.x || 0));
+          break;
+        case "statusApplied": {
+          const statusCol = { slow: 0x66ccff, burn: 0xff7a2e, curse: 0x9c2bff, stun: 0xffe14c }[ev.status] || 0xffffff;
+          this._addEffect(this._ringPulse(ev.x, ev.z, 1.8, statusCol));
+          this.audio?.play(ev.status, this._panFor(ev.x));
+          break;
+        }
+        case "dotTick":
+          this._addEffect(this._burstAt(ev.x, ev.z, 0xff7a2e, { count: 5, speed: 3, life: 0.3 }));
+          this.audio?.play("burn", this._panFor(ev.x));
           break;
         case "sfx":
           this.audio?.play(ev.sfx, this._panFor(ev.x || 0));
@@ -727,12 +921,37 @@ export class GameRenderer {
           this.audio?.play("hit", this._panFor(ev.x));
           this._shake = Math.min(0.4, this._shake + 0.07);
           break;
-        case "mobAbility":
+        case "mobTelegraph": {
+          // Growing ground-warning ring that persists for the ability's cast-time window,
+          // giving players a visual chance to dodge before the ability resolves.
+          const telDuration = ev.castTime || 1.0;
+          const telColor    = ev.color || 0xff8800;
+          const telRadius   = ev.radius || 4;
+          const telEff      = new THREE.Group();
+          let   telElapsed  = 0;
+          telEff.userData.done   = false;
+          telEff.userData.update = (dt) => {
+            telElapsed += dt;
+            const k = Math.min(1, telElapsed / telDuration);
+            // Pulse a growing ring each 0.25 s during the windup.
+            if (telElapsed % 0.25 < dt) {
+              this._addEffect(this._ringPulse(ev.x, ev.z, telRadius * (0.4 + 0.6 * k), telColor));
+            }
+            if (telElapsed >= telDuration + 0.05) telEff.userData.done = true;
+          };
+          this._addEffect(telEff);
+          this.audio?.play("whoosh", this._panFor(ev.x));
+          break;
+        }
+        case "mobAbility": {
           this._addEffect(this._burstAt(ev.x, ev.z, ev.color || 0xff3a1e, { count: 22, speed: 9, life: 0.65 }, 0.6));
           this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius || 4, ev.color || 0xff3a1e));
-          this.audio?.play("meteorImpact", this._panFor(ev.x));
+          // Dispatch SFX by ability type for better audio feedback.
+          const abilitySfx = { seismicStomp: "hit", vacuum: "gravity", fissureSlam: "meteorImpact", magmaEruption: "meteorImpact" }[ev.ability] || "meteorImpact";
+          this.audio?.play(abilitySfx, this._panFor(ev.x));
           this._shake = Math.min(0.9, this._shake + 0.32);
           break;
+        }
         case "mobDeath":
           this._addEffect(this._burstAt(ev.x, ev.z, ev.color || 0xaaaaaa, { count: 30, speed: 9, life: 0.8 }, 1.0));
           this._addEffect(this._ringPulse(ev.x, ev.z, 3.0, ev.color || 0xffffff));
@@ -747,6 +966,43 @@ export class GameRenderer {
     const g = buildBurst(color, opts);
     g.position.set(x, y, z);
     return g;
+  }
+
+  // Build a persistent ground-ring decal for a mob's active channel (ch snapshot field).
+  // Unlike the one-shot mobTelegraph event (used only for the 'whoosh' SFX), this decal
+  // is maintained every snapshot tick — it is safe under packet loss and correct for
+  // spectators / late-joining clients who miss the original event.
+  _buildChannelDecal(ch) {
+    const color = 0xff8800;
+    const r = ch.r || 4;
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(r - 0.25, r + 0.25, 48),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(ch.x, 0.12, ch.z);
+    ring.userData.done = false;
+    // Dispose GPU resources when this effect is culled from the effects array
+    // (or removed via the mobChannelDecals removal paths).  Without this each
+    // channel decal leaks a RingGeometry + MeshBasicMaterial on the GPU.
+    ring.userData.dispose = () => {
+      ring.geometry.dispose();
+      ring.material.dispose();
+    };
+    // Called each snapshot tick with the latest ch object to sync position, radius,
+    // and opacity.  Pulsing is driven by remaining cast time (ch.t).
+    ring.userData.updateChannel = (newCh) => {
+      const nr = newCh.r || 4;
+      // Rebuild geometry only if radius changed (rare — but safe to do).
+      if (Math.abs(nr - r) > 0.01) {
+        ring.geometry.dispose();
+        ring.geometry = new THREE.RingGeometry(nr - 0.25, nr + 0.25, 48);
+      }
+      ring.position.set(newCh.x, 0.12, newCh.z);
+      // Flash faster as the cast window closes.
+      ring.material.opacity = 0.35 + 0.4 * Math.abs(Math.sin(newCh.t * 6));
+    };
+    return ring;
   }
 
   _ringPulse(x, z, radius, color) {
@@ -790,6 +1046,15 @@ export class GameRenderer {
       e.group.position.set(e.rx, e.ry, e.rz);
       e.group.rotation.y = -e.ra + Math.PI / 2;
 
+      if (e.hpBar) {
+        const frac = e.target.mhp ? Math.max(0, Math.min(1, (e.target.hp ?? e.target.mhp) / e.target.mhp)) : 1;
+        const w = e.hpBar.group.userData.barWidth;
+        e.hpBar.fill.scale.x = frac;
+        e.hpBar.fill.position.x = -w * (1 - frac) / 2; // anchor-left shrink
+        e.hpBar.fill.material.color.setRGB(frac > 0.5 ? (1 - frac) * 2 : 1, frac > 0.5 ? 1 : frac * 2, 0.18);
+        e.hpBar.group.quaternion.copy(this.camera.quaternion); // billboard
+      }
+
       const inst = Math.hypot(e.rx - px, e.rz - pz) / dt;
       e.spd = (e.spd || 0) + (inst - (e.spd || 0)) * (1 - Math.exp(-10 * dt));
 
@@ -811,6 +1076,7 @@ export class GameRenderer {
           falling: !!e.target.f,
           time: t,
           dt,
+          channel: e.target.ca ? 1 : 0,
         });
       } else {
         animateWarlock(e.group, {
@@ -820,6 +1086,7 @@ export class GameRenderer {
           falling: !!e.target.f,
           time: t,
           dt,
+          channel: e.target.ca ? 1 : 0,
         });
       }
 
@@ -841,6 +1108,12 @@ export class GameRenderer {
     for (const g of this.runeMeshes.values()) {
       g.rotation.y += dt * 1.8;
       if (g.userData.core) g.userData.core.position.y = 0.55 + Math.sin(t * 4) * 0.08;
+    }
+
+    // Animate item drop meshes — drives the bob/spin via userData.update installed
+    // by buildItemDrop's animatePickup callback.
+    for (const g of this.itemMeshes.values()) {
+      if (g.userData.update) g.userData.update(dt);
     }
 
     // Interpolate + animate mob meshes.
@@ -889,7 +1162,7 @@ export class GameRenderer {
       if (g.userData.update) g.userData.update(dt);
     }
     this.effects = this.effects.filter((g) => {
-      if (g.userData.done) { this.scene.remove(g); return false; }
+      if (g.userData.done) { g.userData.dispose?.(); this.scene.remove(g); return false; }
       return true;
     });
 
@@ -1018,6 +1291,9 @@ export class GameRenderer {
     this.runeMeshes.clear();
     for (const e of this.mobMeshes.values()) this.scene.remove(e.group);
     this.mobMeshes.clear();
+    // Channel decals are also managed via this.effects (scene.remove happens there),
+    // but clear the lookup map so stale entries don't block new decal creation.
+    this.mobChannelDecals.clear();
     for (const g of this.effects) this.scene.remove(g);
     this.effects = [];
     for (const l of this.linkLines.values()) this.scene.remove(l);

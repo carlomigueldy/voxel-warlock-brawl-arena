@@ -18,7 +18,7 @@ export class Bolt {
     this.prevZ = z;
     // Spawn height above the owner's ground surface so high-ground shots start
     // at the correct elevation.  Defaults to PLATFORM_TOP when no groundY is
-    // given (backwards-compatible with spawnBolt in sim.js).
+    // given (backwards-compatible with bolts created without a groundY option).
     this.y = (opts.groundY ?? CFG.PLATFORM_TOP) + 1.1;
     // Cover checking is opt-in: only bolts spawned through the normal spell
     // pipeline (spawnProjectile passes groundY) check terrain.  Test bolts
@@ -33,7 +33,15 @@ export class Bolt {
     this.life = opts.life || CFG.BOLT_LIFETIME;
     this.color = color;
     this.kb = opts.kb ?? CFG.BOLT_BASE_KNOCKBACK;
+    this.dmg = opts.dmg ?? CFG.BOLT_BASE_DAMAGE;
     this.dead = false;
+    // Status-effect payloads applied on hit (from spell config).
+    this.slow = opts.slow || 0;
+    this.slowDur = opts.slowDur || 0;
+    this.burn = opts.burn || 0;
+    this.burnDur = opts.burnDur || 0;
+    this.curse = opts.curse || 0;
+    this.curseDur = opts.curseDur || 0;
 
     // Per-type state.
     this.range = opts.range || 16;     // boomerang turnaround distance
@@ -47,6 +55,7 @@ export class Bolt {
     this._origZ = z;
     this._splitDone = false;
     this._spawn = [];                  // child projectiles produced this step
+    this._hitSet = new Set();          // per-pass hit dedup for pass-through projectiles
     this.mesh = null;
   }
 
@@ -75,7 +84,10 @@ export class Bolt {
     // Boomerang: fly out then curve back to the thrower.
     if (this.proj === "boomerang") {
       this.distance += this.speed * dt;
-      if (!this.returning && this.distance >= this.range) this.returning = true;
+      if (!this.returning && this.distance >= this.range) {
+        this.returning = true;
+        this._hitSet = new Set(); // fresh set so the return pass can hit the same players
+      }
       if (this.returning) {
         const owner = players.find((p) => p.id === this.ownerId);
         if (owner) {
@@ -108,6 +120,7 @@ export class Bolt {
       this.x = ndx * (arena.radius - 0.5);
       this.z = ndz * (arena.radius - 0.5);
       this.bounces--;
+      this._hitSet = new Set(); // fresh set so the next pass can re-hit the same players
     }
 
     // Cover / obstacle blocking: fizzle when the bolt's travel this tick crosses
@@ -166,10 +179,15 @@ export class Bolt {
       const dz = p.z - this.z;
       const r = CFG.PLAYER_RADIUS + CFG.BOLT_RADIUS;
       if (dx * dx + dz * dz <= r * r) {
-        p.applyHit(this.vx, this.vz, this.kb);
+        // Pass-through projectiles (boomerang/bouncer) hit each player at most once per
+        // pass — prevents multi-tick overlap from dealing damage every tick.
+        if ((this.proj === "boomerang" || this.proj === "bouncer") && this._hitSet.has(p.id)) continue;
+        const landed = p.applyHit(this.vx, this.vz, this.kb);
+        if (landed) p.applyDamage(this.dmg, this.ownerId);
+        if (this.proj === "boomerang" || this.proj === "bouncer") this._hitSet.add(p.id);
         // Boomerang/bouncer pass through after a hit (don't die) for combo play.
         if (this.proj !== "boomerang" && this.proj !== "bouncer") this.dead = true;
-        return { hit: p.id };
+        return { hit: p.id, landed };
       }
     }
     return { hit: null };

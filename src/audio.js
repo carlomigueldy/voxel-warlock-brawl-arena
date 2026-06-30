@@ -178,6 +178,20 @@ export class AudioEngine {
         this._tone({ type: "square", f0: 1200, f1: 1200, dur: 0.06, gain: 0.2, pan });
         this._tone({ type: "square", f0: 900, f1: 900, dur: 0.06, gain: 0.2, when: 0.12, pan });
         break;
+      case "slow":
+        this._tone({ type: "sine", f0: 400, f1: 200, dur: 0.3, gain: 0.3, pan });
+        break;
+      case "stun":
+        this._tone({ type: "square", f0: 800, f1: 400, dur: 0.08, gain: 0.35, pan });
+        this._noise({ dur: 0.12, gain: 0.28, type: "highpass", freq: 2400, sweep: 600, pan });
+        break;
+      case "burn":
+        this._noise({ dur: 0.25, gain: 0.35, type: "bandpass", freq: 1400, sweep: 400, pan });
+        break;
+      case "curse":
+        this._tone({ type: "sawtooth", f0: 150, f1: 100, dur: 0.4, gain: 0.3, pan });
+        this._tone({ type: "square", f0: 220, f1: 180, dur: 0.35, gain: 0.2, when: 0.05, pan });
+        break;
       case "hit":
         this._tone({ type: "square", f0: 220, f1: 80, dur: 0.12, gain: 0.4, pan });
         this._noise({ dur: 0.1, gain: 0.3, type: "lowpass", freq: 1600, sweep: 200, pan });

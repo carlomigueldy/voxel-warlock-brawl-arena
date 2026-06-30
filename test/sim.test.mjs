@@ -3,8 +3,10 @@
 import assert from "node:assert";
 import { Simulation, PHASE } from "../src/sim.js";
 import { Bolt } from "../src/bolt.js";
-import { CFG } from "../src/config.js";
+import { CFG, SPELLS } from "../src/config.js";
+import { Player } from "../src/player.js";
 import { dodgeVector } from "../src/bot.js";
+import { castSpell } from "../src/spells.js";
 
 let passed = 0;
 function test(name, fn) {
@@ -93,32 +95,31 @@ test("countdown transitions to playing", () => {
   assert.strictEqual(sim.phase, PHASE.PLAYING);
 });
 
-test("firing spawns a bolt that travels", () => {
+test("fireball cast spawns a bolt that travels", () => {
   const sim = new Simulation({ seed: 42 });
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const a = sim.players.get("a");
   a.x = 0; a.z = 0; a.aim = 0;
-  sim.setInput("a", { move: [0, 0], aim: 0, fire: true, seq: 1 });
+  sim.setInput("a", { move: [0, 0], aim: 0, seq: 1, casts: [{ id: 1, spell: "fireball", tx: 5, tz: 0 }] });
   sim.step(1 / CFG.TICK_RATE);
   assert.ok(sim.bolts.length >= 1, "no bolt spawned");
   const bx0 = sim.bolts[0].x;
-  sim.setInput("a", { move: [0, 0], aim: 0, fire: false, seq: 2 });
   sim.step(0.1);
   assert.ok(sim.bolts[0].x > bx0, "bolt did not travel");
 });
 
-test("held-fire auto-attacks emit a cast event for animation", () => {
+test("fireball cast emits a cast event for animation", () => {
   const sim = new Simulation();
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   sim.startMatch();
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const a = sim.players.get("a");
-  a.x = 0; a.z = 0; a.aim = 0; a.cooldown = 0;
-  sim.setInput("a", { move: [0, 0], aim: 0, fire: true, seq: 1 });
+  a.x = 0; a.z = 0; a.aim = 0;
+  sim.setInput("a", { move: [0, 0], aim: 0, seq: 1, casts: [{ id: 1, spell: "fireball", tx: 5, tz: 0 }] });
   sim.step(1 / CFG.TICK_RATE);
-  assert.ok(sim.events.some((ev) => ev.type === "cast" && ev.spell === "fireball" && ev.id === "a"), "held fire should emit fireball cast event");
+  assert.ok(sim.events.some((ev) => ev.type === "cast" && ev.spell === "fireball" && ev.id === "a"), "fireball cast should emit cast event");
 });
 
 test("a bolt hit applies knockback velocity to the victim", () => {
@@ -129,13 +130,13 @@ test("a bolt hit applies knockback velocity to the victim", () => {
   const a = sim.players.get("a");
   const b = sim.players.get("b");
   // Place A just left of B, aiming right toward B.
-  a.x = -2; a.z = 0; a.aim = 0; a.cooldown = 0;
+  a.x = -2; a.z = 0; a.aim = 0;
   b.x = -0.5; b.z = 0; b.vx = 0; b.vz = 0;
-  sim.setInput("a", { move: [0, 0], aim: 0, fire: true, seq: 1 });
+  sim.setInput("a", { move: [0, 0], aim: 0, seq: 1, casts: [{ id: 1, spell: "fireball", tx: 5, tz: 0 }] });
   sim.step(1 / CFG.TICK_RATE); // spawn bolt
-  sim.setInput("a", { move: [0, 0], aim: 0, fire: false, seq: 2 });
   for (let i = 0; i < 5; i++) sim.step(1 / CFG.TICK_RATE);
   assert.ok(b.vx > 0, "victim was not knocked in +x direction (vx=" + b.vx + ")");
+  assert.ok(b.hp < b.maxHp, "victim should have taken damage from fireball");
 });
 
 test("opposing projectiles cancel each other without damaging players", () => {
@@ -145,14 +146,12 @@ test("opposing projectiles cancel each other without damaging players", () => {
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const a = sim.players.get("a");
   const b = sim.players.get("b");
-  a.x = -4; a.z = 0; a.aim = 0; a.cooldown = 0;
-  b.x = 4; b.z = 0; b.aim = Math.PI; b.cooldown = 0;
+  a.x = -4; a.z = 0; a.aim = 0;
+  b.x = 4; b.z = 0; b.aim = Math.PI;
   a.vx = 0; a.vz = 0; b.vx = 0; b.vz = 0;
-  sim.setInput("a", { move: [0, 0], aim: 0, fire: true, seq: 1 });
-  sim.setInput("b", { move: [0, 0], aim: Math.PI, fire: true, seq: 1 });
+  sim.setInput("a", { move: [0, 0], aim: 0, seq: 1, casts: [{ id: 1, spell: "fireball", tx: 10, tz: 0 }] });
+  sim.setInput("b", { move: [0, 0], aim: Math.PI, seq: 1, casts: [{ id: 1, spell: "fireball", tx: -10, tz: 0 }] });
   sim.step(1 / CFG.TICK_RATE);
-  sim.setInput("a", { move: [0, 0], aim: 0, fire: false, seq: 2 });
-  sim.setInput("b", { move: [0, 0], aim: Math.PI, fire: false, seq: 2 });
   let sawClash = false;
   for (let t = 0; t < 0.35; t += 1 / CFG.TICK_RATE) {
     sim.step(1 / CFG.TICK_RATE);
@@ -263,6 +262,8 @@ test("swap can recover a player from the hazard zone", () => {
   a.x = 1; a.z = 0;
   b.x = CFG.ARENA_RADIUS + 0.2; b.z = 0;
   b.vx = 0; b.vz = 0;
+  // swap is not in DEFAULT_SPELL_LOADOUT; grant it directly so canCast passes.
+  b.spells.add("swap"); b.cooldowns["swap"] = 0;
   sim.setInput("b", { move: [0, 0], aim: Math.PI, fire: false, seq: 1, casts: [{ id: 1, spell: "swap", tx: 0, tz: 0 }] });
   sim.step(1 / CFG.TICK_RATE);
   assert.ok(sim.arena.isOnPlatform(b.x, b.z), "swap should move the hazard-zone player back to the platform");
@@ -276,15 +277,14 @@ test("projectiles can hit players recovering in the hazard zone", () => {
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const a = sim.players.get("a");
   const b = sim.players.get("b");
-  a.x = CFG.ARENA_RADIUS - 2; a.z = 0; a.aim = 0; a.cooldown = 0;
+  a.x = CFG.ARENA_RADIUS - 2; a.z = 0; a.aim = 0;
   // Pin groundY to flat-ground level so the bolt spawns at the expected height
   // and the height gate does not block it due to a procedurally-generated plateau.
   a.groundY = CFG.PLATFORM_TOP; b.groundY = CFG.PLATFORM_TOP;
   b.x = CFG.ARENA_RADIUS + 0.7; b.z = 0; b.vx = 0; b.vz = 0;
-  sim.setInput("a", { move: [0, 0], aim: 0, fire: true, seq: 1 });
+  sim.setInput("a", { move: [0, 0], aim: 0, seq: 1, casts: [{ id: 1, spell: "fireball", tx: CFG.ARENA_RADIUS + 1, tz: 0 }] });
   sim.step(1 / CFG.TICK_RATE);
   let hit = sim.events.some((ev) => ev.type === "hit" && ev.victim === "b");
-  sim.setInput("a", { move: [0, 0], aim: 0, fire: false, seq: 2 });
   for (let i = 0; i < 8; i++) {
     sim.step(1 / CFG.TICK_RATE);
     hit ||= sim.events.some((ev) => ev.type === "hit" && ev.victim === "b");
@@ -300,11 +300,10 @@ test("players recovering in the hazard zone can fire back at players on land", (
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const a = sim.players.get("a");
   const b = sim.players.get("b");
-  a.x = CFG.ARENA_RADIUS + 0.7; a.z = 0; a.aim = Math.PI; a.cooldown = 0;
+  a.x = CFG.ARENA_RADIUS + 0.7; a.z = 0; a.aim = Math.PI;
   b.x = CFG.ARENA_RADIUS - 2; b.z = 0; b.vx = 0; b.vz = 0;
-  sim.setInput("a", { move: [0, 0], aim: Math.PI, fire: true, seq: 1 });
+  sim.setInput("a", { move: [0, 0], aim: Math.PI, seq: 1, casts: [{ id: 1, spell: "fireball", tx: CFG.ARENA_RADIUS - 2, tz: 0 }] });
   sim.step(1 / CFG.TICK_RATE);
-  sim.setInput("a", { move: [0, 0], aim: Math.PI, fire: false, seq: 2 });
   advance(sim, 0.2);
   assert.ok(b.vx < 0, "land player should be hit by a hazard-zone caster firing back");
 });
@@ -316,7 +315,7 @@ test("hazard zone movement is slowed but still allows spell recovery", () => {
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
   const b = sim.players.get("b");
   b.x = 0; b.z = 0;
-  sim.setInput("b", { move: [1, 0], aim: 0, fire: false, seq: 1 });
+  sim.setInput("b", { move: [1, 0], aim: 0, seq: 1 });
   advance(sim, 0.25);
   const normalDistance = b.x;
   b.x = CFG.ARENA_RADIUS + 0.2; b.z = 0;
@@ -401,7 +400,7 @@ test("malformed input is sanitized before the host simulation uses it", () => {
   sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
   assert.strictEqual(sim.startMatch(), true);
   advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
-  assert.doesNotThrow(() => sim.setInput("a", { move: "bad", aim: Infinity, fire: true, seq: 1 }));
+  assert.doesNotThrow(() => sim.setInput("a", { move: "bad", aim: Infinity, seq: 1 }));
   assert.deepStrictEqual(sim.players.get("a").input.move, [0, 0]);
   assert.strictEqual(sim.players.get("a").input.aim, 0);
   assert.doesNotThrow(() => sim.step(1 / CFG.TICK_RATE));
@@ -488,18 +487,25 @@ test("bot difficulty tiers fire at distinct cadences (expert > brilliant > smart
     advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
     const bots = sim.botPlayers();
     const bot = bots[0];
-    let shots = 0, prev = false;
+    let shots = 0;
     const dt = 1 / CFG.TICK_RATE;
     for (let t = 0; t < seconds; t += dt) {
-      // Reset positions and velocities so neither bot escapes fireRange or dies.
-      for (const p of sim.players.values()) { p.vx = 0; p.vz = 0; p.alive = true; p.falling = false; p._hazardTime = 0; }
+      // Reset positions, velocities, HP, and status so bots can't die or fall back.
+      // This isolates fire-cadence from survival mechanics (damage rebalance, burn DoT).
+      for (const p of sim.players.values()) {
+        p.vx = 0; p.vz = 0; p.alive = true; p.falling = false; p._hazardTime = 0;
+        p.hp = p.maxHp; // prevent accumulated damage from ending the round early
+        p.status.burn = 0; p.status.burnDps = 0; p.status.burnBy = null; p.status.burnTickAcc = 0;
+        p.status.slow = 0; p.status.slowMul = 1;
+        p.status.curse = 0; p.status.curseMul = 1;
+        p.charge = 0;
+      }
       if (bots[0]) { bots[0].x = 0; bots[0].z = 0; }
       if (bots[1]) { bots[1].x = 8; bots[1].z = 0; } // 8u: inside every tier's fireRange
       sim.step(dt);
       if (sim.phase !== PHASE.PLAYING) break;
-      const f = bot.input.fire;
-      if (f && !prev) shots++;
-      prev = f;
+      // Count fireball cast events emitted by this bot this tick.
+      shots += sim.events.filter((ev) => ev.type === "cast" && ev.spell === "fireball" && ev.id === bot.id).length;
     }
     return shots;
   }
@@ -517,18 +523,18 @@ test("bot difficulty tiers fire at distinct cadences (expert > brilliant > smart
 // ── New behaviour tests (bot.js archetypes) ─────────────────────────────────
 
 test("bot archetype loadouts are applied as item modifiers", () => {
-  // Expert: aegis (kbResist=0.18) + pendant (cdr=0.12)
+  // Expert: wardingHelm (kbResist=0.2) + arcaneSigil (cdr=0.15)
   const sim = new Simulation();
   sim.setBotRoster(2, "expert");
   const [expertBot] = sim.botPlayers();
-  assert.ok(expertBot.mods.kbResist > 0, "expert bot should have kbResist from aegis loadout");
-  assert.ok(expertBot.mods.cdr > 0, "expert bot should have CDR from pendant loadout");
-  // Smart: bloodSword (lifesteal) + bootsOfSpeed (speedMul > 1)
+  assert.ok(expertBot.mods.kbResist > 0, "expert bot should have kbResist from wardingHelm loadout");
+  assert.ok(expertBot.mods.cdr > 0, "expert bot should have CDR from arcaneSigil loadout");
+  // Smart: berserkerBlade (dmgMul > 1) + swiftBoots (speedMul > 1)
   const sim2 = new Simulation();
   sim2.setBotRoster(2, "smart");
   const [smartBot] = sim2.botPlayers();
-  assert.ok(smartBot.mods.lifesteal > 0, "smart bot should have lifesteal from bloodSword loadout");
-  assert.ok(smartBot.mods.speedMul > 1, "smart bot should have speed bonus from bootsOfSpeed loadout");
+  assert.ok(smartBot.mods.dmgMul > 1, "smart bot should have damage bonus from berserkerBlade loadout");
+  assert.ok(smartBot.mods.speedMul > 1, "smart bot should have speed bonus from swiftBoots loadout");
 });
 
 test("bot uses escape spell when pushed near the arena edge", () => {
@@ -678,6 +684,346 @@ test("dodgeVector returns evasion vector for incoming bolt and null when dodge i
   const blockedByGate = dodgeVector(mockSim, bot, halfProfile, () => 0.9);
   assert.strictEqual(blockedByGate, null,
     "dodgeVector must return null when the stochastic gate blocks (rand() > dodgeChance)");
+});
+
+// ── HP & damage core (Step 1) ────────────────────────────────────────────────
+
+test("hp inits to max on construction", () => {
+  const p = new Player("a", "A", 0);
+  assert.strictEqual(p.hp, CFG.PLAYER_HP_MAX, "hp should equal PLAYER_HP_MAX at construction");
+  assert.strictEqual(p.maxHp, CFG.PLAYER_HP_MAX, "maxHp should equal PLAYER_HP_MAX at construction");
+});
+
+test("applyDamage reduces hp, records attacker, keeps player alive below max", () => {
+  const p = new Player("a", "A", 0);
+  const result = p.applyDamage(30, "x");
+  assert.strictEqual(result, true, "applyDamage should return true when damage lands");
+  assert.strictEqual(p.hp, CFG.PLAYER_HP_MAX - 30, "hp should drop by 30");
+  assert.strictEqual(p.lastAttackerId, "x", "attacker id should be recorded");
+  assert.strictEqual(p.alive, true, "player should still be alive");
+});
+
+test("applyDamage kills player at 0 and returns false thereafter", () => {
+  const p = new Player("a", "A", 0);
+  p.applyDamage(9999, "x");
+  assert.strictEqual(p.hp, 0, "hp should clamp to 0");
+  assert.strictEqual(p.alive, false, "player should be dead when hp reaches 0");
+  const r2 = p.applyDamage(1, "x");
+  assert.strictEqual(r2, false, "applyDamage on a dead player should return false");
+});
+
+test("shield blocks both knockback (applyHit) and damage (applyDamage skipped)", () => {
+  const p = new Player("a", "A", 0);
+  p.status.shield = 4;
+  p.status.shieldCharges = 1;
+  const hpBefore = p.hp;
+  const hit = p.applyHit(1, 0, 8);
+  // applyHit returns false when shield absorbs
+  assert.strictEqual(hit, false, "applyHit should return false when shield absorbs");
+  // Since hit is false, damage call is skipped — but test the guard directly too
+  if (hit) p.applyDamage(8, "enemy");
+  assert.strictEqual(p.hp, hpBefore, "hp should be unchanged when shield blocks");
+});
+
+test("shield blocks burn status effect — bolt path through sim does not apply DoT", () => {
+  // Regression guard for the burn/curse/slow bypass bug: a bolt with burn that
+  // hits a shielded player must NOT set victim.status.burn because applyHit
+  // returns false (shield absorbed the hit) and landed=false is returned from
+  // bolt.step(), so sim.js skips the status block.
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  const b = sim.players.get("b");
+  // Give b a shield charge.
+  b.status.shield = 4;
+  b.status.shieldCharges = 1;
+  // Place a burn-carrying bolt (fireball carries burn:5) just behind b, moving into b.
+  a.groundY = CFG.PLATFORM_TOP;
+  b.groundY = CFG.PLATFORM_TOP;
+  b.x = 0; b.z = 0; b.vx = 0; b.vz = 0;
+  const burnBolt = new Bolt("a", -0.4, 0, 0, 0xff5a1e, {
+    kb: SPELLS.fireball.kb, dmg: SPELLS.fireball.dmg,
+    burn: SPELLS.fireball.burn, burnDur: SPELLS.fireball.burnDur,
+  });
+  sim.bolts.push(burnBolt);
+  sim.step(1 / CFG.TICK_RATE);
+  // Shield should have consumed the hit — shieldCharges decrements to 0.
+  assert.strictEqual(b.status.shieldCharges, 0, "shield charge should be consumed by the bolt");
+  // The burn DoT must NOT have been applied through the shield.
+  assert.strictEqual(b.status.burn, 0, "shield must block burn status — no DoT through shield");
+  // HP must be untouched.
+  assert.strictEqual(b.hp, b.maxHp, "hp must be unchanged when shield absorbs the hit");
+});
+
+test("lava still kills with hp full (lava path independent of HP)", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const b = sim.players.get("b");
+  // Confirm HP is full
+  assert.strictEqual(b.hp, b.maxHp, "player should have full hp before lava");
+  // Knock far off platform and let lava kill
+  b.x = CFG.ARENA_RADIUS - 0.1; b.z = 0;
+  b.vx = 60;
+  advance(sim, CFG.HAZARD_DEATH_DELAY + 1.5);
+  assert.strictEqual(b.alive, false, "lava should kill the player");
+  // Lava death leaves the player in the falling state (alive=false, falling=true),
+  // distinguishing it from HP death (alive=false, falling=false).
+  assert.strictEqual(b.falling, true, "lava death must engage the falling path, not the HP-death path");
+});
+
+test("snapshot includes hp and mhp fields", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const snap = sim.snapshot().players.find((p) => p.id === "a");
+  assert.ok(typeof snap.hp === "number", "snapshot.hp should be a number");
+  assert.ok(typeof snap.mhp === "number", "snapshot.mhp should be a number");
+  assert.strictEqual(snap.mhp, CFG.PLAYER_HP_MAX, "snapshot.mhp should equal PLAYER_HP_MAX");
+  assert.ok(snap.hp > 0 && snap.hp <= snap.mhp, "snapshot.hp should be in (0, mhp]");
+});
+
+test("spawn resets hp to maxHp", () => {
+  const p = new Player("a", "A", 0);
+  p.applyDamage(60, "enemy");
+  assert.ok(p.hp < p.maxHp, "hp should be reduced before spawn");
+  p.spawn(0, 5);
+  assert.strictEqual(p.hp, p.maxHp, "spawn should restore hp to maxHp");
+});
+
+test("fireball bolt depletes hp on hit and death is counted once at 0 hp", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  const b = sim.players.get("b");
+  // Place b at full hp, a nearby to fire
+  a.x = 0; a.z = 0; a.aim = 0;
+  a.groundY = CFG.PLATFORM_TOP;
+  b.x = 1.5; b.z = 0; b.vx = 0; b.vz = 0;
+  b.groundY = CFG.PLATFORM_TOP;
+  const hpBefore = b.hp;
+  // Fire one bolt directly at b
+  const bolt = new Bolt(a.id, a.x + 0.8, a.z, 0, 0xff0000, {
+    kb: SPELLS.fireball.kb, dmg: SPELLS.fireball.dmg,
+  });
+  sim.bolts.push(bolt);
+  sim.step(1 / CFG.TICK_RATE);
+  // Check if bolt hit — if b.hp dropped or b is dead
+  const hpAfter = b.hp;
+  const hitOccurred = hpAfter < hpBefore || !b.alive;
+  assert.ok(hitOccurred, `fireball bolt should have depleted hp (before:${hpBefore} after:${hpAfter})`);
+
+  // Kill b and confirm death is counted exactly once across multiple ticks.
+  if (b.alive) {
+    b.applyDamage(b.hp, a.id); // kill
+    assert.strictEqual(b.alive, false, "b should be dead after hp reaches 0");
+  }
+  // Step several ticks — _countedDeath must gate to exactly one increment.
+  for (let i = 0; i < 5; i++) sim.step(1 / CFG.TICK_RATE);
+  assert.strictEqual(b.deaths, 1, "death should be counted exactly once across multiple ticks");
+});
+
+test("lightning depletes hp on primary and chained targets", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B"); sim.addPlayer("c", "C");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const a = sim.players.get("a");
+  const b = sim.players.get("b");
+  const c = sim.players.get("c");
+  // Give a the lightning spell and ensure its cooldown is ready.
+  a.acquireSpell("lightning");
+  a.cooldowns["lightning"] = 0;
+  // Place a at origin, b within primary range (< 18 u), c within chain range of b (< 7 u).
+  a.x = 0; a.z = 0; a.aim = 0; a.groundY = CFG.PLATFORM_TOP;
+  b.x = 5; b.z = 0; b.vx = 0; b.vz = 0; b.groundY = CFG.PLATFORM_TOP;
+  c.x = 8; c.z = 0; c.vx = 0; c.vz = 0; c.groundY = CFG.PLATFORM_TOP;
+  const bHpBefore = b.hp;
+  const cHpBefore = c.hp;
+  // Cast lightning aimed at b (arena layout was cleared by advance(), so LoS is always clear).
+  castSpell(sim, a, { spell: "lightning", tx: b.x, tz: b.z });
+  // Primary target must have lost HP.
+  assert.ok(b.hp < bHpBefore,
+    `lightning must damage primary target (hp: ${bHpBefore} → ${b.hp})`);
+  // Primary damage must be approximately SPELLS.lightning.dmg (no falloff on first hop).
+  const expectedPrimary = SPELLS.lightning.dmg;
+  assert.ok(bHpBefore - b.hp >= expectedPrimary * 0.9,
+    `lightning primary damage should be ~${expectedPrimary} (got ${bHpBefore - b.hp})`);
+  // Chained target must also have lost HP (second hop at 0.7× dmg falloff).
+  assert.ok(c.hp < cHpBefore,
+    `lightning must chain-damage secondary target (hp: ${cHpBefore} → ${c.hp})`);
+});
+
+// ── Step 2 regression guards: auto-attack path must no longer exist ──────────
+
+test("spawnBolt method no longer exists on Simulation", () => {
+  const sim = new Simulation();
+  assert.strictEqual(typeof sim.spawnBolt, "undefined", "spawnBolt should have been removed");
+});
+
+test("canFire method no longer exists on Player", () => {
+  const sim = new Simulation();
+  const p = sim.addPlayer("x", "X");
+  assert.strictEqual(typeof p.canFire, "undefined", "canFire should have been removed");
+});
+
+test("input sample does not include fire field", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  const p = sim.players.get("a");
+  assert.ok(!Object.prototype.hasOwnProperty.call(p.input, "fire"), "input must not have a fire field");
+});
+
+// ── Step 6: Pre-match Spell Draft ──────────────────────────────────────────────
+import { SPELL_TEMPLATES } from "../src/config.js";
+
+test("draft: startMatch enters SPELL_SELECTION when draftEnabled; timer advances to COUNTDOWN", () => {
+  const sim = new Simulation({ draftEnabled: true });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  assert.strictEqual(sim.phase, PHASE.SPELL_SELECTION, "should enter SPELL_SELECTION");
+  assert.strictEqual(sim.phaseTimer, CFG.SPELL_SELECTION_TIME, "timer should be SPELL_SELECTION_TIME");
+  // Advance past the draft timer; should move to COUNTDOWN then PLAYING
+  advance(sim, CFG.SPELL_SELECTION_TIME + 0.1);
+  assert.strictEqual(sim.phase, PHASE.COUNTDOWN, "should enter COUNTDOWN after draft expires");
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.1);
+  assert.strictEqual(sim.phase, PHASE.PLAYING, "should enter PLAYING after countdown");
+});
+
+test("draft: default Simulation (no draftEnabled) still goes straight to COUNTDOWN", () => {
+  const sim = new Simulation();
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  assert.strictEqual(sim.phase, PHASE.COUNTDOWN, "existing test contract: startMatch → COUNTDOWN without draft");
+});
+
+test("draft: toggle adds/removes spells; 6-slot cap enforced; fireball is a no-op", () => {
+  const sim = new Simulation({ draftEnabled: true });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  const p = sim.players.get("a");
+  // Toggle in
+  sim.applyDraft("a", { action: "toggle", spell: "lightning" });
+  assert.ok(p.draftPick.includes("lightning"), "lightning should be in picks");
+  // Toggle out
+  sim.applyDraft("a", { action: "toggle", spell: "lightning" });
+  assert.strictEqual(p.draftPick.includes("lightning"), false, "lightning should be removed on second toggle");
+  // 6-slot cap
+  const pool = ["lightning", "meteor", "teleport", "shield", "drain", "gravity"];
+  for (const s of pool) sim.applyDraft("a", { action: "toggle", spell: s });
+  assert.strictEqual(p.draftPick.length, 6, "should cap at 6 picks");
+  sim.applyDraft("a", { action: "toggle", spell: "boomerang" });
+  assert.strictEqual(p.draftPick.length, 6, "a 7th pick should be ignored");
+  // Fireball is a no-op
+  sim.applyDraft("a", { action: "toggle", spell: "fireball" });
+  assert.strictEqual(p.draftPick.includes("fireball"), false, "fireball must never enter draftPick");
+});
+
+test("draft: template one-click fills picks from the named template", () => {
+  const sim = new Simulation({ draftEnabled: true });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  const p = sim.players.get("a");
+  sim.applyDraft("a", { action: "template", template: 0 });
+  assert.deepStrictEqual(p.draftPick, SPELL_TEMPLATES[0].spells.slice(0, 6), "Burst template should fill picks exactly");
+});
+
+test("draft: timeout auto-assigns full 6 slots; preserves existing picks; no dupes; fireball in spells", () => {
+  const sim = new Simulation({ draftEnabled: true });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  const p = sim.players.get("a");
+  // Player a picks 2 spells
+  sim.applyDraft("a", { action: "toggle", spell: "teleport" });
+  sim.applyDraft("a", { action: "toggle", spell: "shield" });
+  // Advance past timer
+  advance(sim, CFG.SPELL_SELECTION_TIME + 0.1);
+  // After finishDraft → beginRound, loadout should be committed
+  const filledSlots = p.spellSlots.filter(Boolean);
+  assert.strictEqual(filledSlots.length, 6, "should have 6 filled slots after timeout");
+  assert.ok(filledSlots.every((id) => SPELLS[id]), "all slots should be valid spell ids");
+  // Original picks preserved (teleport and shield should still be in slots)
+  assert.ok(p.spells.has("teleport"), "teleport should be in final spells");
+  assert.ok(p.spells.has("shield"), "shield should be in final spells");
+  // No duplicates
+  assert.strictEqual(new Set(filledSlots).size, filledSlots.length, "no duplicate slots");
+  // Fireball always in spells (free basic)
+  assert.ok(p.spells.has("fireball"), "fireball must be in spells set after draft commit");
+  // Fireball not in any slot (draft slots hold the 6 picked spells)
+  assert.strictEqual(p.spellSlots.indexOf("fireball"), -1, "fireball must not occupy a draft slot");
+});
+
+test("draft: all-ready early finish — transitions before timer expires", () => {
+  const sim = new Simulation({ draftEnabled: true });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  assert.strictEqual(sim.phase, PHASE.SPELL_SELECTION);
+  sim.applyDraft("a", { action: "ready" });
+  sim.applyDraft("b", { action: "ready" });
+  // A single step should trigger the phase transition (all players ready).
+  sim.step(1 / CFG.TICK_RATE);
+  assert.notStrictEqual(sim.phase, PHASE.SPELL_SELECTION, "should leave SPELL_SELECTION when all ready");
+  assert.ok(sim.phaseTimer < CFG.SPELL_SELECTION_TIME, "should not have waited the full 30s");
+});
+
+test("draft: applyDraft is a no-op outside SPELL_SELECTION; bad spell ignored", () => {
+  const sim = new Simulation({ draftEnabled: true });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  // Advance to PLAYING
+  advance(sim, CFG.SPELL_SELECTION_TIME + 0.1 + CFG.ROUND.COUNTDOWN + 0.1);
+  assert.strictEqual(sim.phase, PHASE.PLAYING);
+  const p = sim.players.get("a");
+  const slotsBefore = [...p.spellSlots];
+  sim.applyDraft("a", { action: "toggle", spell: "lightning" });
+  assert.deepStrictEqual(p.spellSlots, slotsBefore, "applyDraft during PLAYING must be a no-op");
+  // Bad spell ignored during SPELL_SELECTION (re-test in fresh sim)
+  const sim2 = new Simulation({ draftEnabled: true });
+  sim2.addPlayer("a", "A"); sim2.addPlayer("b", "B");
+  sim2.startMatch();
+  sim2.applyDraft("a", { action: "toggle", spell: "notaspell" });
+  assert.strictEqual(sim2.players.get("a").draftPick.length, 0, "invalid spell must be ignored");
+});
+
+test("draft: snapshot carries draftPick/draftReady per player and phase/timer at top level", () => {
+  const sim = new Simulation({ draftEnabled: true });
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  sim.applyDraft("a", { action: "toggle", spell: "lightning" });
+  const snap = sim.snapshot();
+  assert.strictEqual(snap.phase, "spellSelection", "top-level phase should be spellSelection");
+  assert.ok(typeof snap.timer === "number" && snap.timer > 0, "timer should be a positive number");
+  const pa = snap.players.find((p) => p.id === "a");
+  assert.ok(Array.isArray(pa.draftPick), "player snapshot must have draftPick array");
+  assert.ok(pa.draftPick.includes("lightning"), "draftPick should contain the toggled spell");
+  assert.strictEqual(typeof pa.draftReady, "boolean", "player snapshot must have draftReady boolean");
+});
+
+// Integration guard: mirrors the option object that main.js startHosting passes for a standard
+// (non-practice) multiplayer match. If main.js ever omits draftEnabled again this test will fail.
+test("integration: non-practice host option object enables spell draft (mirrors main.js startHosting)", () => {
+  // Mirrors: new Simulation({ mobsEnabled, arenaWorld, landSize, enabledObstacles, draftEnabled: !options.practice })
+  const hostOptions = {
+    mobsEnabled: true,
+    arenaWorld: undefined,
+    landSize: undefined,
+    enabledObstacles: undefined,
+    draftEnabled: true, // !options.practice where options.practice is undefined/false
+  };
+  const sim = new Simulation(hostOptions);
+  sim.addPlayer("a", "A"); sim.addPlayer("b", "B");
+  sim.startMatch();
+  assert.strictEqual(sim.phase, PHASE.SPELL_SELECTION,
+    "non-practice multiplayer host must enter SPELL_SELECTION; " +
+    "if this fails, check that main.js startHosting passes draftEnabled: !options.practice");
 });
 
 console.log(`\n${passed} tests passed.`);

@@ -123,7 +123,6 @@ export const CFG = {
   BOLT_SPEED: 26,            // units/sec
   BOLT_RADIUS: 0.45,
   BOLT_LIFETIME: 2.2,        // seconds before it fizzles
-  BOLT_COOLDOWN: 0.55,       // seconds between shots
   // Knockback model (Smash-style): force scales with the victim's accumulated "charge".
   BOLT_BASE_KNOCKBACK: 8,    // base impulse on hit
   BOLT_CHARGE_GAIN: 0.14,    // how much a hit increases victim's charge multiplier
@@ -131,13 +130,32 @@ export const CFG = {
   CHARGE_MAX: 4.0,           // cap so it stays playable
   CHARGE_DECAY: 0.05,        // charge bleeds off slowly per sec while alive
 
-  // --- Ability acquisition (rune mode) ---
-  RUNE_RADIUS: 0.8,
-  RUNE_SPAWN_RADIUS: 13,
-  RUNE_MAX_ACTIVE: 2,         // how many runes may exist on the field at once
-  RUNE_SPAWN_INTERVAL: 8,     // seconds between timed rune spawns
+  // --- Health / damage (Step 1: HP layered over the charge model) ---
+  PLAYER_HP_MAX: 100,        // full health on (re)spawn
+  BOLT_BASE_DAMAGE: 8,       // fallback projectile damage when a spell omits `dmg`
+
+  // --- Ability slots ---
+  RUNE_SPAWN_RADIUS: 13,      // also used by mob spawn position logic
   SPELL_SLOT_COUNT: 6,
+  SPELL_SELECTION_TIME: 30,   // seconds for the pre-match spell draft (Step 6)
   DEFAULT_SPELL_SLOT_HOTKEYS: ["1", "2", "3", "4", "5", "6"],
+  // Pre-draft default loadout (Step 5). Step 6's draft replaces this as the
+  // source of each player's six spells. fireball stays slot 0 (permanent weapon).
+  DEFAULT_SPELL_LOADOUT: ["fireball", "lightning", "teleport", "shield", "drain", "heal"],
+
+  // --- Items / loot (Step 4) ---
+  ITEM_RADIUS: 0.8,
+  ITEM_SLOT_COUNT: 4,
+  ITEM_SPAWN_RADIUS: 13,
+  ITEM_MAX_ACTIVE: 2,              // world item drops alive at once (cap)
+  ITEM_SPAWN_INTERVAL: 18,         // s between timed world spawns (rarer than runes' 8)
+  ITEM_MOB_DROP_CHANCE: 1.0,       // big mobs always drop (rarity-weighted); minions never
+  DEFAULT_ITEM_SLOT_HOTKEYS: ["7", "8", "9", "0"],
+  ITEM_RARITY_WEIGHTS: { common: 70, rare: 25, unfair: 5 },   // mob-drop tier weights
+  ITEM_WORLD_RARITY: { rare: 55, unfair: 45 },                // world spawn = "unfair advantage" source
+
+  CAST_MOVE_CANCEL: 0.2,     // units the caster may drift before a channel cancels
+  CAST_TICK_DEFAULT: 0.25,   // default channel tick interval (s) when spell omits `tick`
 
   // --- Rounds ---
   ROUND: {
@@ -227,6 +245,8 @@ export const CFG = {
   // `ability`    : string tag used by sim.js ability dispatch
   // `abilityKb`  : knockback magnitude of the signature ability
   // `abilityRadius`: AoE radius for the signature ability
+  // `dmg`        : HP damage per melee strike, ranged bolt hit, and entrance AoE contact
+  // `abilityDmg` : HP damage of the signature ability burst (null = no ability damage)
   // `boltToKb`   : small knockback shove a player bolt gives to the mob
   //                (≈2–4; lets skilled play push mobs toward the lava)
   // `canSpawnMinions`: whether this type may spawn melee minions
@@ -235,6 +255,22 @@ export const CFG = {
   //                kb/radius (summon, meteor) apply an AoE knockback to players
   //                inside `radius` at the moment the entrance completes.
   // ranged-only keys: `rangedKb`, `rangedEvery`, `rangedRange`
+  //
+  // Step-7 DOTA-vocabulary ability keys (telegraphed channel state machine):
+  // `castTime`   : telegraph / windup seconds; mob rooted, decal shown to players.
+  // `telegraphR` : ground-warning decal radius (defaults to abilityRadius when absent).
+  // `stunDur`    : stun duration (s) applied to hit players (fissureSlam, seismicStomp).
+  // `slowDur`    : slow duration (s) applied on hit.
+  // `slowMul`    : speed multiplier while slowed (< 1 = slower).
+  // `curseDur`   : curse duration (s) applied on hit.
+  // `curseMul`   : incoming-damage/KB amplifier while cursed (> 1 = more damage).
+  // `burn`       : burn DPS applied per tick (magmaEruption).
+  // `burnDur`    : burn DoT total duration (s).
+  // `pull`       : gravity-pull strength (units/s inward) for vacuum.
+  // `channelTime`: sustained vacuum duration (s); drives the gravity status on victims.
+  // `stages`     : number of staggered meteor impacts (magmaEruption).
+  // `stageDelay` : delay (s) between successive stage meteors.
+  // `stageR`     : total range (world units) of the staged eruption line from mob.
   MOB_TYPES: {
     stoneGiant: {
       name:          "Stone Giant",
@@ -246,11 +282,17 @@ export const CFG = {
       bodyR:         1.6,
       color:         0x888880,
       abilityEvery:  10,
-      ability:       "groundSlam",   // meteor-style AoE r≈7, kb≈34, 1 s telegraph
+      ability:       "fissureSlam",  // Echo-Slam/Fissure: 2-stage AoE + stun; 1 s telegraph
       abilityKb:     34,
       abilityRadius:  7,
+      telegraphR:    10.5,           // covers echo ring radius (abilityRadius * 1.5 = 10.5)
+      dmg:           12,
+      abilityDmg:    22,
       boltToKb:       2,
       canSpawnMinions: true,
+      castTime:       1.0,           // rooted windup + ground decal
+      stunDur:        0.9,           // stun applied to players caught in AoE
+      stageDelay:     0.35,          // delay (s) between center hit and echo ring
       // Emerges from a crumbling boulder that breaks apart.
       entrance:      { kind: "shatter" },
     },
@@ -267,11 +309,20 @@ export const CFG = {
       bodyR:         1.2,
       color:         0x55ccff,
       abilityEvery:   8,
-      ability:       "cyclone",      // gravity-well pull r=8 2 s → outward fling kb≈30
+      ability:       "vacuum",       // Vacuum/Black-Hole: channel pull + slow + curse → fling
       abilityKb:     30,
       abilityRadius:  8,
+      dmg:            8,
+      abilityDmg:    18,
       boltToKb:       4,
       canSpawnMinions: true,
+      castTime:       0.8,           // rooted windup + ground decal
+      channelTime:    1.4,           // gravity-status duration on pulled victims
+      pull:           30,            // gravity pull strength (units/s)
+      slowDur:        1.6,           // slow duration applied to pulled players
+      slowMul:        0.5,           // speed multiplier while slowed
+      curseDur:       2.0,           // curse duration applied to pulled players
+      curseMul:       1.25,          // incoming-damage amplifier while cursed
       // Descends from a storm cloud with a lightning strike.
       entrance:      { kind: "storm" },
     },
@@ -285,11 +336,15 @@ export const CFG = {
       bodyR:         1.1,
       color:         0xcc8844,
       abilityEvery:   9,
-      ability:       "stomp",        // radial ring kb≈28, r≈6
+      ability:       "seismicStomp", // Slardar/Sven nova: fast radial stun-nova
       abilityKb:     28,
       abilityRadius:  6,
+      dmg:           10,
+      abilityDmg:    18,
       boltToKb:       3,
       canSpawnMinions: true,
+      castTime:       0.85,          // real dodge window vs a speed-5 chaser
+      stunDur:        0.6,           // stun applied to players caught in AoE
       // Slams down from above; shockwave knocks nearby players back on arrival.
       entrance:      { kind: "summon", kb: 26, radius: 6 },
     },
@@ -306,11 +361,19 @@ export const CFG = {
       bodyR:         1.0,
       color:         0xff4422,
       abilityEvery:  12,
-      ability:       "eruption",     // fan of 8 pellets + central kb≈26 burst
+      ability:       "magmaEruption", // multi-stage delayed AoE + burn DoT
       abilityKb:     26,
       abilityRadius:  5,
+      dmg:            7,
+      abilityDmg:    16,
       boltToKb:       3.5,
       canSpawnMinions: true,
+      castTime:       0.9,           // windup before eruption line fires
+      stages:         3,             // number of staggered meteor impacts
+      stageDelay:     0.3,           // delay (s) between successive stage meteors
+      stageR:         9,             // total range of eruption line (world units); spread into a dodgeable line
+      burn:           8,             // burn DPS per tick on hit players
+      burnDur:        2.5,           // burn DoT total duration (s)
       // Arrives as a flaming meteor; blast knocks nearby players back on impact.
       entrance:      { kind: "meteor", kb: 30, radius: 6 },
     },
@@ -325,6 +388,7 @@ export const CFG = {
       color:         0x999999,
       abilityEvery:  null,
       ability:       null,
+      dmg:            5,
       boltToKb:       4,
       canSpawnMinions: false,
     },
@@ -379,30 +443,45 @@ export function isOnArenaWorld(worldId, radius, x, z) {
 // cast handlers (src/spells.js) read live alongside each entry.
 export const SPELLS = {
   // ---- Core projectiles ----
-  fireball:  { name: "Fireball",  key: "1", cd: 0.55, kind: "projectile", proj: "fireball",  kb: 10, color: 0xff5a1e, sfx: "fireball",  desc: "Fast bolt that knocks foes back." },
-  lightning: { name: "Lightning", key: "2", cd: 4.0,  kind: "lightning",  range: 18, kb: 13, chains: 2, chainRange: 7, color: 0x9fe6ff, sfx: "lightning", desc: "Lightning that chains to nearby enemies." },
-  boomerang: { name: "Boomerang", key: "3", cd: 6.0,  kind: "projectile", proj: "boomerang", kb: 12, range: 16, color: 0xffe14c, sfx: "whoosh",    desc: "Returning projectile that hits on the way back." },
-  homing:    { name: "Homing",    key: "4", cd: 8.0,  kind: "projectile", proj: "homing",    kb: 13, turn: 3.2, color: 0xc04cff, sfx: "homing",    desc: "Tracking bolt that hunts down its target." },
-  fireSpray: { name: "Fire Spray", key: "5", cd: 7.0, kind: "spray",      proj: "fireball",  kb: 7,  count: 7, spread: 0.9, color: 0xff7a2e, sfx: "spray",    desc: "Fan of fire bolts covering a wide arc." },
-  bouncer:   { name: "Bouncer",   key: "6", cd: 9.0,  kind: "projectile", proj: "bouncer",   kb: 12, bounces: 4, color: 0x4cff9c, sfx: "whoosh",   desc: "Ricochets off walls up to four times." },
-  splitter:  { name: "Splitter",  key: "7", cd: 9.0,  kind: "projectile", proj: "splitter",  kb: 9,  splitDist: 7, shards: 5, color: 0xff4ca8, sfx: "fireball", desc: "Splits into five piercing shards on impact." },
-  meteor:    { name: "Meteor",    key: "8", cd: 12.0, kind: "meteor",     range: 18, fall: 1.0, radius: 7, kb: 30, color: 0xff3a1e, sfx: "meteor",   desc: "Calls a falling meteor with a heavy blast." },
+  fireball:  { name: "Fireball",  key: "1", cd: 0.55, kind: "projectile", proj: "fireball",  kb: 16, dmg: 12, burn: 4,  burnDur: 2, color: 0xff5a1e, sfx: "fireball",  desc: "Fast bolt that knocks foes back and ignites them." },
+  lightning: { name: "Lightning", key: "2", cd: 4.0,  kind: "lightning",  range: 18, kb: 18, dmg: 22, chains: 2, chainRange: 7, slow: 0.6, slowDur: 1.5, color: 0x9fe6ff, sfx: "lightning", desc: "Lightning that chains and slows nearby enemies." },
+  boomerang: { name: "Boomerang", key: "3", cd: 6.0,  kind: "projectile", proj: "boomerang", kb: 18, dmg: 20, range: 16, color: 0xffe14c, sfx: "whoosh",    desc: "Returning projectile that hits on the way back." },
+  homing:    { name: "Homing",    key: "4", cd: 8.0,  kind: "projectile", proj: "homing",    kb: 18, dmg: 22, turn: 3.2, curse: 1.25, curseDur: 3, color: 0xc04cff, sfx: "homing",    desc: "Tracking bolt that curses its target." },
+  fireSpray: { name: "Fire Spray", key: "5", cd: 7.0, kind: "spray",      proj: "fireball",  kb: 11, dmg: 9,  count: 7, spread: 0.9, burn: 6, burnDur: 2, color: 0xff7a2e, sfx: "spray",    desc: "Fan of fire bolts covering a wide arc, igniting targets." },
+  bouncer:   { name: "Bouncer",   key: "6", cd: 9.0,  kind: "projectile", proj: "bouncer",   kb: 18, dmg: 20, bounces: 4, color: 0x4cff9c, sfx: "whoosh",   desc: "Ricochets off walls up to four times." },
+  splitter:  { name: "Splitter",  key: "7", cd: 9.0,  kind: "projectile", proj: "splitter",  kb: 14, dmg: 13, splitDist: 7, shards: 5, color: 0xff4ca8, sfx: "fireball", desc: "Splits into five piercing shards on impact." },
+  meteor:    { name: "Meteor",    key: "8", cd: 12.0, kind: "meteor",     range: 18, fall: 1.0, radius: 7, kb: 32, dmg: 36, burn: 10, burnDur: 3, color: 0xff3a1e, sfx: "meteor",   desc: "Calls a falling meteor with a searing blast." },
 
   // ---- Mobility ----
   teleport:  { name: "Teleport",  key: "Q", cd: 8.0,  kind: "teleport",  range: 20, sfx: "teleport", desc: "Blink instantly toward your aim." },
-  thrust:    { name: "Thrust",    key: "E", cd: 7.0,  kind: "thrust",    power: 36, sfx: "whoosh",   desc: "Launches you forward with great force." },
+  thrust:    { name: "Thrust",    key: "E", cd: 7.0,  kind: "thrust",    power: 36, shockKb: 16, shockRadius: 3.2, dmg: 14, sfx: "whoosh",   desc: "Launches you forward and blasts nearby foes." },
   swap:      { name: "Swap",      key: "R", cd: 14.0, kind: "swap",      range: 22, sfx: "teleport", desc: "Swaps positions with a distant target." },
   windWalk:  { name: "Wind Walk", key: "F", cd: 16.0, kind: "windwalk",  duration: 4, speedMul: 1.6, sfx: "windwalk", desc: "Greatly boosts speed for a short dash." },
   rush:      { name: "Rush",      key: "C", cd: 16.0, kind: "rush",      duration: 5, speedMul: 1.45, kbResist: 0.45, sfx: "rush",   desc: "Sprint faster and shrug off knockback." },
 
   // ---- Control / utility ----
   drain:     { name: "Drain",     key: "V", cd: 12.0, kind: "drain",     range: 14, pull: 15, steal: 0.5, sfx: "drain",      desc: "Pulls an enemy close and siphons their charge." },
-  gravity:   { name: "Gravity",   key: "X", cd: 14.0, kind: "gravity",   range: 18, radius: 8, duration: 2.5, pull: 20, gravKb: 14, sfx: "gravity", desc: "Creates a gravity well that pulls nearby foes." },
+  gravity:   { name: "Gravity",   key: "X", cd: 14.0, kind: "gravity",   range: 18, radius: 8, duration: 2.5, pull: 20, gravKb: 22, dmg: 26, slowMul: 0.5, sfx: "gravity", desc: "Creates a gravity well that pulls and slows nearby foes." },
   link:      { name: "Link",      key: "Z", cd: 16.0, kind: "link",      range: 16, duration: 4, sfx: "link",      desc: "Tethers a foe and mirrors their knockback." },
-  disable:   { name: "Disable",   key: "T", cd: 14.0, kind: "disable",   range: 16, duration: 1.6, kb: 6, color: 0xbbbbbb, sfx: "disable",  desc: "Briefly stuns and knocks back a target." },
+  disable:   { name: "Disable",   key: "T", cd: 14.0, kind: "disable",   range: 16, duration: 1.8, kb: 12, dmg: 14, color: 0xbbbbbb, sfx: "disable",  desc: "Briefly stuns and knocks back a target." },
   shield:    { name: "Shield",    key: "G", cd: 16.0, kind: "shield",    duration: 4, charges: 1, sfx: "shield",     desc: "Absorbs the next incoming hit." },
   timeShift: { name: "Time Shift", key: "B", cd: 22.0, kind: "timeshift", delay: 3.0, sfx: "timeshift",              desc: "Rewinds your position back three seconds." },
   pocketWatch: { name: "Pocket Watch", key: "H", cd: 40.0, kind: "pocketwatch", item: true, sfx: "watch",           desc: "Instantly resets all your spell cooldowns." },
+
+  // ---- DOTA-inspired roster (Step 3) ----
+  projectile: { name: "Arcane Bolt",   key: "9", cd:  3.5, kind: "projectile",  proj: "fireball", kb: 14, dmg: 24, color: 0x6fc0ff, sfx: "fireball",  desc: "A fast arcane skillshot." },
+  target:     { name: "Doom",          key: "Y", cd: 11.0, kind: "target",      range: 15, dmg: 24, curse: 1.3, curseDur: 4, color: 0x9c2bff, sfx: "homing",   desc: "Curses and blasts the nearest foe in range." },
+  explode:    { name: "Detonate",      key: "J", cd: 10.0, kind: "explode",     castTime: 0.45, range: 16, radius: 6, kb: 34, dmg: 32, burn: 8, burnDur: 2, color: 0xff6a1e, sfx: "meteor",   desc: "Winds up, then erupts at the target point." },
+  stun:       { name: "Hex Bash",      key: "K", cd:  9.0, kind: "stun",        range: 12, dmg: 10, stunDur: 1.2, kb: 8, color: 0xffe14c, sfx: "disable",  desc: "Hard-stuns the nearest foe in range." },
+  push:       { name: "Force Wave",    key: "L", cd:  8.0, kind: "push",        range: 7, cone: 0.7, kb: 30, dmg: 14, color: 0xaef0ff, sfx: "whoosh",   desc: "Shoves foes in a forward cone." },
+  pull:       { name: "Hook",          key: "U", cd: 10.0, kind: "pull",        range: 18, pull: 34, dmg: 16, color: 0x8fffc4, sfx: "drain",    desc: "Yanks one distant foe toward you." },
+  drag:       { name: "Tow",           key: "I", cd: 13.0, kind: "drag",        channel: 1.5, tick: 0.15, range: 16, pull: 9, dmg: 4, color: 0x4cff9c, sfx: "drain",    desc: "Channel: continuously drags a foe to you." },
+  vacuum:     { name: "Maelstrom",     key: "O", cd: 14.0, kind: "vacuum",      channel: 1.2, tick: 0.2, radius: 8, pull: 10, dmg: 6, slowMul: 0.6, color: 0x6c4cff, sfx: "gravity",  desc: "Channel: sucks in and grinds nearby foes." },
+  heal:       { name: "Mend",          key: "N", cd: 12.0, kind: "heal",        channel: 2.0, tick: 0.25, heal: 9, color: 0x7cff8a, sfx: "shield",   desc: "Channel: restores health while you stand still." },
+  invisible:  { name: "Shadow Veil",   key: "M", cd: 16.0, kind: "invisible",   duration: 5, color: 0x445577, sfx: "windwalk",  desc: "Turn invisible for a short time." },
+  speed:      { name: "Haste",         key: ";", cd: 14.0, kind: "speed",       duration: 4, hasteMul: 1.7, color: 0xffd23c, sfx: "rush",     desc: "Greatly boosts your move speed." },
+  blink:      { name: "Blink",         key: "P", cd:  6.0, kind: "blink",       range: 9, color: 0x66ccff, sfx: "teleport",  desc: "Short instant teleport toward your aim." },
+  summon:     { name: "Conjure",       key: "'", cd: 18.0, kind: "summon",      summonTtl: 10, color: 0x9c7bff, sfx: "watch",    desc: "Summons a temporary minion to harry foes." },
 };
 
 // Ordering used for the on-screen ability bar.
@@ -410,31 +489,44 @@ export const SPELL_ORDER = [
   "fireball", "lightning", "boomerang", "homing", "fireSpray", "bouncer",
   "splitter", "meteor", "teleport", "thrust", "swap", "windWalk", "rush",
   "drain", "gravity", "link", "disable", "shield", "timeShift", "pocketWatch",
+  "projectile", "target", "explode", "stun", "push", "pull", "drag", "vacuum",
+  "heal", "invisible", "speed", "blink", "summon",
 ];
 
-// --- Items / passives (the rest of the handbook) ---
-// Applied as persistent modifiers on each warlock via applyItems().
+// One-click loadout templates for the Step 6 spell draft.
+// Fireball is excluded — it is the free always-on basic and never occupies a slot.
+// The first template (Burst) is the auto-fill source on timeout / empty picks.
+export const SPELL_TEMPLATES = [
+  { id: "burst",   name: "Burst",   desc: "High-damage spike kit",
+    spells: ["lightning", "meteor", "fireSpray", "splitter", "homing", "drain"] },
+  { id: "control", name: "Control", desc: "Lockdown & displacement",
+    spells: ["gravity", "disable", "link", "shield", "swap", "teleport"] },
+  { id: "bruiser", name: "Bruiser", desc: "Sustain & mobility brawler",
+    spells: ["drain", "shield", "rush", "thrust", "windWalk", "boomerang"] },
+];
+
+// --- Items / lootable drops (Step 4) ---
+// Exactly 10 items: mix of passive stat mods and active (spell-binding) pickups.
+// Applied as persistent modifiers on each warlock via applyItems(); active items
+// grant a spell through acquireItem() and cast through the existing pipeline.
 export const ITEMS = {
-  aegis:           { name: "Aegis",            kind: "kbResist", value: 0.18 },
-  cape:            { name: "Cape",             kind: "kbResist", value: 0.15 },
-  helmet:          { name: "Helmet",           kind: "kbResist", value: 0.12 },
-  bootsOfSpeed:    { name: "Boots of Speed",   kind: "speed",    value: 1.18 },
-  bloodSword:      { name: "Blood Sword",      kind: "lifesteal", value: 0.25, dmg: 1.2 },
-  maskOfDeath:     { name: "Mask of Death",    kind: "lifesteal", value: 0.15, dmg: 1.35 },
-  cursedPendant:   { name: "Cursed Pendant",   kind: "glassCannon", dealt: 1.3, taken: 1.25 },
-  pendant:         { name: "Pendant",          kind: "cdr",      value: 0.12 },
-  stoneOfJordan:   { name: "Stone of Jordan",  kind: "cdr",      value: 0.08, speed: 1.05 },
-  lavaTreads:      { name: "Lava Treads",      kind: "lavaGrace", value: 0.6 },
-  staffOfFireball: { name: "Staff of Fireball", kind: "empowerFireball", kb: 1.4 },
-  warden:          { name: "Warden",           kind: "kbResist", value: 0.2 },
-  shieldItem:      { name: "Shield",           kind: "kbResist", value: 0.1 },
+  vitalityCore:   { name: "Vitality Core",   kind: "maxHp",  value: 40,   shape: "orb",   color: 0xff4d6d, rarity: "common", desc: "+40 max health." },
+  berserkerBlade: { name: "Berserker Blade", kind: "damage", value: 1.25, shape: "blade", color: 0xff7a2e, rarity: "common", desc: "+25% spell & bolt damage." },
+  swiftBoots:     { name: "Swift Boots",     kind: "speed",  value: 1.18, shape: "boots", color: 0x4cff9c, rarity: "common", desc: "+18% move speed." },
+  wardingHelm:    { name: "Warding Helm",    kind: "kbResist", value: 0.2, shape: "crown", color: 0x6fc0ff, rarity: "common", desc: "-20% knockback taken." },
+  arcaneSigil:    { name: "Arcane Sigil",    kind: "cdr",    value: 0.15, shape: "rune",  color: 0x9c7bff, rarity: "rare",   desc: "-15% ability cooldowns." },
+  blastTome:      { name: "Blast Tome",      kind: "aoe",    value: 1.3,  shape: "tome",  color: 0xffd23c, rarity: "rare",   desc: "+30% area-of-effect radius." },
+  phoenixCharm:   { name: "Phoenix Charm",   kind: "regen",  value: 3,    shape: "orb",   color: 0xff9a3c, rarity: "rare",   desc: "Regenerate 3 HP/sec." },
+  blinkStone:     { name: "Blink Stone",     kind: "active", grantsSpell: "blink",       shape: "rune",  color: 0x66ccff, rarity: "rare",   desc: "Bind Blink — short instant teleport." },
+  meteorScroll:   { name: "Meteor Scroll",   kind: "active", grantsSpell: "meteor",      shape: "tome",  color: 0xff3a1e, rarity: "unfair", desc: "Bind Meteor — searing AoE blast." },
+  chronoLocket:   { name: "Chrono Locket",   kind: "active", grantsSpell: "pocketWatch", shape: "crown", color: 0xffe14c, rarity: "unfair", desc: "Bind Reset — clears all cooldowns." },
 };
 
 // Message types exchanged over PeerJS data channels.
 export const MSG = {
   // client -> host
   JOIN: "join",          // {name, character, userId, region}  userId: string|null; region: string
-  INPUT: "input",        // {seq, move:[x,z], aim, fire, casts:[{id,spell,tx,tz}]}
+  INPUT: "input",        // {seq, move:[x,z], aim, casts:[{id,spell,tx,tz}]}
   // host -> client
   WELCOME: "welcome",    // {id, players, hostName}
   LOBBY: "lobby",        // {players}
@@ -444,6 +536,7 @@ export const MSG = {
   ROUND_END: "roundEnd", // {winnerId, scores}
   MATCH_END: "matchEnd", // {winnerId, scores}
   CHAT: "chat",          // reserved
+  DRAFT: "draft",        // {action:"toggle"|"template"|"ready"|"clear", spell?, template?}
 };
 
 // Deterministic short room code from a peer id suffix.

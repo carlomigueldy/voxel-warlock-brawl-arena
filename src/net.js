@@ -99,10 +99,14 @@ export class Host {
       case MSG.INPUT:
         this.callbacks.onInput?.(conn.peer, msg);
         break;
+      case MSG.DRAFT:
+        this.callbacks.onDraft?.(conn.peer, msg);
+        break;
     }
   }
 
   onInput(fn) { this.callbacks.onInput = fn; }
+  onDraft(fn) { this.callbacks.onDraft = fn; }
 
   // Send a message to every connected client.
   broadcast(obj) {
@@ -172,6 +176,12 @@ export class Client {
   sendInput(input) {
     if (this.conn && this.conn.open) {
       this.conn.send({ type: MSG.INPUT, ...input });
+    }
+  }
+
+  sendDraft(msg) {
+    if (this.conn && this.conn.open) {
+      this.conn.send({ type: MSG.DRAFT, ...msg });
     }
   }
 

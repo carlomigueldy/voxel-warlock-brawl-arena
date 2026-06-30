@@ -121,7 +121,7 @@ test("channel events resolve the caster to the channel archetype", () => {
 });
 
 test("non-animation events are ignored", () => {
-  for (const type of ["hit", "death", "sfx", "runePickup", "spellConsumed", "meteorImpact"]) {
+  for (const type of ["hit", "death", "sfx", "runePickup", "itemPickup", "spellConsumed", "meteorImpact"]) {
     assert.strictEqual(archetypeForEvent({ type, id: "p" }), null, `${type} should not animate the caster`);
   }
 });
