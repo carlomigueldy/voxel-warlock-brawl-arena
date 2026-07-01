@@ -2595,6 +2595,87 @@ kbd {
 .onboarding-hotkeys-reset { align-self: flex-start; }
 .onboarding-hotkeys-feedback { min-height: 16px; font-size: 12px; color: var(--gold); }
 
+/* Character step — cinematic hero select. The panel widens and the live 3D
+   turntable canvas (reparented in from #menu by onboarding.js) becomes the
+   centerpiece, flanked by chevrons with a chip row below to switch warlocks. */
+.onboarding-panel--stage { max-width: 880px; }
+
+.hero-select { display: flex; flex-direction: column; gap: 16px; }
+.hero-select-stage {
+  position: relative;
+  height: clamp(280px, 48vh, 480px);
+  border-radius: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(58% 70% at 50% 38%, color-mix(in srgb, var(--char-color, var(--arcane)) 22%, transparent), transparent 72%),
+    linear-gradient(180deg, var(--panel-2), var(--void));
+  border: 1px solid var(--line-strong);
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.5);
+}
+/* The reparented preview canvas fills the stage (mirrors the ID+class
+   override pattern used for the menu's #char-preview.stage-canvas). */
+#char-preview.hero-select-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block; z-index: 1;
+}
+.hero-select-chevron {
+  appearance: none; cursor: pointer;
+  position: absolute; top: 50%; z-index: 2; transform: translateY(-50%);
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 22px; line-height: 1; font-family: var(--font-ui); font-weight: 700;
+  color: var(--text); background: rgba(10, 8, 20, 0.55);
+  border: 1px solid var(--line-strong);
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s, transform 0.2s var(--ease-spring);
+}
+.hero-select-chevron:hover { border-color: var(--arcane); box-shadow: var(--glow-arcane); background: rgba(108, 76, 255, 0.22); }
+.hero-select-chevron:active { transform: translateY(-50%) scale(0.92); }
+.hero-select-chevron--prev { left: 14px; }
+.hero-select-chevron--next { right: 14px; }
+.hero-select-info {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  padding: 18px 60px 16px; text-align: center;
+  background: linear-gradient(0deg, rgba(6, 5, 14, 0.82), transparent);
+  animation: heroInfoIn 0.32s var(--ease-spring) both;
+}
+.hero-select-info.is-swapping { animation: heroInfoIn 0.32s var(--ease-spring) both; }
+@keyframes heroInfoIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.hero-select-index {
+  font-family: var(--font-ui); font-size: 11px; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+}
+.hero-select-name {
+  font-family: var(--font-display); font-size: clamp(16px, 3.4vw, 24px);
+  color: var(--char-color, var(--arcane));
+  text-shadow: 0 0 22px var(--char-color, var(--arcane)), 0 3px 0 rgba(0,0,0,0.5);
+  margin: 0 0 6px;
+}
+.hero-select-blurb { font-size: 13px; color: var(--text); opacity: 0.85; line-height: 1.4; }
+
+.hero-select-chips {
+  display: flex; gap: 10px; overflow-x: auto; padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+.hero-select-chip {
+  appearance: none; cursor: pointer; flex: 0 0 auto;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px 8px 8px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  font-family: var(--font-ui); font-size: 12px; font-weight: 700; color: var(--text);
+  transition: transform 0.2s var(--ease-spring), border-color 0.25s, box-shadow 0.25s;
+}
+.hero-select-chip:hover { transform: translateY(-2px); border-color: var(--char-color, var(--arcane)); }
+.hero-select-chip.is-active {
+  border-color: var(--char-color, var(--arcane));
+  box-shadow: 0 0 0 1px var(--char-color, var(--arcane)), 0 0 16px -4px var(--char-color, var(--arcane));
+}
+.hero-select-chip-swatch {
+  width: 18px; height: 18px; border-radius: 50%; flex: 0 0 auto;
+  background: linear-gradient(135deg, var(--char-color, var(--arcane)), rgba(0,0,0,0.35));
+  box-shadow: 0 0 10px -2px var(--char-color, var(--arcane));
+}
+
 /* Footer */
 .onboarding-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .onboarding-footer-nav { display: flex; gap: 10px; }
@@ -2607,10 +2688,22 @@ kbd {
   .onboarding-footer { flex-direction: column-reverse; align-items: stretch; }
   .onboarding-footer-nav { justify-content: stretch; }
   .onboarding-footer-nav .btn { flex: 1; }
+  .hero-select-stage { height: clamp(220px, 42vh, 340px); }
+  .hero-select-chevron { width: 36px; height: 36px; font-size: 18px; }
+  .hero-select-info { padding: 14px 48px 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .onboarding-step { animation: none; }
   .onboarding-rail-dot { transition: none; }
   .onboarding-hotkey-chip.is-capturing { animation: none; }
+  .hero-select-info, .hero-select-info.is-swapping { animation: none; }
+  .hero-select-chevron, .hero-select-chip { transition: none; }
+}
+
+/* Keyboard focus visibility for the hero-select controls */
+.hero-select-chevron:focus-visible,
+.hero-select-chip:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }

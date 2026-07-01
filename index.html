@@ -167,10 +167,21 @@
           </div>
         </section>
 
-        <section class="onboarding-step" data-step="1" aria-hidden="true">
+        <section class="onboarding-step onboarding-step--char" data-step="1" aria-hidden="true">
           <h3 class="onboarding-step-title">Choose your warlock</h3>
           <p class="onboarding-step-desc">Pick the look you'll bring into the arena — every warlock casts the same spellbook.</p>
-          <div id="onboarding-char-cards" class="char-cards" role="radiogroup" aria-label="Choose your warlock"></div>
+          <div class="hero-select">
+            <div id="onboarding-char-stage" class="hero-select-stage">
+              <button type="button" id="onboarding-char-prev" class="hero-select-chevron hero-select-chevron--prev" aria-label="Previous warlock">‹</button>
+              <button type="button" id="onboarding-char-next" class="hero-select-chevron hero-select-chevron--next" aria-label="Next warlock">›</button>
+              <div class="hero-select-info">
+                <p class="hero-select-index" id="onboarding-char-index" aria-hidden="true"></p>
+                <h4 class="hero-select-name" id="onboarding-char-name"></h4>
+                <p class="hero-select-blurb" id="onboarding-char-blurb"></p>
+              </div>
+            </div>
+            <div id="onboarding-char-cards" class="hero-select-chips" role="radiogroup" aria-label="Choose your warlock"></div>
+          </div>
         </section>
 
         <section class="onboarding-step" data-step="2" aria-hidden="true">

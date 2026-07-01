@@ -39,6 +39,12 @@ class Onboarding {
       steps: document.querySelectorAll("#onboarding .onboarding-step"),
       nameInput: $("onboarding-name-input"),
       charCards: $("onboarding-char-cards"),
+      charStage: $("onboarding-char-stage"),
+      charPrev: $("onboarding-char-prev"),
+      charNext: $("onboarding-char-next"),
+      charIndex: $("onboarding-char-index"),
+      charName: $("onboarding-char-name"),
+      charBlurb: $("onboarding-char-blurb"),
       hotkeysWrap: $("onboarding-hotkeys"),
       hotkeysFeedback: $("onboarding-hotkeys-feedback"),
       hotkeysReset: $("onboarding-hotkeys-reset"),
@@ -70,6 +76,11 @@ class Onboarding {
     this.el.skip.addEventListener("click", () => this.finish({ skipped: true }));
     this.el.hotkeysReset.addEventListener("click", () => this._resetHotkeys());
     this.el.root.addEventListener("keydown", (e) => this._onKeydown(e));
+    this.el.charPrev?.addEventListener("click", () => this._cycleCharacter(-1));
+    this.el.charNext?.addEventListener("click", () => this._cycleCharacter(1));
+    // Remember the preview canvas's original DOM home (inside #menu) so the
+    // reparent into the onboarding hero-select stage can be reversed exactly.
+    this._canvasHome = null;
   }
 
   _onKeydown(e) {
@@ -86,8 +97,20 @@ class Onboarding {
       return;
     }
     if (inTextField) return;
+    if (this.step === 1 && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+      e.preventDefault();
+      this._cycleCharacter(e.key === "ArrowRight" ? 1 : -1);
+      return;
+    }
     if (e.key === "ArrowRight") { e.preventDefault(); this.goNext(); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); this.goBack(); }
+  }
+
+  _cycleCharacter(dir) {
+    const list = CFG.CHARACTERS;
+    const i = list.findIndex((c) => c.id === this.character);
+    const next = list[(i + dir + list.length) % list.length];
+    this._selectCharacter(next.id);
   }
 
   _buildCharCards() {
@@ -95,32 +118,26 @@ class Onboarding {
     if (!host) return;
     host.replaceChildren();
     for (const ch of CFG.CHARACTERS) {
-      const card = document.createElement("button");
-      card.type = "button";
-      card.className = "char-card";
-      card.dataset.character = ch.id;
-      card.setAttribute("role", "radio");
-      card.style.setProperty("--char-color", "#" + ch.color.toString(16).padStart(6, "0"));
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "hero-select-chip";
+      chip.dataset.character = ch.id;
+      chip.setAttribute("role", "radio");
+      chip.style.setProperty("--char-color", "#" + ch.color.toString(16).padStart(6, "0"));
       const swatch = document.createElement("span");
-      swatch.className = "char-card-swatch";
+      swatch.className = "hero-select-chip-swatch";
       const nameEl = document.createElement("span");
-      nameEl.className = "char-card-name";
+      nameEl.className = "hero-select-chip-name";
       nameEl.textContent = ch.name;
-      const blurbEl = document.createElement("span");
-      blurbEl.className = "char-card-blurb";
-      blurbEl.textContent = ch.blurb;
-      const check = document.createElement("span");
-      check.className = "char-card-check";
-      check.setAttribute("aria-hidden", "true");
-      check.textContent = "✓";
-      card.append(swatch, nameEl, blurbEl, check);
-      card.addEventListener("click", () => this._selectCharacter(ch.id));
-      host.appendChild(card);
+      chip.append(swatch, nameEl);
+      chip.addEventListener("click", () => this._selectCharacter(ch.id));
+      host.appendChild(chip);
     }
     this._highlightCharacter();
   }
 
   _selectCharacter(id) {
+    if (this.character === id) return;
     this.character = id;
     this._highlightCharacter();
     window.__vwbPreview?.select(id);
@@ -128,12 +145,33 @@ class Onboarding {
   }
 
   _highlightCharacter() {
-    if (!this.el.charCards) return;
-    for (const card of this.el.charCards.children) {
-      const on = card.dataset.character === this.character;
-      card.classList.toggle("is-active", on);
-      card.setAttribute("aria-checked", String(on));
+    if (this.el.charCards) {
+      for (const chip of this.el.charCards.children) {
+        const on = chip.dataset.character === this.character;
+        chip.classList.toggle("is-active", on);
+        chip.setAttribute("aria-checked", String(on));
+      }
     }
+    this._renderCharInfo();
+  }
+
+  _renderCharInfo() {
+    const ch = CFG.CHARACTERS.find((c) => c.id === this.character);
+    if (!ch) return;
+    const idx = CFG.CHARACTERS.findIndex((c) => c.id === this.character);
+    const apply = () => {
+      if (this.el.charName) this.el.charName.textContent = ch.name;
+      if (this.el.charBlurb) this.el.charBlurb.textContent = ch.blurb;
+      if (this.el.charIndex) this.el.charIndex.textContent = `${idx + 1} / ${CFG.CHARACTERS.length}`;
+      if (this.el.charStage) this.el.charStage.style.setProperty("--char-color", "#" + ch.color.toString(16).padStart(6, "0"));
+    };
+    const info = this.el.charStage?.querySelector(".hero-select-info");
+    if (!info || FX.reducedMotion) { apply(); return; }
+    info.classList.remove("is-swapping");
+    // Force reflow so re-adding the class restarts the crossfade animation.
+    void info.offsetWidth;
+    info.classList.add("is-swapping");
+    apply();
   }
 
   _buildHotkeySlots() {
@@ -233,6 +271,37 @@ class Onboarding {
     });
   }
 
+  // ---- character stage (reparents the live 3D preview canvas) ----
+
+  // Moves the shared #char-preview canvas (normally a child of #menu) into the
+  // onboarding hero-select stage while the character step is active, and back
+  // to its original spot otherwise — idempotent, so calling it every render is
+  // safe. Reusing the existing CharacterPreview/canvas avoids a second
+  // WebGLRenderer/GL context.
+  _syncCharStage(intoStage) {
+    const canvas = document.getElementById("char-preview");
+    const slot = this.el.charStage;
+    if (!canvas || !slot) return;
+    if (intoStage) {
+      if (!this._canvasHome) {
+        this._canvasHome = { parent: canvas.parentElement, next: canvas.nextSibling };
+      }
+      if (canvas.parentElement !== slot) {
+        slot.insertBefore(canvas, slot.firstChild);
+        canvas.classList.add("hero-select-canvas");
+        window.dispatchEvent(new Event("resize"));
+      }
+    } else if (this._canvasHome && canvas.parentElement !== this._canvasHome.parent) {
+      if (this._canvasHome.next && this._canvasHome.next.isConnected) {
+        this._canvasHome.parent.insertBefore(canvas, this._canvasHome.next);
+      } else {
+        this._canvasHome.parent.appendChild(canvas);
+      }
+      canvas.classList.remove("hero-select-canvas");
+      window.dispatchEvent(new Event("resize"));
+    }
+  }
+
   // ---- step machine ----
 
   open() {
@@ -260,6 +329,9 @@ class Onboarding {
   }
 
   _render() {
+    this.el.root.querySelector(".onboarding-panel")?.classList.toggle("onboarding-panel--stage", this.step === 1);
+    this._syncCharStage(this.step === 1);
+    if (this.step === 1) this._renderCharInfo();
     this.el.rail.forEach((li) => {
       const s = Number(li.dataset.step);
       li.classList.toggle("is-active", s === this.step);
@@ -279,13 +351,14 @@ class Onboarding {
     const focusTarget = this.step === 0
       ? this.el.nameInput
       : this.step === 1
-        ? this.el.charCards?.querySelector(".char-card.is-active") || this.el.charCards?.firstElementChild
+        ? this.el.charCards?.querySelector(".hero-select-chip.is-active") || this.el.charCards?.firstElementChild
         : this.el.next;
     focusTarget?.focus?.();
   }
 
   finish({ skipped }) {
     this._cancelCapture();
+    this._syncCharStage(false);
     const name = (this.el.nameInput?.value || "").trim().slice(0, 14);
     try {
       localStorage.setItem(NAME_KEY, name);
