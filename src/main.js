@@ -467,8 +467,8 @@ function syncLocalSpellSlots(snap) {
 
 // ---------- UI event wiring ----------
 
-// LAN host — pure PeerJS, no matchmaking.
-ui.on("hostLan", async (name, options) => {
+// Private host — pure PeerJS, no matchmaking.
+ui.on("hostPrivate", async (name, options) => {
   await cancelRegionQueue();
   _isOnline = false;
   _matchResultSubmitted = false;
@@ -569,7 +569,7 @@ ui.on("cancelQueue", async () => {
   ui.setMenuStatus("Matchmaking canceled.");
 });
 
-// LAN join by code — pure PeerJS, no matchmaking.
+// Private join by code — pure PeerJS, no matchmaking.
 ui.on("joinByCode", async (name, code, character) => {
   await cancelRegionQueue();
   _isOnline = false;

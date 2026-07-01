@@ -1,5 +1,5 @@
 // Authentication module. Wraps Supabase auth with graceful no-ops when
-// Supabase is not configured so guest + LAN play works with zero credentials.
+// Supabase is not configured so guest + private play works with zero credentials.
 import { isEnabled, getClient } from './supabase.js';
 
 let _user = null;
