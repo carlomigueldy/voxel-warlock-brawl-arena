@@ -2510,3 +2510,107 @@ kbd {
   .chat-line { animation: none !important; }
   .conduct-panel, .social-panel { animation: none !important; }
 }
+
+/* Onboarding */
+.btn-replay-intro { margin-top: 14px; width: 100%; }
+#onboarding { z-index: 150; }
+.onboarding-panel {
+  max-width: 640px;
+  display: flex; flex-direction: column; gap: 22px;
+  text-align: left;
+}
+.onboarding-header { display: flex; flex-direction: column; gap: 14px; align-items: center; text-align: center; }
+.onboarding-title {
+  font-family: var(--font-display);
+  font-size: clamp(15px, 3vw, 22px);
+  color: var(--text);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 18px rgba(108, 76, 255, 0.5), 0 3px 0 rgba(0,0,0,0.45);
+  margin: 4px 0 0;
+}
+
+/* Progress rail */
+.onboarding-rail { display: flex; align-items: center; gap: 6px; list-style: none; width: 100%; max-width: 420px; }
+.onboarding-rail-step {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  color: var(--muted); position: relative;
+}
+.onboarding-rail-step::before {
+  content: ""; position: absolute; top: 5px; left: -50%; width: 100%; height: 2px;
+  background: var(--line); z-index: 0;
+}
+.onboarding-rail-step:first-child::before { display: none; }
+.onboarding-rail-dot {
+  position: relative; z-index: 1;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--slot); border: 2px solid var(--line-strong);
+  transition: background 0.25s, border-color 0.25s, box-shadow 0.25s, transform 0.25s var(--ease-spring);
+}
+.onboarding-rail-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  transition: color 0.25s;
+}
+.onboarding-rail-step.is-done .onboarding-rail-dot { background: var(--rune); border-color: var(--rune); box-shadow: 0 0 10px rgba(124,255,90,0.6); }
+.onboarding-rail-step.is-done::before { background: var(--rune); }
+.onboarding-rail-step.is-active .onboarding-rail-dot { background: var(--arcane); border-color: var(--arcane); box-shadow: var(--glow-arcane); transform: scale(1.25); }
+.onboarding-rail-step.is-active .onboarding-rail-label,
+.onboarding-rail-step.is-done .onboarding-rail-label { color: var(--text); }
+
+/* Step panels */
+.onboarding-body { position: relative; min-height: 220px; }
+.onboarding-step { display: none; flex-direction: column; gap: 16px; animation: onbStepIn 0.36s var(--ease-spring) both; }
+.onboarding-step.is-active { display: flex; }
+@keyframes onbStepIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.onboarding-step-title { font-size: 19px; font-weight: 800; color: var(--text); }
+.onboarding-step-desc { color: var(--muted); font-size: 14px; line-height: 1.45; }
+
+/* Goal panel */
+.onboarding-goal-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.onboarding-goal-card {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px 14px; display: flex; flex-direction: column; gap: 6px;
+}
+.onboarding-goal-icon { font-size: 22px; }
+.onboarding-goal-card h4 { font-size: 13px; font-weight: 800; color: var(--text); }
+.onboarding-goal-card p { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+/* Hotkey capture chips */
+.onboarding-hotkeys { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.onboarding-hotkey-slot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px;
+}
+.onboarding-hotkey-name { font-size: 12px; font-weight: 700; color: var(--text); }
+.onboarding-hotkey-chip {
+  appearance: none; cursor: pointer; min-width: 40px; text-align: center;
+  font-family: var(--font-ui); font-weight: 800; font-size: 13px; letter-spacing: 0.5px;
+  color: var(--text); background: var(--slot); border: 1px solid var(--line-strong);
+  border-radius: 8px; padding: 6px 10px;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.onboarding-hotkey-chip:hover { border-color: var(--arcane); }
+.onboarding-hotkey-chip.is-capturing { background: rgba(108, 76, 255, 0.22); border-color: var(--arcane); box-shadow: var(--glow-arcane); animation: onbChipPulse 0.9s ease-in-out infinite; }
+@keyframes onbChipPulse { 0%, 100% { box-shadow: var(--glow-arcane); } 50% { box-shadow: 0 0 4px rgba(108,76,255,0.3); } }
+.onboarding-hotkeys-reset { align-self: flex-start; }
+.onboarding-hotkeys-feedback { min-height: 16px; font-size: 12px; color: var(--gold); }
+
+/* Footer */
+.onboarding-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.onboarding-footer-nav { display: flex; gap: 10px; }
+.onboarding-skip { opacity: 0.7; }
+.onboarding-skip:hover { opacity: 1; }
+
+@media (max-width: 620px) {
+  .onboarding-goal-cards { grid-template-columns: 1fr; }
+  .onboarding-hotkeys { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  .onboarding-footer { flex-direction: column-reverse; align-items: stretch; }
+  .onboarding-footer-nav { justify-content: stretch; }
+  .onboarding-footer-nav .btn { flex: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-step { animation: none; }
+  .onboarding-rail-dot { transition: none; }
+  .onboarding-hotkey-chip.is-capturing { animation: none; }
+}

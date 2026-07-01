@@ -139,6 +139,84 @@
     </div>
   </div>
 
+  <!-- ===== First-run Onboarding — 4-step guided intro ===== -->
+  <div id="onboarding" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+    <div class="ember-field" aria-hidden="true"></div>
+    <div class="panel onboarding-panel">
+      <header class="onboarding-header">
+        <span class="eyebrow">Welcome, Warlock</span>
+        <h2 id="onboarding-title" class="onboarding-title">Prepare for the Arena</h2>
+        <ol class="onboarding-rail" role="list">
+          <li class="onboarding-rail-step" data-step="0"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Name</span></li>
+          <li class="onboarding-rail-step" data-step="1"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Character</span></li>
+          <li class="onboarding-rail-step" data-step="2"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Goal</span></li>
+          <li class="onboarding-rail-step" data-step="3"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Hotkeys</span></li>
+        </ol>
+      </header>
+
+      <div class="onboarding-body">
+        <section class="onboarding-step" data-step="0" aria-hidden="true">
+          <h3 class="onboarding-step-title">Name your warlock</h3>
+          <p class="onboarding-step-desc">This is how the arena will know you.</p>
+          <div class="field name-field">
+            <label class="field-label" for="onboarding-name-input">Warlock name</label>
+            <div class="rune-field">
+              <input id="onboarding-name-input" maxlength="14" placeholder="Name your warlock" autocomplete="off" spellcheck="false" />
+              <span class="rune-field-line"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="onboarding-step" data-step="1" aria-hidden="true">
+          <h3 class="onboarding-step-title">Choose your warlock</h3>
+          <p class="onboarding-step-desc">Pick the look you'll bring into the arena — every warlock casts the same spellbook.</p>
+          <div id="onboarding-char-cards" class="char-cards" role="radiogroup" aria-label="Choose your warlock"></div>
+        </section>
+
+        <section class="onboarding-step" data-step="2" aria-hidden="true">
+          <h3 class="onboarding-step-title">Know the arena</h3>
+          <p class="onboarding-step-desc">Last warlock standing wins the round. First to 5 round wins takes the match.</p>
+          <div class="onboarding-goal-cards">
+            <div class="onboarding-goal-card">
+              <span class="onboarding-goal-icon" aria-hidden="true">🛡</span>
+              <h4>Survive</h4>
+              <p>There are no health bars — every hit adds charge, not damage.</p>
+            </div>
+            <div class="onboarding-goal-card">
+              <span class="onboarding-goal-icon" aria-hidden="true">💥</span>
+              <h4>Knock rivals off</h4>
+              <p>Charge builds knockback — launch foes off the shrinking arena.</p>
+            </div>
+            <div class="onboarding-goal-card">
+              <span class="onboarding-goal-icon" aria-hidden="true">🔮</span>
+              <h4>Use your spells</h4>
+              <p>Six equipped spells, one always Fireball — cast wisely.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="onboarding-step" data-step="3" aria-hidden="true">
+          <h3 class="onboarding-step-title">Set your hotkeys</h3>
+          <p class="onboarding-step-desc">Click a slot, then press a key to bind it.</p>
+          <div id="onboarding-hotkeys" class="onboarding-hotkeys"></div>
+          <button type="button" id="onboarding-hotkeys-reset" class="btn btn-ghost onboarding-hotkeys-reset">Reset to defaults</button>
+          <p id="onboarding-hotkeys-feedback" class="onboarding-hotkeys-feedback" aria-live="polite"></p>
+        </section>
+      </div>
+
+      <footer class="onboarding-footer">
+        <button type="button" id="onboarding-skip" class="btn btn-ghost onboarding-skip">Skip</button>
+        <div class="onboarding-footer-nav">
+          <button type="button" id="onboarding-back" class="btn btn-ghost" disabled>Back</button>
+          <button type="button" id="onboarding-next" class="btn btn-forge">
+            <span class="btn-label">Next</span>
+            <span class="btn-spark" aria-hidden="true"></span>
+          </button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
   <!-- ===== Main Menu — Cinematic layout ===== -->
   <div id="menu" class="overlay menu-cinematic">
 
@@ -321,6 +399,8 @@
 
         <!-- Auth form — sign in / sign up / guest tabs -->
         <div id="auth-form" class="auth-form" aria-live="polite"></div>
+
+        <button type="button" id="btn-replay-intro" class="btn btn-ghost btn-replay-intro">Replay Intro</button>
       </div>
 
       <!-- TUTORIAL sub-screen -->
@@ -414,7 +494,7 @@
                 <div class="tut-keys"><span class="tut-key-chip">Joystick</span> <span class="tut-key-or">+</span> <span class="tut-key-chip tut-key-fire">FIRE</span></div>
               </div>
             </div>
-            <p class="tut-hint">Spell hotkeys 1–6 are rebindable — click the ↻ icon on any ability slot during a match.</p>
+            <p class="tut-hint">Spell hotkeys <kbd>Q</kbd> <kbd>E</kbd> <kbd>R</kbd> <kbd>Z</kbd> <kbd>X</kbd> <kbd>V</kbd> are rebindable — click the ↻ icon on any ability slot during a match.</p>
           </div>
 
           <!-- SPELLBOOK panel — JS populates #tut-spellbook-list -->
@@ -714,6 +794,7 @@
   <script type="module" src="./src/screens.js"></script>
   <script type="module" src="./src/draft-juice.js"></script>
   <script type="module" src="./src/nav-feel.js"></script>
+  <script type="module" src="./src/onboarding.js"></script>
   <script type="module" src="./src/gamepad.js"></script>
   <script type="module" src="./src/credits.js"></script>
 </body>
