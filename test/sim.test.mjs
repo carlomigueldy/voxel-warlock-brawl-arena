@@ -475,23 +475,40 @@ test("every bot tier casts handbook abilities (no dead range checks)", () => {
   }
 });
 
-test("bot difficulty tiers fire at distinct cadences (expert > brilliant > smart)", () => {
+test("bot difficulty tiers cast at distinct cadences (expert > brilliant > smart)", () => {
+  // Bots no longer run a separate hardcoded fireball timer — fireball is just
+  // another weighted candidate inside selectAbility(), competing alongside the
+  // rest of the bot's varied equipped kit (see abilityWeights in bot.js). This
+  // test counts every ability-cast event regardless of which spell it is, but
+  // it only asserts the abilityEvery cadence ordering (expert > brilliant >
+  // smart) — it does NOT assert kit variety. See the "casts a variety of
+  // equipped spells" test below for that.
+  //
+  // Event types emitted by castSpell() (see src/spells.js) for the caster: most
+  // carry an `id` field, but swap/drain/link key the caster as `a` instead.
+  const ABILITY_EVENT_TYPES = new Set([
+    "cast", "lightning", "meteorCast", "teleport", "thrust",
+    "swap", "drain", "gravity", "link", "shield",
+  ]);
+  const isBotCast = (ev, botId) =>
+    ABILITY_EVENT_TYPES.has(ev.type) && (ev.id === botId || ev.a === botId);
+
   // Pin both bots at a fixed close distance before every tick so knockback
-  // cannot push them outside their fireRange — this isolates the fireEvery
+  // cannot push them outside spell range — this isolates the abilityEvery
   // cadence constant (the actual invariant) from positioning noise caused by
   // balance tuning (KB values, friction, spell ranges, etc.).
-  function countShots(skill, seconds) {
+  function countCasts(skill, seconds) {
     const sim = new Simulation({ seed: 42 });
     sim.setBotRoster(2, skill);
     assert.strictEqual(sim.startMatch(), true);
     advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
     const bots = sim.botPlayers();
     const bot = bots[0];
-    let shots = 0;
+    let casts = 0;
     const dt = 1 / CFG.TICK_RATE;
     for (let t = 0; t < seconds; t += dt) {
       // Reset positions, velocities, HP, and status so bots can't die or fall back.
-      // This isolates fire-cadence from survival mechanics (damage rebalance, burn DoT).
+      // This isolates cast-cadence from survival mechanics (damage rebalance, burn DoT).
       for (const p of sim.players.values()) {
         p.vx = 0; p.vz = 0; p.alive = true; p.falling = false; p._hazardTime = 0;
         p.hp = p.maxHp; // prevent accumulated damage from ending the round early
@@ -501,23 +518,63 @@ test("bot difficulty tiers fire at distinct cadences (expert > brilliant > smart
         p.charge = 0;
       }
       if (bots[0]) { bots[0].x = 0; bots[0].z = 0; }
-      if (bots[1]) { bots[1].x = 8; bots[1].z = 0; } // 8u: inside every tier's fireRange
+      if (bots[1]) { bots[1].x = 8; bots[1].z = 0; } // 8u: inside every tier's ability reach
       sim.step(dt);
       if (sim.phase !== PHASE.PLAYING) break;
-      // Count fireball cast events emitted by this bot this tick.
-      shots += sim.events.filter((ev) => ev.type === "cast" && ev.spell === "fireball" && ev.id === bot.id).length;
+      // Count every ability-cast event this bot emits this tick, across its
+      // full varied kit rather than a single hardcoded spell.
+      casts += sim.events.filter((ev) => isBotCast(ev, bot.id)).length;
     }
-    return shots;
+    return casts;
   }
-  // Sample over a long window: bot firing is gated by a per-tick random
-  // reaction roll, so a short window has enough variance to occasionally invert
-  // adjacent tiers.  ~12 s of ticks lets the deterministic fireEvery cadence
-  // dominate the noise so the ordering is stable.
-  const smart = countShots("smart", 12);
-  const brilliant = countShots("brilliant", 12);
-  const expert = countShots("expert", 12);
-  assert.ok(expert > brilliant, `expert(${expert}) should out-shoot brilliant(${brilliant})`);
-  assert.ok(brilliant > smart, `brilliant(${brilliant}) should out-shoot smart(${smart})`);
+  // Sample over a long window: ability selection is gated purely by the
+  // deterministic per-tier abilityEvery timer (no randomness involved), but a
+  // short window still leaves enough rounding/edge noise near tier boundaries
+  // to occasionally invert adjacent tiers.  ~12 s of ticks lets the
+  // abilityEvery cadence dominate that noise so the ordering is stable.
+  const smart = countCasts("smart", 12);
+  const brilliant = countCasts("brilliant", 12);
+  const expert = countCasts("expert", 12);
+  assert.ok(expert > brilliant, `expert(${expert}) should out-cast brilliant(${brilliant})`);
+  assert.ok(brilliant > smart, `brilliant(${brilliant}) should out-cast smart(${smart})`);
+});
+
+test("smart-tier bot casts a variety of equipped spells, not fireball alone", () => {
+  // Regression guard: fireball's general-zoning score must not dominate every
+  // other equipped candidate for every tier (it did for "smart" pre-fix,
+  // since fireball's short cooldown meant it was always off-cooldown and
+  // always won the score comparison — see bot-review F1). Assert the smart
+  // tier's own kit (homing/bouncer/boomerang/fireSpray) shows up at least
+  // once over a long window, not just fireball/thrust/shield.
+  const sim = new Simulation({ seed: 42 });
+  sim.setBotRoster(2, "smart");
+  assert.strictEqual(sim.startMatch(), true);
+  advance(sim, CFG.ROUND.COUNTDOWN + 0.05);
+  const bots = sim.botPlayers();
+  const bot = bots[0];
+  const seenSpells = new Set();
+  const dt = 1 / CFG.TICK_RATE;
+  for (let t = 0; t < 12; t += dt) {
+    for (const p of sim.players.values()) {
+      p.vx = 0; p.vz = 0; p.alive = true; p.falling = false; p._hazardTime = 0;
+      p.hp = p.maxHp;
+      p.status.burn = 0; p.status.burnDps = 0; p.status.burnBy = null; p.status.burnTickAcc = 0;
+      p.status.slow = 0; p.status.slowMul = 1;
+      p.status.curse = 0; p.status.curseMul = 1;
+      p.charge = 0;
+    }
+    if (bots[0]) { bots[0].x = 0; bots[0].z = 0; }
+    if (bots[1]) { bots[1].x = 8; bots[1].z = 0; }
+    sim.step(dt);
+    if (sim.phase !== PHASE.PLAYING) break;
+    for (const ev of sim.events) {
+      if (ev.type === "cast" && ev.id === bot.id) seenSpells.add(ev.spell);
+    }
+  }
+  assert.ok(
+    seenSpells.size > 1 || (seenSpells.size === 1 && !seenSpells.has("fireball")),
+    `smart tier should cast more than just fireball over 12s, saw: ${[...seenSpells]}`
+  );
 });
 
 // ── New behaviour tests (bot.js archetypes) ─────────────────────────────────
