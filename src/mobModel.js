@@ -14,6 +14,7 @@ const url = (p) => new URL(p, import.meta.url).href;
 export const MOB_MODEL_ASSETS = {
   stoneGiant: {
     base:   url("../assets/mobs/stone-giant-rigged.glb"),
+    idle:   url("../assets/mobs/stone-giant-idle.glb"),
     walk:   url("../assets/mobs/stone-giant-walking.glb"),
     run:    url("../assets/mobs/stone-giant-running.glb"),
     attack: url("../assets/mobs/stone-giant-attack.glb"),
@@ -21,6 +22,7 @@ export const MOB_MODEL_ASSETS = {
   },
   stormingVortex: {
     base:   url("../assets/mobs/storming-vortex-rigged.glb"),
+    idle:   url("../assets/mobs/storming-vortex-idle.glb"),
     walk:   url("../assets/mobs/storming-vortex-walking.glb"),
     run:    url("../assets/mobs/storming-vortex-running.glb"),
     attack: url("../assets/mobs/storming-vortex-attack.glb"),
@@ -28,6 +30,7 @@ export const MOB_MODEL_ASSETS = {
   },
   giantDwarf: {
     base:   url("../assets/mobs/giant-dwarf-rigged.glb"),
+    idle:   url("../assets/mobs/giant-dwarf-idle.glb"),
     walk:   url("../assets/mobs/giant-dwarf-walking.glb"),
     run:    url("../assets/mobs/giant-dwarf-running.glb"),
     attack: url("../assets/mobs/giant-dwarf-attack.glb"),
@@ -35,6 +38,7 @@ export const MOB_MODEL_ASSETS = {
   },
   fireElemental: {
     base:   url("../assets/mobs/fire-elemental-rigged.glb"),
+    idle:   url("../assets/mobs/fire-elemental-idle.glb"),
     walk:   url("../assets/mobs/fire-elemental-walking.glb"),
     run:    url("../assets/mobs/fire-elemental-running.glb"),
     attack: url("../assets/mobs/fire-elemental-attack.glb"),
@@ -60,9 +64,12 @@ export function loadMobModelTemplate(type) {
   const loader = new GLTFLoader();
   const load = (u) => new Promise((res, rej) => loader.load(u, res, undefined, rej));
 
-  const promise = Promise.all([load(assets.base), load(assets.walk), load(assets.run), load(assets.attack)])
-    .then(([base, walk, run, attack]) => {
-      const idleClip = findClip(base, "clip0") || (base.animations || [])[0] || null;
+  const promise = Promise.all([load(assets.base), load(assets.idle), load(assets.walk), load(assets.run), load(assets.attack)])
+    .then(([base, idle, walk, run, attack]) => {
+      // Meshy's auto-rig only ships walk/run; the base "rigged" GLB's clip0 is a
+      // 0.3s static bind pose (a visible T-pose). Use the dedicated bespoke idle
+      // clip (combat stance / breathing) generated via meshy_animate instead.
+      const idleClip = (idle.animations || [])[0] || findClip(base, "clip0") || (base.animations || [])[0] || null;
       const walkClip = findClip(walk, "walk");
       const runClip = findClip(run, "run");
       const attackClip = (attack.animations || [])[0] || null;

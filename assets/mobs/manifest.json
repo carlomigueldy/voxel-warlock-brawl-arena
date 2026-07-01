@@ -7,15 +7,17 @@
     "image_to_3d (meshy-6, t-pose)",
     "remesh (25000 tris, triangle)",
     "rig (auto, includes walking + running)",
+    "animate (bespoke idle stance clip)",
     "animate (bespoke attack clip)"
   ],
-  "note": "Game loads 4 GLBs per big mob: <slug>-rigged.glb (idle), -walking.glb, -running.glb, -attack.glb. Only stoneGiant/stormingVortex/giantDwarf/fireElemental use GLB bodies; minion stays procedural per docs/superpowers/specs/2026-07-01-low-poly-asset-enhancements-design.md. Avoid chibi/oversized-head proportions (breaks Meshy auto-rig, as seen with the Orc Shaman character).",
+  "note": "Game loads 5 GLBs per big mob: <slug>-rigged.glb (base skin), -idle.glb (bespoke idle; the rig's own clip0 is a static T-pose so a real idle was generated), -walking.glb, -running.glb, -attack.glb. Only stoneGiant/stormingVortex/giantDwarf/fireElemental use GLB bodies; minion stays procedural per docs/superpowers/specs/2026-07-01-low-poly-asset-enhancements-design.md. Avoid chibi/oversized-head proportions (breaks Meshy auto-rig, as seen with the Orc Shaman character).",
   "mobs": [
     {
       "id": "stoneGiant",
       "displayName": "Stone Giant",
       "slug": "stone-giant",
       "prompt": "imposing monstrous voxel low-poly stone giant, normal-to-oversized heroic proportions, cracked granite hide with embedded crystal veins, massive boulder shoulders, jagged rocky knuckles, moss patches, T-pose, threatening",
+      "idleAnimation": { "actionId": 89, "name": "Combat_Stance" },
       "attackAnimation": { "actionId": 127, "name": "Charged_Ground_Slam" },
       "heightMeters": 3.4,
       "tasks": {
@@ -23,10 +25,12 @@
         "imageTo3d": "019f1e33-49e8-73f8-a282-ff715857b9d1",
         "remesh": "019f1e36-a777-7bc6-a075-0e660fb129b1",
         "rig": "019f1e38-9304-7419-9fd9-3ac59bd1f2dd",
+        "animateIdle": "019f1fb5-d1d4-76c7-8349-9ac35a52975c",
         "animate": "019f1e3c-6277-7d45-88f8-7cf0696e5293"
       },
       "files": [
         "stone-giant-rigged.glb",
+        "stone-giant-idle.glb",
         "stone-giant-walking.glb",
         "stone-giant-running.glb",
         "stone-giant-attack.glb"
@@ -37,6 +41,7 @@
       "displayName": "Storming Vortex",
       "slug": "storming-vortex",
       "prompt": "imposing monstrous voxel low-poly storm elemental, humanoid silhouette wreathed in crackling cyan lightning shards, swirling cloud-wisp lower body, glowing electric-blue core, spiked crystalline crown, T-pose, threatening",
+      "idleAnimation": { "actionId": 338, "name": "Short_Breathe_and_Look_Around" },
       "attackAnimation": { "actionId": 130, "name": "mage_soell_cast_1" },
       "heightMeters": 2.6,
       "tasks": {
@@ -44,10 +49,12 @@
         "imageTo3d": "019f1e33-55be-7327-bd15-21a8b064a3aa",
         "remesh": "019f1e36-b1cf-73c0-a068-0b46679bcd82",
         "rig": "019f1e38-bc7f-7537-a63d-ed00e54cf182",
+        "animateIdle": "019f1fb5-e4e4-7db6-84b9-8ff38bd332a1",
         "animate": "019f1e3c-7026-75e4-a322-7fc90faf6189"
       },
       "files": [
         "storming-vortex-rigged.glb",
+        "storming-vortex-idle.glb",
         "storming-vortex-walking.glb",
         "storming-vortex-running.glb",
         "storming-vortex-attack.glb"
@@ -58,6 +65,7 @@
       "displayName": "Giant Dwarf",
       "slug": "giant-dwarf",
       "prompt": "imposing monstrous voxel low-poly giant dwarf berserker, oversized muscular heroic proportions, bronze/copper skin tone, braided iron beard, spiked war-gauntlets, cracked-earth seismic runes on forearms, T-pose, threatening",
+      "idleAnimation": { "actionId": 89, "name": "Combat_Stance" },
       "attackAnimation": { "actionId": 128, "name": "Heavy_Hammer_Swing" },
       "heightMeters": 2.4,
       "tasks": {
@@ -65,10 +73,12 @@
         "imageTo3d": "019f1e33-634a-7329-a821-b746c2cbc91c",
         "remesh": "019f1e36-bec1-73c2-b28e-13d8b5afe2a9",
         "rig": "019f1e39-15e9-7543-86d1-9b5e02188ebd",
+        "animateIdle": "019f1fb5-db34-7758-972c-a603f93fd91b",
         "animate": "019f1e3c-7c22-7d48-8fa0-e0d4edb9a664"
       },
       "files": [
         "giant-dwarf-rigged.glb",
+        "giant-dwarf-idle.glb",
         "giant-dwarf-walking.glb",
         "giant-dwarf-running.glb",
         "giant-dwarf-attack.glb"
@@ -79,6 +89,7 @@
       "displayName": "Fire Elemental",
       "slug": "fire-elemental",
       "prompt": "imposing monstrous voxel low-poly fire elemental, magma-cracked obsidian body with glowing molten-orange fissures, flame crown, ember motes, humanoid T-pose, threatening",
+      "idleAnimation": { "actionId": 338, "name": "Short_Breathe_and_Look_Around" },
       "attackAnimation": { "actionId": 125, "name": "Charged_Spell_Cast" },
       "heightMeters": 2.5,
       "tasks": {
@@ -86,10 +97,12 @@
         "imageTo3d": "019f1e33-741d-7152-8a09-e39243a408cd",
         "remesh": "019f1e36-cca7-7bd5-9447-7452aa76c281",
         "rig": "019f1e39-3583-7430-8500-c5e02d3f1ecc",
+        "animateIdle": "019f1fb6-01f0-76d0-9967-cb528c77da15",
         "animate": "019f1e3c-a393-75ee-a979-924a05b2892c"
       },
       "files": [
         "fire-elemental-rigged.glb",
+        "fire-elemental-idle.glb",
         "fire-elemental-walking.glb",
         "fire-elemental-running.glb",
         "fire-elemental-attack.glb"
