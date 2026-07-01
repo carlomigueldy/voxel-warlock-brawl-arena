@@ -138,7 +138,7 @@ export const CFG = {
   RUNE_SPAWN_RADIUS: 13,      // also used by mob spawn position logic
   SPELL_SLOT_COUNT: 6,
   SPELL_SELECTION_TIME: 30,   // seconds for the pre-match spell draft (Step 6)
-  DEFAULT_SPELL_SLOT_HOTKEYS: ["1", "2", "3", "4", "5", "6"],
+  DEFAULT_SPELL_SLOT_HOTKEYS: ["Q", "E", "R", "Z", "X", "V"],
   // Pre-draft default loadout (Step 5). Step 6's draft replaces this as the
   // source of each player's six spells. fireball stays slot 0 (permanent weapon).
   DEFAULT_SPELL_LOADOUT: ["fireball", "lightning", "teleport", "shield", "drain", "heal"],

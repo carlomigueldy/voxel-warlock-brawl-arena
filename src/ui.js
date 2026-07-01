@@ -63,6 +63,7 @@ export class UI {
       identityBadge: $("identity-badge"),
       authForm: $("auth-form"),
       accountNotice: $("account-disabled-notice"),
+      btnReplayIntro: $("btn-replay-intro"),
       // Tutorial
       tutSpellbookList: $("tut-spellbook-list"),
       btnPractice: $("btn-practice"),
@@ -740,6 +741,10 @@ export class UI {
     this.preview = preview;
     if (preview) preview.select(this.selectedCharacter);
     this._highlightCharacter(this.selectedCharacter);
+    // Exposed so the self-contained onboarding module (src/onboarding.js) can
+    // drive the same live 3D preview without ui.js/onboarding.js importing
+    // each other, matching this app's self-wiring module pattern.
+    window.__vwbPreview = preview;
   }
 
   getCharacter() { return this.selectedCharacter; }
@@ -1240,6 +1245,11 @@ export class UI {
   }
 
   _bind() {
+    // Replay the first-run onboarding overlay (self-contained src/onboarding.js).
+    if (this.el.btnReplayIntro) {
+      this.el.btnReplayIntro.onclick = () => window.Onboarding?.open();
+    }
+
     // Private Host — fires hostPrivate event.
     if (this.el.btnHost) {
       this.el.btnHost.onclick = () => {
