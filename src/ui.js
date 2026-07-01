@@ -1,7 +1,9 @@
 // All DOM/UI wiring: menus, lobby, HUD, room code, invite link, QR code.
 // QRCode is loaded globally from a <script> tag (window.QRCode).
 import { CFG, SPELLS, SPELL_ORDER, SPELL_TEMPLATES, ITEMS, getArenaHazard } from "./config.js";
-import { spellIconSvg } from "./spell-icons.js";
+import { spellIconSvg, itemIconSvg } from "./spell-icons.js";
+import * as social from "./social.js";
+import { isValidPttKey } from "./input.js";
 
 const $ = (id) => document.getElementById(id);
 const escapeHTML = (value) => String(value).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -33,6 +35,7 @@ export class UI {
       centerMsg: $("center-msg"), touch: $("touch-controls"),
       abilityBar: $("ability-bar"),
       itemBar: $("item-bar"),
+      itemToast: $("item-toast"),
       castWrap: $("cast-wrap"), castBar: $("cast-bar"), castLabel: $("cast-label"),
       statusIcons: $("status-icons"),
       btnSfx: $("btn-sfx"), btnMusic: $("btn-music"),
@@ -62,6 +65,12 @@ export class UI {
       // Tutorial
       tutSpellbookList: $("tut-spellbook-list"),
       btnPractice: $("btn-practice"),
+      // Practice-mode dummy spawn panel.
+      practicePanel: $("practice-panel"),
+      practiceClearDummies: $("practice-clear-dummies"),
+      practiceDummyList: $("practice-dummy-list"),
+      practiceChangeLoadout: $("practice-change-loadout"),
+      practiceNoCd: $("practice-no-cd"),
       // ESC pause menu
       pauseMenu: $("pause-menu"), pauseResume: $("pause-resume"),
       pauseSfx: $("pause-sfx"), pauseMusic: $("pause-music"),
@@ -76,6 +85,16 @@ export class UI {
       draftSlots: $("draft-slots"),
       draftGrid: $("draft-grid"),
       draftReady: $("draft-ready"),
+      // Social: chat log/input, PTT indicator, conduct disclaimer, settings panel.
+      chatPanel: $("chat-panel"), chatLog: $("chat-log"),
+      chatInputWrap: $("chat-input-wrap"), chatInput: $("chat-input"),
+      chatToggleBtn: $("chat-toggle-btn"),
+      pttIndicator: $("ptt-indicator"),
+      pauseSocial: $("pause-social"),
+      conductModal: $("conduct-modal"), conductEnter: $("conduct-enter"),
+      socialSettings: $("social-settings"),
+      socialSettingsBody: $("social-settings-body"),
+      socialClose: $("social-close"),
     };
     this.handlers = {};
     this.audio = null;
@@ -94,6 +113,16 @@ export class UI {
     this._onlineQueueStatus = "";
     this._lbMetric = "wins";
     this._lbScope = "global";
+    // ---- Social state ----
+    this._chatOpen = false;         // chat input box visibility
+    this._rosterKey = null;         // membership signature (sorted ids) driving row rebuild
+    this._rosterRows = new Map();   // id -> {row, kd, score, muteBtn}
+    this._rosterIds = [];
+    this._chatTypingTimer = null;
+    this._conductPreviousFocus = null;
+    this._conductKeyBound = false;
+    this._socialPreviousFocus = null;
+    this._socialKeyBound = false;
     this._populateArenaControls();
     this._buildCustomControls();
     this._buildCharacterCards();
@@ -102,6 +131,7 @@ export class UI {
     this._bindNavSpine();
     this._bindTutorialTabs();
     this._buildTutorialSpellbook();
+    this._bindChat();
     this._prefillFromUrl();
     this._maybeShowTouch();
   }
@@ -817,13 +847,43 @@ export class UI {
 
   _buildItemSlot(index) {
     if (!this.itemSlotHotkeys) this.itemSlotHotkeys = CFG.DEFAULT_ITEM_SLOT_HOTKEYS.slice();
-    const key = this.itemSlotHotkeys[index] || CFG.DEFAULT_ITEM_SLOT_HOTKEYS[index];
-    // Passive slots show no hotkey in the label; active slots show the bound key.
-    const slot = this._slotShell(`Item slot ${index + 1}`, null, "Empty", 0x444444);
+    const hotkey = this.itemSlotHotkeys[index] || CFG.DEFAULT_ITEM_SLOT_HOTKEYS[index];
+    // Key label starts blank — updateItemBar fills it in per-frame based on
+    // whether the slot holds an active (castable) item, a passive item, or
+    // nothing, so players are never shown a key that does nothing.
+    const slot = this._slotShell(`Item slot ${index + 1}`, "", "Empty", 0x444444);
     slot.el.dataset.itemSlot = String(index);
+    slot.el.dataset.itemKey = "";
     slot.el.classList.add("empty");
+    // Rebind picker — mirrors _buildSpellSlot's hotkey remap button.
+    const picker = document.createElement("button");
+    picker.className = "hotkey-picker";
+    picker.type = "button";
+    picker.textContent = "↻";
+    picker.setAttribute("aria-label", `Rebind item slot ${index + 1} hotkey`);
+    picker.onclick = (e) => {
+      e.stopPropagation();
+      picker.textContent = "…";
+      const set = (ev) => {
+        ev.preventDefault();
+        const newKey = this._eventKey(ev);
+        if (newKey) {
+          this.handlers.itemSlotHotkey?.(index, newKey);
+          this.itemSlotHotkeys[index] = newKey;
+          const elSet = this._itemEls[index];
+          elSet.hotkey = newKey;
+          // Only active slots display the key badge — refresh it immediately.
+          const curKey = elSet.slot.dataset.itemKey;
+          if (curKey && ITEMS[curKey]?.kind === "active") elSet.keyEl.textContent = newKey;
+        }
+        picker.textContent = "↻";
+      };
+      addEventListener("keydown", set, { once: true });
+    };
+    slot.el.appendChild(picker);
+    this._attachTooltip(slot.el);
     this.el.itemBar.appendChild(slot.el);
-    this._itemEls[index] = { slot: slot.el, cd: slot.cd, nm: slot.nm, swatch: slot.swatch, key };
+    this._itemEls[index] = { slot: slot.el, cd: slot.cd, nm: slot.nm, swatch: slot.swatch, keyEl: slot.key, hotkey };
   }
 
   updateItemBar(snapshot, localId) {
@@ -831,20 +891,43 @@ export class UI {
     this._buildItemBar(false);
     if (!this._itemEls) return;
     const me = snapshot.players.find((p) => p.id === localId);
-    const equippedKeys = me?.items || [];
+    const equippedKeys = (me?.items || []).slice(0, CFG.ITEM_SLOT_COUNT);
     const cds = me?.cds || {};
+
+    // Pickup toast — diff each slot against the previous snapshot's key.
+    // Skip the very first snapshot (no baseline to diff against) and skip
+    // bulk resyncs (e.g. reconnecting mid-match re-delivers an already-owned
+    // loadout across several slots at once) — a genuine live pickup only
+    // ever fills one previously-empty slot at a time.
+    const prevKeys = this._prevItemKeys;
+    if (prevKeys) {
+      const wasFullyEmpty = prevKeys.every((k) => !k);
+      const newlyEquipped = [];
+      for (let i = 0; i < CFG.ITEM_SLOT_COUNT; i++) {
+        const newKey = equippedKeys[i] || null;
+        if (newKey && newKey !== (prevKeys[i] || null)) newlyEquipped.push({ index: i, key: newKey });
+      }
+      if (newlyEquipped.length && !(wasFullyEmpty && newlyEquipped.length > 1)) {
+        for (const { index, key } of newlyEquipped) this._showItemToast(key, index);
+      }
+    }
+    this._prevItemKeys = equippedKeys;
+
     for (let i = 0; i < CFG.ITEM_SLOT_COUNT; i++) {
       const elSet = this._itemEls[i];
       if (!elSet) continue;
-      const { slot, cd, nm, swatch } = elSet;
+      const { slot, cd, nm, swatch, keyEl } = elSet;
       const key = equippedKeys[i];
       const it = key ? ITEMS[key] : null;
       const empty = !it;
+      const isActive = !empty && it.kind === "active";
       slot.dataset.itemKey = empty ? "" : key;
       nm.textContent = empty ? "Empty" : it.name;
-      swatch.style.background = "#" + ((empty ? 0x444444 : it.color).toString(16).padStart(6, "0"));
+      swatch.innerHTML = itemIconSvg(empty ? "" : it.shape);
+      swatch.style.color = "#" + ((empty ? 0x444444 : it.color).toString(16).padStart(6, "0"));
+      swatch.style.background = "transparent";
       // Active items show cooldown overlay using the granted spell's cooldown.
-      if (!empty && it.kind === "active" && it.grantsSpell) {
+      if (isActive && it.grantsSpell) {
         const remain = cds[it.grantsSpell] || 0;
         const total = SPELLS[it.grantsSpell]?.cd || 1;
         cd.style.height = Math.max(0, Math.min(100, (remain / total) * 100)) + "%";
@@ -852,8 +935,44 @@ export class UI {
         cd.style.height = "0%";
       }
       slot.classList.toggle("empty", empty);
-      slot.classList.toggle("ready", !empty && (it.kind !== "active" || (cds[it.grantsSpell] || 0) <= 0));
+      // Only active (castable) items get the "ready" glow — it signals
+      // off-cooldown/castable, which is meaningless for passive stat items.
+      slot.classList.toggle("ready", !empty && isActive && (cds[it.grantsSpell] || 0) <= 0);
+      slot.classList.toggle("item-active", isActive);
+      slot.classList.toggle("item-passive", !empty && !isActive);
+      // Hotkey label: only active (castable) slots show the bound key. Passive
+      // slots get a muted "PSV" marker so players aren't misled into pressing
+      // a key that does nothing; empty slots show nothing.
+      keyEl.textContent = empty ? "" : (isActive ? (elSet.hotkey || "") : "PSV");
+      keyEl.classList.toggle("ability-key-muted", !empty && !isActive);
     }
+  }
+
+  /** Find the item-slot index currently holding `key` (items don't stack, so at most one). */
+  _itemSlotIndexForKey(key) {
+    if (!this._itemEls) return -1;
+    for (const idx of Object.keys(this._itemEls)) {
+      if (this._itemEls[idx].slot.dataset.itemKey === key) return Number(idx);
+    }
+    return -1;
+  }
+
+  /** Transient auto-dismissing pickup toast (~3s). Reduced motion is handled by the global media query. */
+  _showItemToast(key, index) {
+    const el = this.el.itemToast;
+    const it = ITEMS[key];
+    if (!el || !it) return;
+    const isActive = it.kind === "active";
+    const hotkey = this._itemEls?.[index]?.hotkey || CFG.DEFAULT_ITEM_SLOT_HOTKEYS[index] || "?";
+    el.textContent = isActive
+      ? `${it.name} — press ${hotkey} to cast`
+      : `${it.name} — ${it.desc || ""}`;
+    if (this._itemToastTimer != null) clearTimeout(this._itemToastTimer);
+    el.classList.remove("hidden");
+    this._itemToastTimer = setTimeout(() => {
+      el.classList.add("hidden");
+      this._itemToastTimer = null;
+    }, 3000);
   }
 
   // Build the ability bar once, then refresh cooldown overlays each frame.
@@ -978,6 +1097,50 @@ export class UI {
     return frag;
   }
 
+  /** Mirrors _buildTooltipContent for item slots: name + PASSIVE/ACTIVE tag, desc, and (active items) cast/cooldown/key. */
+  _buildItemTooltipContent(key) {
+    const it = ITEMS[key];
+    if (!it) return null;
+    const color = "#" + ((it.color || 0x8888ff) >>> 0).toString(16).padStart(6, "0").slice(-6);
+    const rarity = String(it.rarity || "").replace(/^./, (c) => c.toUpperCase());
+    const isActive = it.kind === "active" && it.grantsSpell;
+
+    const frag = document.createDocumentFragment();
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "spell-tooltip-title";
+    titleEl.style.color = color;
+    titleEl.textContent = it.name;
+    // Passive vs active tag sits where the spell tooltip shows its hotkey, so
+    // hovering a passive item spells out "PASSIVE" rather than leaving players
+    // to infer it from the muted slot badge alone.
+    const tagEl = document.createElement("span");
+    tagEl.className = isActive ? "spell-tooltip-key" : "spell-tooltip-key item-tooltip-passive";
+    tagEl.textContent = isActive ? "ACTIVE" : "PASSIVE";
+    titleEl.appendChild(tagEl);
+    frag.appendChild(titleEl);
+
+    const descEl = document.createElement("div");
+    descEl.className = "spell-tooltip-desc";
+    descEl.textContent = it.desc || "";
+    frag.appendChild(descEl);
+
+    const statsEl = document.createElement("div");
+    statsEl.className = "spell-tooltip-stats";
+    if (isActive) {
+      const spell = SPELLS[it.grantsSpell];
+      const idx = this._itemSlotIndexForKey(key);
+      const hotkey = (idx >= 0 && this._itemEls?.[idx]?.hotkey) || CFG.DEFAULT_ITEM_SLOT_HOTKEYS[idx] || "?";
+      statsEl.textContent = `${rarity} · Cast: ${spell?.name || it.grantsSpell} · Cooldown: ${spell?.cd ?? "?"}s · Key: ${hotkey}`;
+    } else {
+      // Passive items have no key — make the always-on nature explicit.
+      statsEl.textContent = `${rarity} · Passive bonus — always active while equipped`;
+    }
+    frag.appendChild(statsEl);
+
+    return frag;
+  }
+
   _positionTooltip(tt, anchor) {
     tt.style.visibility = "hidden";
     tt.style.display = "block";
@@ -994,11 +1157,14 @@ export class UI {
   }
 
   _showTooltip(slotEl) {
-    const id = slotEl.dataset.spell;
-    if (!id || !SPELLS[id]) { this._hideTooltip(); return; }
-    const tt = this._initTooltip();
-    const content = this._buildTooltipContent(id);
+    let content = null;
+    if (slotEl.dataset.spell) {
+      content = SPELLS[slotEl.dataset.spell] ? this._buildTooltipContent(slotEl.dataset.spell) : null;
+    } else if (slotEl.dataset.itemKey) {
+      content = ITEMS[slotEl.dataset.itemKey] ? this._buildItemTooltipContent(slotEl.dataset.itemKey) : null;
+    }
     if (!content) { this._hideTooltip(); return; }
+    const tt = this._initTooltip();
     tt.replaceChildren(content);
     tt.removeAttribute("aria-hidden");
     tt.classList.add("visible");
@@ -1059,12 +1225,12 @@ export class UI {
   }
 
   _bind() {
-    // LAN Host — fires hostLan event.
+    // Private Host — fires hostPrivate event.
     if (this.el.btnHost) {
       this.el.btnHost.onclick = () => {
         const name = this._name();
         if (!name) return this.setMenuStatus("Enter a name first.");
-        this.handlers.hostLan?.(name, {
+        this.handlers.hostPrivate?.(name, {
           mobsEnabled: this.mobsEnabled(),
           character: this.selectedCharacter,
           ...this.getArenaSettings(),
@@ -1084,7 +1250,7 @@ export class UI {
       this.el.btnCancelQueue.onclick = () => this.handlers.cancelQueue?.();
     }
 
-    // LAN Join — fires joinByCode event.
+    // Private Join — fires joinByCode event.
     if (this.el.btnJoin) {
       this.el.btnJoin.onclick = () => this._tryJoin();
     }
@@ -1114,6 +1280,27 @@ export class UI {
     if (this.el.pauseResume) this.el.pauseResume.onclick = () => { this.hidePause(); this.handlers.resume?.(); };
     if (this.el.pauseLeave) this.el.pauseLeave.onclick = () => this.handlers.leaveMatch?.();
     if (this.el.pauseHelp) this.el.pauseHelp.onclick = () => this._togglePauseControls();
+
+    // Practice-mode dummy spawn panel — one button per big-mob type.
+    if (this.el.practicePanel) {
+      this.el.practicePanel.querySelectorAll(".practice-spawn-btn").forEach((btn) => {
+        btn.onclick = () => this.handlers.spawnDummy?.(btn.dataset.mob);
+      });
+    }
+    if (this.el.practiceClearDummies) {
+      this.el.practiceClearDummies.onclick = () => this.handlers.clearDummies?.();
+    }
+    if (this.el.practiceChangeLoadout) {
+      this.el.practiceChangeLoadout.onclick = () => this.openLoadoutEditor(this._lastSnapshot, this._lastLocalId);
+    }
+    if (this.el.practiceNoCd) {
+      this.el.practiceNoCd.onchange = () => this.handlers.toggleNoCooldown?.(this.el.practiceNoCd.checked);
+    }
+    if (this.el.pauseSocial) this.el.pauseSocial.onclick = () => this.openSocialSettings();
+
+    // ---- Social: conduct disclaimer + settings panel ----
+    if (this.el.conductEnter) this.el.conductEnter.onclick = () => this._dismissConduct();
+    if (this.el.socialClose) this.el.socialClose.onclick = () => this.closeSocialSettings();
   }
 
   _tryJoin() {
@@ -1148,8 +1335,8 @@ export class UI {
     if (code) {
       if (this.el.joinCode) this.el.joinCode.value = code.toUpperCase();
       this.setMenuStatus(`Room ${code.toUpperCase()} ready — enter your name and Join.`);
-      // Navigate to LAN screen so the join field is visible.
-      this._showMenuScreen("lan");
+      // Navigate to private screen so the join field is visible.
+      this._showMenuScreen("private");
     }
     const savedName = localStorage.getItem("vwb-name");
     if (savedName && this.el.nameInput) this.el.nameInput.value = savedName;
@@ -1180,7 +1367,7 @@ export class UI {
 
   /**
    * Switch to one of the named sub-screens.
-   * Valid names: "online" | "lan" | "characters" | "leaderboards" | "account" | "tutorial"
+   * Valid names: "online" | "private" | "characters" | "leaderboards" | "account" | "tutorial"
    */
   _showMenuScreen(name) {
     this._menuScreen = name;
@@ -1216,6 +1403,7 @@ export class UI {
     this.el.lobby.classList.add("hidden");
     this.el.hud.classList.add("hidden");
     if (this.el.touch) this.el.touch.classList.add("hidden");
+    this.el.chatToggleBtn?.classList.add("hidden");
     // Return to online sub-screen when coming back from lobby.
     this._showMenuScreen("online");
     this.preview?.start();
@@ -1286,7 +1474,7 @@ export class UI {
       `<p class="lobby-client-config-row"><span class="field-label">Map objects</span><span>${objectCount}/${totalObjects}</span></p>`;
   }
 
-  showGame() {
+  showGame(practiceMode = false) {
     this.preview?.stop();
     this.el.menu.classList.add("hidden");
     this.el.lobby.classList.add("hidden");
@@ -1296,6 +1484,8 @@ export class UI {
     this._buildItemBar();
     if (this.el.itemBar) this.el.itemBar.classList.remove("hidden");
     if (this._touchEnabled && this.el.touch) this.el.touch.classList.remove("hidden");
+    this.el.practicePanel?.classList.toggle("hidden", !practiceMode);
+    if (this._touchEnabled) this.el.chatToggleBtn?.classList.remove("hidden");
   }
 
   // ---- ESC pause menu ----
@@ -1438,6 +1628,10 @@ export class UI {
         if (e.key === "Escape") {
           e.stopPropagation();
           e.preventDefault();
+          // Practice-mode loadout editor: Esc just closes (dynamic check —
+          // this listener is bound once per overlay lifetime, so it must
+          // route by current state rather than the onAction it closed over).
+          if (this._loadoutEditorOpen) { this.closeLoadoutEditor(); return; }
           onAction?.({ action: "clear" });
           return;
         }
@@ -1518,6 +1712,89 @@ export class UI {
     }
   }
 
+  // ---- Practice mode: on-the-go loadout editor (reuses the draft overlay) ----
+
+  /**
+   * Open the spell-draft overlay as a practice-only "Change Abilities" editor.
+   * Unlike showSpellDraft() (phase-driven, dispatches through sim.applyDraft),
+   * this is opened on demand and keeps its picks purely local in the UI layer
+   * — it never touches player.draftPick/draftReady, so it can't interfere with
+   * real draft-phase state. Confirm fires handlers.changeLoadout(ids); Esc/close
+   * just discards the edit.
+   */
+  openLoadoutEditor(snapshot, localId) {
+    const overlay = this.el.spellDraft;
+    if (!overlay) return;
+    const me = snapshot?.players?.find((p) => p.id === localId);
+    const current = (me?.spellSlots || []).filter((id) => id && id !== "fireball");
+    this._loadoutPicks = current.slice(0, CFG.SPELL_SLOT_COUNT);
+    this._loadoutEditorOpen = true;
+    this._loadoutEditorLocalId = localId;
+
+    const onAction = (action) => {
+      switch (action.action) {
+        case "toggle": {
+          const id = action.spell;
+          const i = this._loadoutPicks.indexOf(id);
+          if (i >= 0) this._loadoutPicks.splice(i, 1);
+          else if (this._loadoutPicks.length < CFG.SPELL_SLOT_COUNT) this._loadoutPicks.push(id);
+          break;
+        }
+        case "template": {
+          const t = SPELL_TEMPLATES?.[action.template];
+          if (t) {
+            this._loadoutPicks = t.spells
+              .filter((id) => SPELLS[id] && id !== "fireball")
+              .slice(0, CFG.SPELL_SLOT_COUNT);
+          }
+          break;
+        }
+        case "clear":
+          this._loadoutPicks = [];
+          break;
+        case "ready":
+          this.handlers.changeLoadout?.([...this._loadoutPicks]);
+          this.closeLoadoutEditor();
+          return;
+        default:
+          break;
+      }
+      this._refreshLoadoutEditor();
+    };
+
+    // Rebuild the overlay skeleton bound to this local onAction (cards/ready
+    // button listeners are freshly wired on every build; the shared Escape
+    // handler routes dynamically via _loadoutEditorOpen — see _buildDraftOverlay).
+    this._buildDraftOverlay(onAction);
+    this._draftBuilt = true;
+    overlay.classList.remove("hidden");
+    this._draftPreviousFocus = document.activeElement;
+    const firstBtn = overlay.querySelector("button:not([disabled])");
+    if (firstBtn) firstBtn.focus();
+    this._refreshLoadoutEditor();
+  }
+
+  /** Refresh the loadout editor using the shared draft-overlay refresh helper,
+   *  fed a synthetic snapshot so real player.draftPick/draftReady are untouched. */
+  _refreshLoadoutEditor() {
+    const fakeSnapshot = {
+      timer: 0,
+      players: [{ id: this._loadoutEditorLocalId, draftPick: this._loadoutPicks, draftReady: false }],
+    };
+    this._refreshDraftOverlay(fakeSnapshot, this._loadoutEditorLocalId);
+    if (this.el.draftTimer) this.el.draftTimer.textContent = "";
+    if (this.el.draftReady) {
+      const label = this.el.draftReady.querySelector(".btn-label");
+      if (label) label.textContent = "Confirm";
+    }
+  }
+
+  /** Close the loadout editor without applying changes (Esc / after Confirm). */
+  closeLoadoutEditor() {
+    this._loadoutEditorOpen = false;
+    this.hideSpellDraft();
+  }
+
   /** Toggle the pause overlay; returns the new paused (visible) state. */
   togglePause() {
     if (this._paused) { this.hidePause(); return false; }
@@ -1539,8 +1816,7 @@ export class UI {
     const rows = [
       ["Move", "W A S D / Arrow keys"],
       ["Aim", "Mouse"],
-      ["Fire", "Space / Left-click"],
-      ["Cast selected", "Right-click"],
+      ["Cast spell", "Ability hotkeys (below)"],
     ];
     // Customizable ability-slot hotkeys (reflect any player remaps).
     const slotKeys = this.spellSlotHotkeys || CFG.DEFAULT_SPELL_SLOT_HOTKEYS;
@@ -1603,10 +1879,17 @@ export class UI {
 
   // ---- in-game HUD ----
   updateHUD(snapshot, localId, meta) {
+    // Cached for the practice-mode "Change Abilities" button, which opens the
+    // loadout editor on demand (outside the phase-driven draft flow below).
+    this._lastSnapshot = snapshot;
+    this._lastLocalId = localId;
+
     // Step 6: spell draft overlay — show when drafting, hide otherwise.
     if (snapshot.phase === "spellSelection") {
       this.showSpellDraft(snapshot, localId, (action) => this.handlers.draft?.(action));
-    } else {
+    } else if (!this._loadoutEditorOpen) {
+      // Practice-mode loadout editor manually opened the same overlay while
+      // phase is "playing" — don't let this per-frame phase check stomp it.
       this.hideSpellDraft();
     }
 
@@ -1625,30 +1908,9 @@ export class UI {
       this.el.timer.textContent = this._fmtTime(snapshot.playTime || 0);
     }
 
-    // Scoreboard sorted by score — includes K/D column.
-    const rows = [...snapshot.players]
-      .map((p) => ({ ...p, meta: meta?.get(p.id) }))
-      .sort((a, b) => b.s - a.s);
-    this.el.scoreboard.replaceChildren();
-    rows.forEach((p) => {
-      const row = document.createElement("div");
-      row.className = p.al ? "row" : "row dead";
-
-      const name = document.createElement("span");
-      name.textContent = `${p.meta?.name || "warlock"}${p.id === localId ? " (you)" : ""}`;
-
-      // K/D column — uses snapshot k/d fields; falls back to 0 if absent.
-      const kd = document.createElement("span");
-      kd.className = "pkd";
-      kd.textContent = `${p.k ?? 0}/${p.d ?? 0}`;
-
-      const score = document.createElement("span");
-      score.className = "pscore";
-      score.textContent = p.s;
-
-      row.append(name, kd, score);
-      this.el.scoreboard.appendChild(row);
-    });
+    // Redesigned roster panel (patch-render: rebuild rows only on membership
+    // change, patch text/glyphs every frame — see updateRoster).
+    this.updateRoster(snapshot, localId, meta);
 
     // Charge bar for local player.
     const me = snapshot.players.find((p) => p.id === localId);
@@ -1692,6 +1954,26 @@ export class UI {
         chip.title = label;
         chip.textContent = label[0];
         this.el.statusIcons.appendChild(chip);
+      }
+    }
+
+    // Practice-mode dummy HP readout — only rendered while the panel is visible.
+    if (this.el.practiceDummyList && this.el.practicePanel && !this.el.practicePanel.classList.contains("hidden")) {
+      const dummies = (snapshot.mobs || []).filter((m) => m.dummy);
+      this.el.practiceDummyList.replaceChildren();
+      if (!dummies.length) {
+        const empty = document.createElement("div");
+        empty.className = "practice-dummy-empty";
+        empty.textContent = "No dummies spawned.";
+        this.el.practiceDummyList.appendChild(empty);
+      } else {
+        for (const m of dummies) {
+          const row = document.createElement("div");
+          row.className = "practice-dummy-row";
+          const name = CFG.MOB_TYPES[m.type]?.name || m.type;
+          row.innerHTML = `<span>${escapeHTML(name)}</span><span class="pd-hp">${m.hp}/${m.max}</span>`;
+          this.el.practiceDummyList.appendChild(row);
+        }
       }
     }
 
@@ -1914,6 +2196,468 @@ export class UI {
       if (ev.type === "mobIncoming") {
         this.showMobBanner(ev.mobType, ev.entrance);
       }
+    }
+  }
+
+  // =========================================================================
+  // ---- Social: chat log + input --------------------------------------------
+  // =========================================================================
+
+  /** Wire the chat input box (typing debounce, Enter to send, Escape to close). */
+  _bindChat() {
+    // Touch/mobile has no hardware Enter key to open chat with, so give it an
+    // explicit tap target (shown alongside the joystick/fire button).
+    this.el.chatToggleBtn?.addEventListener("click", () => this.openChat());
+    const input = this.el.chatInput;
+    if (!input) return;
+    const TYPING_IDLE_MS = 1500;
+    input.addEventListener("input", () => {
+      this.handlers.chatTyping?.(true);
+      clearTimeout(this._chatTypingTimer);
+      this._chatTypingTimer = setTimeout(() => this.handlers.chatTyping?.(false), TYPING_IDLE_MS);
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        // Swallow so main.js's global Enter-opens-chat handler doesn't see
+        // isChatOpen() flip to false on this same event and immediately
+        // reopen the (now-empty) input, trapping the player in chat.
+        e.stopPropagation();
+        e.preventDefault();
+        const text = input.value.trim();
+        clearTimeout(this._chatTypingTimer);
+        this.handlers.chatSend?.(text);
+        this.closeChat();
+      } else if (e.key === "Escape") {
+        // Swallow so the global ESC handler in main.js doesn't also open pause.
+        e.stopPropagation();
+        e.preventDefault();
+        clearTimeout(this._chatTypingTimer);
+        this.closeChat();
+      }
+    });
+  }
+
+  /** Reveal + focus the chat input; emits "chatOpen"(true). */
+  openChat() {
+    if (!this.el.chatInputWrap || !this.el.chatInput) return;
+    this._chatOpen = true;
+    this.el.chatInputWrap.classList.remove("hidden");
+    this.el.chatInput.value = "";
+    this.el.chatInput.focus();
+    this.el.chatToggleBtn?.classList.add("hidden");
+    this.handlers.chatOpen?.(true);
+  }
+
+  /** Hide the chat input; emits "chatOpen"(false). Safe to call when already closed. */
+  closeChat() {
+    if (!this.el.chatInputWrap) return;
+    this._chatOpen = false;
+    this.el.chatInputWrap.classList.add("hidden");
+    this.el.chatInput?.blur();
+    if (this._touchEnabled) this.el.chatToggleBtn?.classList.remove("hidden");
+    this.handlers.chatOpen?.(false);
+  }
+
+  isChatOpen() { return !!this._chatOpen; }
+
+  /** True while the conduct disclaimer or social-settings dialog is showing —
+   * main.js's global Enter-opens-chat handler must not fire underneath them. */
+  isDialogOpen() {
+    const open = (el) => !!el && !el.classList.contains("hidden");
+    return open(this.el.conductModal) || open(this.el.socialSettings);
+  }
+
+  /** Append a chat-log line (auto-capped, auto-dimmed). Escapes via textContent. */
+  addChatLine(name, text, color, isSelf) {
+    const log = this.el.chatLog;
+    if (!log) return;
+    const line = document.createElement("div");
+    line.className = "chat-line" + (isSelf ? " self" : "");
+    const colorHex = typeof color === "number" ? hex(color) : (color || "var(--text)");
+    line.style.setProperty("--chat-color", colorHex);
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "chat-line-name";
+    nameEl.style.color = colorHex;
+    nameEl.textContent = name;
+
+    const textEl = document.createElement("span");
+    textEl.className = "chat-line-text";
+    textEl.textContent = text;
+
+    line.append(nameEl, textEl);
+    log.appendChild(line);
+
+    while (log.children.length > CFG.SOCIAL.CHAT_LOG_MAX) {
+      clearTimeout(log.firstChild._fadeTimer);
+      log.removeChild(log.firstChild);
+    }
+
+    const fadeTimer = setTimeout(() => line.classList.add("chat-line--dim"), CFG.SOCIAL.CHAT_LINE_FADE_MS);
+    line._fadeTimer = fadeTimer;
+  }
+
+  /** Wipe the chat-log DOM (called on leave/reset). */
+  clearChatLog() {
+    if (!this.el.chatLog) return;
+    for (const line of this.el.chatLog.children) clearTimeout(line._fadeTimer);
+    this.el.chatLog.replaceChildren();
+  }
+
+  // =========================================================================
+  // ---- Social: redesigned in-match roster (patch-render) -------------------
+  // =========================================================================
+
+  /** Build a single roster row once (color chip, name, status glyphs, K/D, score, mute). */
+  _buildRosterRow(id, meta, isSelf) {
+    const row = document.createElement("div");
+    row.className = "roster-row";
+    row.dataset.id = id;
+
+    const chip = document.createElement("span");
+    chip.className = "roster-chip";
+    chip.style.background = hex(CFG.COLORS[(meta?.colorIndex ?? 0) % CFG.COLORS.length]);
+
+    const name = document.createElement("span");
+    name.className = "roster-name";
+    name.textContent = `${meta?.name || "warlock"}${isSelf ? " (you)" : ""}`;
+
+    const status = document.createElement("span");
+    status.className = "roster-status";
+    const glyphDefs = [
+      ["rs-speak", "Speaking", "\u{1F3A4}"],
+      ["rs-type", "Typing", "···"],
+      ["rs-afk", "AFK", "\u{1F4A4}"],
+      ["rs-muted", "Muted", "\u{1F507}"],
+    ];
+    for (const [cls, label, glyph] of glyphDefs) {
+      const g = document.createElement("span");
+      g.className = `rs-glyph ${cls}`;
+      g.textContent = glyph;
+      g.title = label;
+      g.setAttribute("aria-label", label);
+      status.appendChild(g);
+    }
+
+    const kd = document.createElement("span");
+    kd.className = "pkd";
+
+    const score = document.createElement("span");
+    score.className = "pscore";
+
+    row.append(chip, name, status, kd, score);
+
+    let muteBtn = null;
+    if (!isSelf) {
+      const muted = social.isMuted(id, meta?.userId || null);
+      muteBtn = document.createElement("button");
+      muteBtn.type = "button";
+      muteBtn.className = "roster-mute-btn" + (muted ? " is-muted" : "");
+      muteBtn.setAttribute("aria-pressed", String(muted));
+      muteBtn.setAttribute("aria-label", `${muted ? "Unmute" : "Mute"} ${meta?.name || "warlock"}`);
+      // Glyph shape (not just color) carries mute state: 🔊 unmuted, 🔇 muted.
+      muteBtn.textContent = muted ? "\u{1F507}" : "\u{1F50A}";
+      muteBtn.addEventListener("click", () => this.handlers.toggleMute?.(id));
+      row.appendChild(muteBtn);
+    }
+
+    return { row, kd, score, muteBtn };
+  }
+
+  /**
+   * Patch-render the in-match roster: rebuilds rows only when the set of
+   * player ids changes (membership signature = sorted ids joined), otherwise
+   * patches K/D, score, dead state, and status glyphs on the existing rows.
+   * Row *order* is re-derived from live score every call (rank changes with
+   * kills mid-match), independent of the membership-based rebuild above.
+   */
+  updateRoster(snapshot, localId, meta) {
+    const el = this.el.scoreboard;
+    if (!el) return;
+    const players = [...snapshot.players].sort((a, b) => b.s - a.s);
+    const key = players.map((p) => p.id).sort().join(",");
+    if (key !== this._rosterKey) {
+      this._rosterKey = key;
+      this._rosterRows = new Map();
+      this._rosterIds = players.map((p) => p.id);
+      el.replaceChildren();
+      for (const p of players) {
+        const rowEls = this._buildRosterRow(p.id, meta?.get(p.id), p.id === localId);
+        this._rosterRows.set(p.id, rowEls);
+        el.appendChild(rowEls.row);
+      }
+      this._rosterOrder = players.map((p) => p.id);
+    }
+    // Re-sort the DOM to match current score ranking (appendChild moves an
+    // existing node rather than cloning it, so this is cheap for small rosters).
+    const order = players.map((p) => p.id);
+    if (!this._rosterOrder || order.join(",") !== this._rosterOrder.join(",")) {
+      for (const id of order) {
+        const rowEls = this._rosterRows.get(id);
+        if (rowEls) el.appendChild(rowEls.row);
+      }
+      this._rosterOrder = order;
+    }
+    for (const p of players) {
+      const rowEls = this._rosterRows.get(p.id);
+      if (!rowEls) continue;
+      const m = meta?.get(p.id);
+      const muted = social.isMuted(p.id, m?.userId || null);
+      rowEls.row.classList.toggle("dead", !p.al);
+      rowEls.kd.textContent = `${p.k ?? 0}/${p.d ?? 0}`;
+      rowEls.score.textContent = p.s;
+      rowEls.row.querySelector(".rs-speak")?.classList.toggle("active", !!p.spk && !muted);
+      rowEls.row.querySelector(".rs-type")?.classList.toggle("active", !!p.ty && !muted);
+      rowEls.row.querySelector(".rs-afk")?.classList.toggle("active", !!p.afk);
+      rowEls.row.querySelector(".rs-muted")?.classList.toggle("active", muted);
+      if (rowEls.muteBtn) {
+        rowEls.muteBtn.setAttribute("aria-pressed", String(muted));
+        rowEls.muteBtn.classList.toggle("is-muted", muted);
+        rowEls.muteBtn.textContent = muted ? "\u{1F507}" : "\u{1F50A}";
+        rowEls.muteBtn.setAttribute("aria-label", `${muted ? "Unmute" : "Mute"} ${m?.name || "warlock"}`);
+      }
+    }
+  }
+
+  /** Immediately reflect a mute toggle on the affected row (before the next HUD tick). */
+  refreshRosterMute(peerId, muted) {
+    const rowEls = this._rosterRows.get(peerId);
+    if (!rowEls) return;
+    rowEls.row.querySelector(".rs-muted")?.classList.toggle("active", muted);
+    if (rowEls.muteBtn) {
+      rowEls.muteBtn.setAttribute("aria-pressed", String(muted));
+      rowEls.muteBtn.classList.toggle("is-muted", muted);
+      rowEls.muteBtn.textContent = muted ? "\u{1F507}" : "\u{1F50A}";
+    }
+  }
+
+  // =========================================================================
+  // ---- Social: one-time Code-of-Conduct disclaimer -------------------------
+  // =========================================================================
+
+  /** Shared Escape/Tab focus-trap for the conduct + social-settings dialogs. */
+  _bindDialogTrap(overlay, onEscape, boundFlagKey) {
+    if (!overlay || this[boundFlagKey]) return;
+    this[boundFlagKey] = true;
+    overlay.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.preventDefault();
+        onEscape?.();
+        return;
+      }
+      if (e.key === "Tab") {
+        const focusable = [...overlay.querySelectorAll('button:not([disabled]),input:not([disabled]),[tabindex="0"]')];
+        if (focusable.length < 2) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+        } else {
+          if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      }
+    }, { capture: true });
+  }
+
+  /** Show the conduct disclaimer once per version (localStorage-gated). */
+  maybeShowConduct() {
+    if (localStorage.getItem("vwb-social-conduct-v1")) return;
+    this.showConduct();
+  }
+
+  /** Force-show the conduct disclaimer (e.g. "re-read the Code" in settings). */
+  showConduct() {
+    const overlay = this.el.conductModal;
+    if (!overlay) return;
+    overlay.classList.remove("hidden");
+    this._conductPreviousFocus = document.activeElement;
+    this.el.conductEnter?.focus();
+    this._bindDialogTrap(overlay, () => this._dismissConduct(), "_conductKeyBound");
+  }
+
+  _dismissConduct() {
+    try { localStorage.setItem("vwb-social-conduct-v1", "1"); } catch {}
+    this.el.conductModal?.classList.add("hidden");
+    if (this._conductPreviousFocus) {
+      this._conductPreviousFocus.focus();
+      this._conductPreviousFocus = null;
+    }
+    this.handlers.conductDismiss?.();
+  }
+
+  // =========================================================================
+  // ---- Social: settings panel (mic, PTT rebind, volume, bubbles, mute) -----
+  // =========================================================================
+
+  /** Read persisted social prefs (mic enable, master volume, bubbles, PTT key). */
+  getSocialPrefs() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem("vwb-social-prefs") || "{}"); } catch {}
+    return {
+      micEnabled: !!saved.micEnabled,
+      masterVolume: typeof saved.masterVolume === "number" ? saved.masterVolume : 1,
+      showBubbles: saved.showBubbles !== false,
+      pttKey: saved.pttKey || CFG.SOCIAL.PTT_DEFAULT_KEY,
+    };
+  }
+
+  /** Merge + persist a prefs patch, then notify main.js via "socialPrefs". */
+  _setSocialPrefs(patch) {
+    const next = { ...this.getSocialPrefs(), ...patch };
+    try { localStorage.setItem("vwb-social-prefs", JSON.stringify(next)); } catch {}
+    this.handlers.socialPrefs?.(next);
+    return next;
+  }
+
+  /** Human-readable label for a KeyboardEvent.code (e.g. "Backquote" -> "`"). */
+  _pttKeyLabel(code) {
+    if (!code) return "`";
+    if (code === "Backquote") return "`";
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+    if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+    return code;
+  }
+
+  _buildToggle(labelId, labelText, hintText, checked, onChange) {
+    const field = document.createElement("div");
+    field.className = "field field-inline";
+    const copy = document.createElement("div");
+    copy.className = "field-copy";
+    const label = document.createElement("span");
+    label.className = "field-label";
+    label.id = labelId;
+    label.textContent = labelText;
+    copy.appendChild(label);
+    if (hintText) {
+      const hint = document.createElement("span");
+      hint.className = "field-hint";
+      hint.textContent = hintText;
+      copy.appendChild(hint);
+    }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "rune-toggle" + (checked ? " is-on" : "");
+    btn.setAttribute("role", "switch");
+    btn.setAttribute("aria-checked", String(checked));
+    btn.setAttribute("aria-labelledby", labelId);
+    btn.innerHTML = `<span class="rune-toggle-track"><span class="rune-toggle-knob"></span></span><span class="rune-toggle-state">${checked ? "ON" : "OFF"}</span>`;
+    btn.addEventListener("click", () => {
+      const next = !btn.classList.contains("is-on");
+      btn.classList.toggle("is-on", next);
+      btn.setAttribute("aria-checked", String(next));
+      btn.querySelector(".rune-toggle-state").textContent = next ? "ON" : "OFF";
+      onChange(next);
+    });
+    field.append(copy, btn);
+    return field;
+  }
+
+  /** (Re)build the social settings panel body from the current persisted prefs. */
+  _buildSocialSettingsBody() {
+    const body = this.el.socialSettingsBody;
+    if (!body) return;
+    const prefs = this.getSocialPrefs();
+    body.replaceChildren();
+
+    const micField = this._buildToggle(
+      "social-mic-label", "Voice chat (push-to-talk)",
+      "Requests microphone access; hold the PTT key to speak.",
+      prefs.micEnabled, (next) => this._setSocialPrefs({ micEnabled: next })
+    );
+
+    const pttField = document.createElement("div");
+    pttField.className = "field field-inline";
+    const pttCopy = document.createElement("div");
+    pttCopy.className = "field-copy";
+    const pttLabel = document.createElement("span");
+    pttLabel.className = "field-label";
+    pttLabel.textContent = "Push-to-talk key";
+    pttCopy.appendChild(pttLabel);
+    const pttBtn = document.createElement("button");
+    pttBtn.type = "button";
+    pttBtn.className = "btn btn-ghost social-ptt-btn";
+    pttBtn.textContent = this._pttKeyLabel(prefs.pttKey);
+    pttBtn.addEventListener("click", () => {
+      pttBtn.textContent = "…";
+      const capture = (e) => {
+        e.preventDefault();
+        const code = e.code;
+        // Reject reserved codes (Escape/Enter/Tab/Space/...) that chat, pause,
+        // and dialogs rely on — binding PTT to one of those would silently
+        // break the other feature. Restore the previous label instead.
+        if (!isValidPttKey(code)) {
+          pttBtn.textContent = this._pttKeyLabel(this.getSocialPrefs().pttKey);
+          return;
+        }
+        pttBtn.textContent = this._pttKeyLabel(code);
+        this._setSocialPrefs({ pttKey: code });
+        this.handlers.pttKey?.(code);
+      };
+      addEventListener("keydown", capture, { once: true });
+    });
+    pttField.append(pttCopy, pttBtn);
+
+    const volField = document.createElement("div");
+    volField.className = "field";
+    const volLabel = document.createElement("label");
+    volLabel.className = "field-label";
+    volLabel.htmlFor = "social-volume";
+    volLabel.textContent = "Voice volume";
+    const volInput = document.createElement("input");
+    volInput.type = "range";
+    volInput.id = "social-volume";
+    volInput.className = "social-range";
+    volInput.min = "0";
+    volInput.max = "100";
+    volInput.step = "5";
+    volInput.value = String(Math.round(prefs.masterVolume * 100));
+    volInput.addEventListener("input", () => {
+      this._setSocialPrefs({ masterVolume: Number(volInput.value) / 100 });
+    });
+    volField.append(volLabel, volInput);
+
+    const bubbleField = this._buildToggle(
+      "social-bubble-label", "Show chat bubbles", null,
+      prefs.showBubbles, (next) => this._setSocialPrefs({ showBubbles: next })
+    );
+
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.className = "btn btn-ghost";
+    clearBtn.textContent = "Clear Mute List";
+    clearBtn.addEventListener("click", () => {
+      social.clearMuteList();
+      for (const id of this._rosterIds) this.refreshRosterMute(id, false);
+      // Un-muting is DOM/local-prefs only here — voice's <audio> sinks live in
+      // main.js, so hand it the roster to unmute there too.
+      this.handlers.clearMutes?.([...this._rosterIds]);
+    });
+
+    const codeBtn = document.createElement("button");
+    codeBtn.type = "button";
+    codeBtn.className = "btn btn-ghost";
+    codeBtn.textContent = "Re-read the Code";
+    codeBtn.addEventListener("click", () => this.showConduct());
+
+    body.append(micField, pttField, volField, bubbleField, clearBtn, codeBtn);
+  }
+
+  openSocialSettings() {
+    const overlay = this.el.socialSettings;
+    if (!overlay) return;
+    this._buildSocialSettingsBody();
+    overlay.classList.remove("hidden");
+    this._socialPreviousFocus = document.activeElement;
+    overlay.querySelector("button:not([disabled]), input:not([disabled])")?.focus();
+    this._bindDialogTrap(overlay, () => this.closeSocialSettings(), "_socialKeyBound");
+  }
+
+  closeSocialSettings() {
+    this.el.socialSettings?.classList.add("hidden");
+    if (this._socialPreviousFocus) {
+      this._socialPreviousFocus.focus();
+      this._socialPreviousFocus = null;
     }
   }
 }

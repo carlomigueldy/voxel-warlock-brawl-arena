@@ -196,6 +196,19 @@ export const CFG = {
   MAX_PLAYERS: 6,
   BOT_SKILLS: ["smart", "brilliant", "expert"],
 
+  // --- Social (chat, presence, voice) ---
+  SOCIAL: {
+    CHAT_MAX_LEN: 140,        // hard length cap (sanitizeChat)
+    CHAT_RATE_MAX: 5,         // msgs per window per sender (host rate-limit)
+    CHAT_RATE_WINDOW_MS: 3000,
+    TYPING_TTL_MS: 4000,      // typingUntil lifetime; refreshed per keystroke
+    AFK_IDLE_MS: 20000,       // auto-AFK after this much no-input
+    CHAT_BUBBLE_TTL_MS: 4000, // world-space bubble auto-dismiss
+    CHAT_LOG_MAX: 8,          // chat lines retained in HUD log
+    CHAT_LINE_FADE_MS: 8000,  // per-line dim delay
+    PTT_DEFAULT_KEY: "Backquote", // rebindable push-to-talk (non-spell key)
+  },
+
   // Player colors (low-poly palette) assigned by join order.
   COLORS: [0xff5a3c, 0x4cc9ff, 0x7cff5a, 0xffd23c, 0xc04cff, 0xff4ca8],
 
@@ -213,6 +226,17 @@ export const CFG = {
   // --- Performance ---
   LIGHT_POOL_SIZE: 4,      // shared dynamic PointLights reused across active projectiles
   BURST_MAX_PARTICLES: 18, // hard cap on shard particles per burst effect
+  TRAIL_POOL_SIZE: 24,     // shared faceted-streak shard meshes reused across every active trail
+  TRAIL_MAX_SEGMENTS: 6,   // hard cap on concurrently alive streak shards per trail emitter
+  // Separate, ADDITIVE pool of dynamic PointLights for beam/tether effects
+  // (src/vfx/beams.js: drain/pull/drag/link + lightning's per-hop chain
+  // arcs) — kept apart from LIGHT_POOL_SIZE because beams glow at their
+  // midpoint rather than following a single moving bolt. Worst-case
+  // concurrent dynamic lights across the whole scene is therefore bounded at
+  // LIGHT_POOL_SIZE + BEAM_LIGHT_POOL_SIZE (4 + 3 = 7), a small, documented
+  // increase over the old bolt-only 4-light budget (the single-Line
+  // buildLightning() this replaced never carried a light at all).
+  BEAM_LIGHT_POOL_SIZE: 3,
 
   // --- Mobs ---
   // Neutral PvE mobs that spawn during the PLAYING phase and drop ability runes
@@ -451,47 +475,58 @@ export function isOnArenaWorld(worldId, radius, x, z) {
 // (https://www.warlockbrawl.com/handbook). `key` is the keyboard slot, `cd` the
 // cooldown in seconds, `kind` how the simulation resolves it. Tunables that the
 // cast handlers (src/spells.js) read live alongside each entry.
+// `aim` names the targeting-reticle archetype (src/vfx/reticles.js
+// RETICLE_ARCHETYPES) the human player sees while hold-to-aiming the spell:
+//   DIRECTIONAL_PROJECTILE — skillshot arrow toward the cursor
+//   CONE_SPRAY             — forward wedge (spread/cone spells)
+//   GROUND_AOE_AT_POINT    — blast-radius ring at the (range-clamped) cursor
+//   BLINK_MOVE_TO_POINT    — landing marker at the (range-clamped) cursor
+//   NEAREST_TARGET_LOCK    — bracket on the nearest valid enemy in range
+//   TETHER_LOCK            — bracket + connecting beam (persistent-link spells)
+//   SELF_AOE               — radius ring centered on the caster
+//   SELF_BUFF              — no reticle; casts instantly on keydown
+//   DASH_IMPACT            — directional arrow + landing-impact ring (thrust)
 export const SPELLS = {
   // ---- Core projectiles ----
-  fireball:  { name: "Fireball",  key: "1", cd: 0.55, kind: "projectile", proj: "fireball",  kb: 16, dmg: 12, burn: 4,  burnDur: 2, color: 0xff5a1e, sfx: "fireball",  desc: "Fast bolt that knocks foes back and ignites them." },
-  lightning: { name: "Lightning", key: "2", cd: 4.0,  kind: "lightning",  range: 18, kb: 18, dmg: 22, chains: 2, chainRange: 7, slow: 0.6, slowDur: 1.5, color: 0x9fe6ff, sfx: "lightning", desc: "Lightning that chains and slows nearby enemies." },
-  boomerang: { name: "Boomerang", key: "3", cd: 6.0,  kind: "projectile", proj: "boomerang", kb: 18, dmg: 20, range: 16, color: 0xffe14c, sfx: "whoosh",    desc: "Returning projectile that hits on the way back." },
-  homing:    { name: "Homing",    key: "4", cd: 8.0,  kind: "projectile", proj: "homing",    kb: 18, dmg: 22, turn: 3.2, curse: 1.25, curseDur: 3, color: 0xc04cff, sfx: "homing",    desc: "Tracking bolt that curses its target." },
-  fireSpray: { name: "Fire Spray", key: "5", cd: 7.0, kind: "spray",      proj: "fireball",  kb: 11, dmg: 9,  count: 7, spread: 0.9, burn: 6, burnDur: 2, color: 0xff7a2e, sfx: "spray",    desc: "Fan of fire bolts covering a wide arc, igniting targets." },
-  bouncer:   { name: "Bouncer",   key: "6", cd: 9.0,  kind: "projectile", proj: "bouncer",   kb: 18, dmg: 20, bounces: 4, color: 0x4cff9c, sfx: "whoosh",   desc: "Ricochets off walls up to four times." },
-  splitter:  { name: "Splitter",  key: "7", cd: 9.0,  kind: "projectile", proj: "splitter",  kb: 14, dmg: 13, splitDist: 7, shards: 5, color: 0xff4ca8, sfx: "fireball", desc: "Splits into five piercing shards on impact." },
-  meteor:    { name: "Meteor",    key: "8", cd: 12.0, kind: "meteor",     range: 18, fall: 1.0, radius: 7, kb: 32, dmg: 36, burn: 10, burnDur: 3, color: 0xff3a1e, sfx: "meteor",   desc: "Calls a falling meteor with a searing blast." },
+  fireball:  { name: "Fireball",  key: "1", cd: 0.55, kind: "projectile", proj: "fireball",  kb: 16, dmg: 12, burn: 4,  burnDur: 2, color: 0xff5a1e, sfx: "fireball",  aim: "DIRECTIONAL_PROJECTILE", desc: "Fast bolt that knocks foes back and ignites them." },
+  lightning: { name: "Lightning", key: "2", cd: 4.0,  kind: "lightning",  range: 18, kb: 18, dmg: 22, chains: 2, chainRange: 7, slow: 0.6, slowDur: 1.5, color: 0x9fe6ff, sfx: "lightning", aim: "NEAREST_TARGET_LOCK", desc: "Lightning that chains and slows nearby enemies." },
+  boomerang: { name: "Boomerang", key: "3", cd: 6.0,  kind: "projectile", proj: "boomerang", kb: 18, dmg: 20, range: 16, color: 0xffe14c, sfx: "whoosh",    aim: "DIRECTIONAL_PROJECTILE", desc: "Returning projectile that hits on the way back." },
+  homing:    { name: "Homing",    key: "4", cd: 8.0,  kind: "projectile", proj: "homing",    kb: 18, dmg: 22, turn: 3.2, curse: 1.25, curseDur: 3, color: 0xc04cff, sfx: "homing",    aim: "DIRECTIONAL_PROJECTILE", desc: "Tracking bolt that curses its target." },
+  fireSpray: { name: "Fire Spray", key: "5", cd: 7.0, kind: "spray",      proj: "fireball",  kb: 11, dmg: 9,  count: 7, spread: 0.9, burn: 6, burnDur: 2, color: 0xff7a2e, sfx: "spray",    aim: "CONE_SPRAY", desc: "Fan of fire bolts covering a wide arc, igniting targets." },
+  bouncer:   { name: "Bouncer",   key: "6", cd: 9.0,  kind: "projectile", proj: "bouncer",   kb: 18, dmg: 20, bounces: 4, color: 0x4cff9c, sfx: "whoosh",   aim: "DIRECTIONAL_PROJECTILE", desc: "Ricochets off walls up to four times." },
+  splitter:  { name: "Splitter",  key: "7", cd: 9.0,  kind: "projectile", proj: "splitter",  kb: 14, dmg: 13, splitDist: 7, shards: 5, color: 0xff4ca8, sfx: "fireball", aim: "DIRECTIONAL_PROJECTILE", desc: "Splits into five piercing shards on impact." },
+  meteor:    { name: "Meteor",    key: "8", cd: 12.0, kind: "meteor",     range: 18, fall: 1.0, radius: 7, kb: 32, dmg: 36, burn: 10, burnDur: 3, color: 0xff3a1e, sfx: "meteor",   aim: "GROUND_AOE_AT_POINT", desc: "Calls a falling meteor with a searing blast." },
 
   // ---- Mobility ----
-  teleport:  { name: "Teleport",  key: "Q", cd: 8.0,  kind: "teleport",  range: 20, sfx: "teleport", desc: "Blink instantly toward your aim." },
-  thrust:    { name: "Thrust",    key: "E", cd: 7.0,  kind: "thrust",    power: 36, shockKb: 16, shockRadius: 3.2, dmg: 14, sfx: "whoosh",   desc: "Launches you forward and blasts nearby foes." },
-  swap:      { name: "Swap",      key: "R", cd: 14.0, kind: "swap",      range: 22, sfx: "teleport", desc: "Swaps positions with a distant target." },
-  windWalk:  { name: "Wind Walk", key: "F", cd: 16.0, kind: "windwalk",  duration: 4, speedMul: 1.6, sfx: "windwalk", desc: "Greatly boosts speed for a short dash." },
-  rush:      { name: "Rush",      key: "C", cd: 16.0, kind: "rush",      duration: 5, speedMul: 1.45, kbResist: 0.45, sfx: "rush",   desc: "Sprint faster and shrug off knockback." },
+  teleport:  { name: "Teleport",  key: "Q", cd: 8.0,  kind: "teleport",  range: 20, color: 0x3ad6ff, sfx: "teleport", aim: "BLINK_MOVE_TO_POINT", desc: "Blink instantly toward your aim." },
+  thrust:    { name: "Thrust",    key: "E", cd: 7.0,  kind: "thrust",    power: 36, shockKb: 16, shockRadius: 3.2, dmg: 14, color: 0xff6a44, sfx: "whoosh",   aim: "DASH_IMPACT", desc: "Launches you forward and blasts nearby foes." },
+  swap:      { name: "Swap",      key: "R", cd: 14.0, kind: "swap",      range: 22, color: 0xe066ff, sfx: "teleport", aim: "NEAREST_TARGET_LOCK", desc: "Swaps positions with a distant target." },
+  windWalk:  { name: "Wind Walk", key: "F", cd: 16.0, kind: "windwalk",  duration: 4, speedMul: 1.6, color: 0x8ff2c9, sfx: "windwalk", aim: "SELF_BUFF", desc: "Greatly boosts speed for a short dash." },
+  rush:      { name: "Rush",      key: "C", cd: 16.0, kind: "rush",      duration: 5, speedMul: 1.45, kbResist: 0.45, color: 0xffa63c, sfx: "rush",   aim: "SELF_BUFF", desc: "Sprint faster and shrug off knockback." },
 
   // ---- Control / utility ----
-  drain:     { name: "Drain",     key: "V", cd: 12.0, kind: "drain",     range: 14, pull: 15, steal: 0.5, sfx: "drain",      desc: "Pulls an enemy close and siphons their charge." },
-  gravity:   { name: "Gravity",   key: "X", cd: 14.0, kind: "gravity",   range: 18, radius: 8, duration: 2.5, pull: 20, gravKb: 22, dmg: 26, slowMul: 0.5, sfx: "gravity", desc: "Creates a gravity well that pulls and slows nearby foes." },
-  link:      { name: "Link",      key: "Z", cd: 16.0, kind: "link",      range: 16, duration: 4, sfx: "link",      desc: "Tethers a foe and mirrors their knockback." },
-  disable:   { name: "Disable",   key: "T", cd: 14.0, kind: "disable",   range: 16, duration: 1.8, kb: 12, dmg: 14, color: 0xbbbbbb, sfx: "disable",  desc: "Briefly stuns and knocks back a target." },
-  shield:    { name: "Shield",    key: "G", cd: 16.0, kind: "shield",    duration: 4, charges: 1, sfx: "shield",     desc: "Absorbs the next incoming hit." },
-  timeShift: { name: "Time Shift", key: "B", cd: 22.0, kind: "timeshift", delay: 3.0, sfx: "timeshift",              desc: "Rewinds your position back three seconds." },
-  pocketWatch: { name: "Pocket Watch", key: "H", cd: 40.0, kind: "pocketwatch", item: true, sfx: "watch",           desc: "Instantly resets all your spell cooldowns." },
+  drain:     { name: "Drain",     key: "V", cd: 12.0, kind: "drain",     range: 14, pull: 15, steal: 0.5, color: 0xaa2f6b, sfx: "drain",      aim: "TETHER_LOCK", desc: "Pulls an enemy close and siphons their charge." },
+  gravity:   { name: "Gravity",   key: "X", cd: 14.0, kind: "gravity",   range: 18, radius: 8, duration: 2.5, pull: 20, gravKb: 22, dmg: 26, slowMul: 0.5, color: 0x4a2fb0, sfx: "gravity", aim: "GROUND_AOE_AT_POINT", desc: "Creates a gravity well that pulls and slows nearby foes." },
+  link:      { name: "Link",      key: "Z", cd: 16.0, kind: "link",      range: 16, duration: 4, color: 0x2fd9c4, sfx: "link",      aim: "TETHER_LOCK", desc: "Tethers a foe and mirrors their knockback." },
+  disable:   { name: "Disable",   key: "T", cd: 14.0, kind: "disable",   range: 16, duration: 1.8, kb: 12, dmg: 14, color: 0xbbbbbb, sfx: "disable",  aim: "DIRECTIONAL_PROJECTILE", desc: "Briefly stuns and knocks back a target." },
+  shield:    { name: "Shield",    key: "G", cd: 16.0, kind: "shield",    duration: 4, charges: 1, color: 0x7fe0ff, sfx: "shield",     aim: "SELF_BUFF", desc: "Absorbs the next incoming hit." },
+  timeShift: { name: "Time Shift", key: "B", cd: 22.0, kind: "timeshift", delay: 3.0, color: 0xc9a227, sfx: "timeshift",              aim: "SELF_BUFF", desc: "Rewinds your position back three seconds." },
+  pocketWatch: { name: "Pocket Watch", key: "H", cd: 40.0, kind: "pocketwatch", item: true, color: 0xffe14c, sfx: "watch",           aim: "SELF_BUFF", desc: "Instantly resets all your spell cooldowns." },
 
   // ---- DOTA-inspired roster (Step 3) ----
-  projectile: { name: "Arcane Bolt",   key: "9", cd:  3.5, kind: "projectile",  proj: "fireball", kb: 14, dmg: 24, color: 0x6fc0ff, sfx: "fireball",  desc: "A fast arcane skillshot." },
-  target:     { name: "Doom",          key: "Y", cd: 11.0, kind: "target",      range: 15, dmg: 24, curse: 1.3, curseDur: 4, color: 0x9c2bff, sfx: "homing",   desc: "Curses and blasts the nearest foe in range." },
-  explode:    { name: "Detonate",      key: "J", cd: 10.0, kind: "explode",     castTime: 0.45, range: 16, radius: 6, kb: 34, dmg: 32, burn: 8, burnDur: 2, color: 0xff6a1e, sfx: "meteor",   desc: "Winds up, then erupts at the target point." },
-  stun:       { name: "Hex Bash",      key: "K", cd:  9.0, kind: "stun",        range: 12, dmg: 10, stunDur: 1.2, kb: 8, color: 0xffe14c, sfx: "disable",  desc: "Hard-stuns the nearest foe in range." },
-  push:       { name: "Force Wave",    key: "L", cd:  8.0, kind: "push",        range: 7, cone: 0.7, kb: 30, dmg: 14, color: 0xaef0ff, sfx: "whoosh",   desc: "Shoves foes in a forward cone." },
-  pull:       { name: "Hook",          key: "U", cd: 10.0, kind: "pull",        range: 18, pull: 34, dmg: 16, color: 0x8fffc4, sfx: "drain",    desc: "Yanks one distant foe toward you." },
-  drag:       { name: "Tow",           key: "I", cd: 13.0, kind: "drag",        channel: 1.5, tick: 0.15, range: 16, pull: 9, dmg: 4, color: 0x4cff9c, sfx: "drain",    desc: "Channel: continuously drags a foe to you." },
-  vacuum:     { name: "Maelstrom",     key: "O", cd: 14.0, kind: "vacuum",      channel: 1.2, tick: 0.2, radius: 8, pull: 10, dmg: 6, slowMul: 0.6, color: 0x6c4cff, sfx: "gravity",  desc: "Channel: sucks in and grinds nearby foes." },
-  heal:       { name: "Mend",          key: "N", cd: 12.0, kind: "heal",        channel: 2.0, tick: 0.25, heal: 9, color: 0x7cff8a, sfx: "shield",   desc: "Channel: restores health while you stand still." },
-  invisible:  { name: "Shadow Veil",   key: "M", cd: 16.0, kind: "invisible",   duration: 5, color: 0x445577, sfx: "windwalk",  desc: "Turn invisible for a short time." },
-  speed:      { name: "Haste",         key: ";", cd: 14.0, kind: "speed",       duration: 4, hasteMul: 1.7, color: 0xffd23c, sfx: "rush",     desc: "Greatly boosts your move speed." },
-  blink:      { name: "Blink",         key: "P", cd:  6.0, kind: "blink",       range: 9, color: 0x66ccff, sfx: "teleport",  desc: "Short instant teleport toward your aim." },
-  summon:     { name: "Conjure",       key: "'", cd: 18.0, kind: "summon",      summonTtl: 10, color: 0x9c7bff, sfx: "watch",    desc: "Summons a temporary minion to harry foes." },
+  projectile: { name: "Arcane Bolt",   key: "9", cd:  3.5, kind: "projectile",  proj: "fireball", kb: 14, dmg: 24, color: 0x6fc0ff, sfx: "fireball",  aim: "DIRECTIONAL_PROJECTILE", desc: "A fast arcane skillshot." },
+  target:     { name: "Doom",          key: "Y", cd: 11.0, kind: "target",      range: 15, dmg: 24, curse: 1.3, curseDur: 4, color: 0x9c2bff, sfx: "homing",   aim: "NEAREST_TARGET_LOCK", desc: "Curses and blasts the nearest foe in range." },
+  explode:    { name: "Detonate",      key: "J", cd: 10.0, kind: "explode",     castTime: 0.45, range: 16, radius: 6, kb: 34, dmg: 32, burn: 8, burnDur: 2, color: 0xff6a1e, sfx: "meteor",   aim: "GROUND_AOE_AT_POINT", desc: "Winds up, then erupts at the target point." },
+  stun:       { name: "Hex Bash",      key: "K", cd:  9.0, kind: "stun",        range: 12, dmg: 10, stunDur: 1.2, kb: 8, color: 0xffe14c, sfx: "disable",  aim: "NEAREST_TARGET_LOCK", desc: "Hard-stuns the nearest foe in range." },
+  push:       { name: "Force Wave",    key: "L", cd:  8.0, kind: "push",        range: 7, cone: 0.7, kb: 30, dmg: 14, color: 0xaef0ff, sfx: "whoosh",   aim: "CONE_SPRAY", desc: "Shoves foes in a forward cone." },
+  pull:       { name: "Hook",          key: "U", cd: 10.0, kind: "pull",        range: 18, pull: 34, dmg: 16, color: 0x8fffc4, sfx: "drain",    aim: "TETHER_LOCK", desc: "Yanks one distant foe toward you." },
+  drag:       { name: "Tow",           key: "I", cd: 13.0, kind: "drag",        channel: 1.5, tick: 0.15, range: 16, pull: 9, dmg: 4, color: 0x4cff9c, sfx: "drain",    aim: "TETHER_LOCK", desc: "Channel: continuously drags a foe to you." },
+  vacuum:     { name: "Maelstrom",     key: "O", cd: 14.0, kind: "vacuum",      channel: 1.2, tick: 0.2, radius: 8, pull: 10, dmg: 6, slowMul: 0.6, color: 0x6c4cff, sfx: "gravity",  aim: "SELF_AOE", desc: "Channel: sucks in and grinds nearby foes." },
+  heal:       { name: "Mend",          key: "N", cd: 12.0, kind: "heal",        channel: 2.0, tick: 0.25, heal: 9, color: 0x7cff8a, sfx: "shield",   aim: "SELF_BUFF", desc: "Channel: restores health while you stand still." },
+  invisible:  { name: "Shadow Veil",   key: "M", cd: 16.0, kind: "invisible",   duration: 5, color: 0x445577, sfx: "windwalk",  aim: "SELF_BUFF", desc: "Turn invisible for a short time." },
+  speed:      { name: "Haste",         key: ";", cd: 14.0, kind: "speed",       duration: 4, hasteMul: 1.7, color: 0xffd23c, sfx: "rush",     aim: "SELF_BUFF", desc: "Greatly boosts your move speed." },
+  blink:      { name: "Blink",         key: "P", cd:  6.0, kind: "blink",       range: 9, color: 0x66ccff, sfx: "teleport",  aim: "BLINK_MOVE_TO_POINT", desc: "Short instant teleport toward your aim." },
+  summon:     { name: "Conjure",       key: "'", cd: 18.0, kind: "summon",      summonTtl: 10, color: 0x9c7bff, sfx: "watch",    aim: "SELF_BUFF", desc: "Summons a temporary minion to harry foes." },
 };
 
 // Ordering used for the on-screen ability bar.
@@ -514,6 +549,11 @@ export const SPELL_TEMPLATES = [
   { id: "bruiser", name: "Bruiser", desc: "Sustain & mobility brawler",
     spells: ["drain", "shield", "rush", "thrust", "windWalk", "boomerang"] },
 ];
+
+// localStorage key for persisted item-slot hotkey remaps (mirrors the
+// spell-slot equivalent in input.js). Kept here so both input.js and any
+// other module that needs to read/write the same storage slot agree on it.
+export const ITEM_SLOT_HOTKEY_STORAGE_KEY = "vwb-item-slot-hotkeys";
 
 // --- Items / lootable drops (Step 4) ---
 // Exactly 10 items: mix of passive stat mods and active (spell-binding) pickups.
@@ -545,8 +585,13 @@ export const MSG = {
   // snapshot player field `st` = stun remaining (seconds, like `hz`) added in player.js
   ROUND_END: "roundEnd", // {winnerId, scores}
   MATCH_END: "matchEnd", // {winnerId, scores}
-  CHAT: "chat",          // reserved
   DRAFT: "draft",        // {action:"toggle"|"template"|"ready"|"clear", spell?, template?}
+  // ---- social (host relays; fromId stamped by host) ----
+  CHAT:    "chat",    // host->all: {fromId, text, kind:"text", t}   (client->host: {text, kind})
+  TYPING:  "typing",  // client->host: {typing:bool}                 (state; host mirrors into snapshot ty)
+  AFK:     "afk",     // client->host: {afk:bool}                    (state; host mirrors into snapshot afk)
+  SPEAK:   "speak",   // client->host: {speaking:bool}               (state; host mirrors into snapshot spk)
+  ROSTER:  "roster",  // host->all: {peers:[peerId,...]}             (real peers only; drives voice mesh)
 };
 
 // Deterministic short room code from a peer id suffix.

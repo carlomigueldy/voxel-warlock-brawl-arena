@@ -704,6 +704,49 @@ html, body {
 #scoreboard .row { display: flex; justify-content: space-between; gap: 14px; padding: 3px 0; }
 #scoreboard .row.dead { opacity: .4; text-decoration: line-through; }
 #scoreboard .row .pscore { color: var(--ember); font-weight: 700; }
+
+/* Practice-mode dummy spawn panel — top-left, mirrors #scoreboard's chrome. */
+.practice-panel {
+  position: absolute; top: 16px; left: 16px;
+  background: rgba(13,11,26,0.7); padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--line); min-width: 190px; font-size: 13px;
+  backdrop-filter: blur(6px); pointer-events: auto;
+}
+.practice-panel-title {
+  font-family: var(--font-display); font-size: 12px; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+}
+.practice-panel-buttons { display: flex; flex-direction: column; gap: 6px; }
+.practice-spawn-btn, .practice-clear-btn {
+  padding: 7px 10px; font-size: 12px; min-height: 0; width: 100%; text-align: left;
+}
+.practice-clear-btn { margin-top: 8px; color: var(--ember); }
+.practice-dummy-list { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; }
+.practice-dummy-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
+.practice-dummy-row .pd-hp { color: #fff; font-weight: 700; }
+.practice-dummy-empty { font-size: 11px; color: var(--muted); font-style: italic; }
+.practice-panel-divider { height: 1px; background: var(--line); margin: 10px 0; }
+.practice-loadout-btn { padding: 7px 10px; font-size: 12px; min-height: 0; width: 100%; text-align: left; }
+.practice-toggle-row {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  font-size: 12px; color: var(--muted); cursor: pointer; user-select: none;
+}
+.practice-toggle-row input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
+.practice-toggle-switch {
+  position: relative; width: 30px; height: 16px; border-radius: 999px;
+  background: rgba(255,255,255,0.12); border: 1px solid var(--line);
+  flex: 0 0 auto; transition: background 0.15s ease, border-color 0.15s ease;
+}
+.practice-toggle-switch::after {
+  content: ""; position: absolute; top: 1px; left: 1px; width: 12px; height: 12px;
+  border-radius: 50%; background: #fff; transition: transform 0.15s ease;
+}
+.practice-toggle-row input:checked + .practice-toggle-switch {
+  background: var(--ember); border-color: var(--ember);
+}
+.practice-toggle-row input:checked + .practice-toggle-switch::after { transform: translateX(14px); }
+.practice-toggle-row input:focus-visible + .practice-toggle-switch { outline: 2px solid #fff; outline-offset: 2px; }
+.practice-toggle-label { color: #fff; }
 #hp-wrap {
   position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
   width: 220px; height: 16px; background: rgba(13,11,26,0.7);
@@ -895,6 +938,37 @@ html, body {
   font-size: 10px; line-height: 16px; color: #fff; background: rgba(108,76,255,0.65);
 }
 
+/* Active vs passive item slots — castable items get a bright accent border so
+   they read as "press this key"; passive stat items stay muted so players
+   don't expect a key to do anything. */
+.ability-slot.item-active { border-color: rgba(102,204,255,0.6); }
+.ability-slot.item-active.ready { box-shadow: 0 0 8px rgba(102,204,255,0.4); }
+.ability-slot.item-passive { border-color: var(--line-strong); }
+.ability-slot.item-passive .ability-swatch { opacity: 0.85; }
+.ability-key-muted {
+  font-size: 8px; font-weight: 700; letter-spacing: 0.4px;
+  color: var(--muted); padding: 0 3px; border-radius: 3px;
+  background: rgba(12,9,28,0.7); text-shadow: 0 1px 2px #000;
+}
+
+/* ===== Item pickup toast ===== */
+.item-toast {
+  position: fixed; right: 16px; bottom: 202px; z-index: 8;
+  max-width: 280px; padding: 9px 14px; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: rgba(22,17,46,0.95);
+  box-shadow: var(--shadow-panel), 0 0 16px rgba(108,76,255,0.3);
+  font-family: var(--font-ui); font-size: 12px; color: var(--text);
+  text-align: right; pointer-events: none;
+  animation: itemToastIn 0.3s var(--ease-spring) both;
+}
+@keyframes itemToastIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .item-toast { animation: none; }
+}
+
 /* ===== Spell tooltip ===== */
 .spell-tooltip {
   position: fixed;
@@ -941,6 +1015,11 @@ html, body {
   color: var(--muted);
   flex-shrink: 0;
   white-space: nowrap;
+}
+/* Passive item tag reads muted (no accent) to contrast the castable ACTIVE tag. */
+.spell-tooltip-key.item-tooltip-passive {
+  background: rgba(154, 147, 199, 0.14);
+  letter-spacing: 0.5px;
 }
 .spell-tooltip-desc {
   color: var(--text);
@@ -1395,7 +1474,7 @@ html, body {
 
 /* ============================================================
    REGION-BASED MATCHMAKING — NEW SCREENS
-   (Online, LAN, Leaderboards, Account)
+   (Online, Private, Leaderboards, Account)
    Design tokens only: --ember, --arcane, --panel, --panel-2,
    --text, --muted, --line, --line-strong, --font-display,
    --font-ui, --ease-spring.
@@ -1443,12 +1522,12 @@ html, body {
   font-size: 13px; color: var(--muted);
 }
 
-/* ---- LAN divider ---- */
-.lan-divider {
+/* ---- Private divider ---- */
+.private-divider {
   display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px;
   letter-spacing: 2px; text-transform: uppercase;
 }
-.lan-divider::before, .lan-divider::after {
+.private-divider::before, .private-divider::after {
   content: ""; flex: 1; height: 1px; background: var(--line);
 }
 
@@ -2150,4 +2229,170 @@ kbd {
   .draft-timer { transition: none !important; }
   .draft-timer.draft-timer-urgent { animation: none !important; }
   .draft-spell-card, .draft-tpl-btn, .draft-slot-pip { transition: none !important; }
+}
+
+/* ============================================================
+   SOCIAL — chat log/input, redesigned roster, PTT, conduct +
+   settings dialogs. Reuses existing tokens/fonts/easing only.
+   ============================================================ */
+
+/* ---- Chat log + input (bottom-left, glass panel to match #hud-top) ---- */
+.chat-panel {
+  position: absolute;
+  left: 16px; bottom: 96px;
+  width: min(340px, 34vw);
+  display: flex; flex-direction: column; gap: 6px;
+  z-index: 6;
+  pointer-events: none;
+}
+.chat-log {
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 4px;
+  max-height: 220px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 18%);
+  mask-image: linear-gradient(to bottom, transparent, black 18%);
+}
+.chat-line {
+  background: rgba(13, 11, 26, 0.7);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 13px; line-height: 1.35;
+  backdrop-filter: blur(6px);
+  animation: playerIn 0.25s var(--ease-spring) both;
+  transition: opacity 0.4s ease;
+  word-break: break-word;
+}
+.chat-line.self { border-color: var(--line-strong); }
+.chat-line--dim { opacity: 0.55; }
+.chat-line-name { font-weight: 700; margin-right: 6px; }
+.chat-line-text { color: var(--text); }
+.chat-input-wrap.hidden { display: none; }
+.chat-input-wrap { pointer-events: auto; }
+.chat-input {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  padding: 9px 12px;
+}
+.chat-input:focus { outline: none; border-color: var(--arcane); box-shadow: var(--glow-arcane); }
+.chat-input:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+
+/* ---- Chat toggle button (touch/mobile — no hardware Enter key) ---- */
+.chat-toggle-btn {
+  align-self: flex-start;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: rgba(13, 11, 26, 0.7);
+  backdrop-filter: blur(6px);
+  font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.chat-toggle-btn:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+.chat-toggle-btn.hidden { display: none; }
+
+/* ---- Push-to-talk indicator (optional HUD chip; toggled by future wiring) ---- */
+.ptt-indicator {
+  position: fixed;
+  bottom: 16px; left: 16px;
+  z-index: 6;
+  background: rgba(124, 255, 90, 0.16);
+  border: 1px solid var(--rune);
+  color: var(--rune);
+  font-family: var(--font-display);
+  font-size: 10px; letter-spacing: 2px;
+  padding: 6px 10px; border-radius: 6px;
+  pointer-events: none;
+}
+.ptt-indicator.hidden { display: none; }
+
+/* ---- Redesigned in-match roster (rebuilt in #scoreboard, patch-rendered) ---- */
+#scoreboard .roster-row {
+  display: grid;
+  grid-template-columns: 12px 1fr auto auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+#scoreboard .roster-row.dead { opacity: .4; text-decoration: line-through; }
+#scoreboard .roster-row.dead .roster-status,
+#scoreboard .roster-row.dead .pkd { text-decoration: none; }
+.roster-chip {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+}
+.roster-name {
+  font-size: 13px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 108px;
+}
+.roster-status { display: flex; gap: 3px; align-items: center; min-width: 52px; }
+.rs-glyph { font-size: 11px; line-height: 1; opacity: 0.16; transition: opacity 0.2s ease; }
+.rs-glyph.active { opacity: 1; }
+.rs-speak.active { color: var(--rune); animation: rsSpeakPulse 0.9s ease-in-out infinite; }
+.rs-type.active { color: var(--cyan); animation: rsTypingDots 1s steps(1) infinite; }
+.rs-afk.active { color: var(--gold); }
+.rs-muted.active { color: var(--ember); }
+#scoreboard .roster-row .pkd { color: var(--muted); font-size: 11px; text-align: right; }
+#scoreboard .roster-row .pscore { color: var(--ember); font-weight: 700; text-align: right; }
+.roster-mute-btn {
+  width: 20px; height: 20px;
+  border-radius: 6px; border: 1px solid var(--line);
+  background: transparent; color: var(--muted);
+  font-size: 11px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.roster-mute-btn:hover { border-color: var(--line-strong); color: var(--text); }
+.roster-mute-btn.is-muted { color: var(--ember); border-color: rgba(255, 90, 60, 0.55); background: rgba(255, 90, 60, 0.12); }
+.roster-mute-btn:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+
+@keyframes rsSpeakPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.2); }
+}
+@keyframes rsTypingDots {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+/* ---- Conduct disclaimer + social settings dialogs (reuse .pause-overlay/.panel) ---- */
+.conduct-panel, .social-panel { max-width: 520px; text-align: left; }
+.conduct-title, .social-title {
+  font-family: var(--font-display);
+  font-size: clamp(15px, 2.6vw, 20px);
+  color: var(--arcane);
+  text-shadow: 0 0 18px rgba(108, 76, 255, 0.5);
+  margin-bottom: 16px;
+  text-align: center;
+}
+.conduct-body { font-size: 14px; line-height: 1.6; color: var(--text); margin-bottom: 20px; }
+.conduct-body p { margin-bottom: 10px; }
+.conduct-body ul { margin: 10px 0 12px 20px; display: flex; flex-direction: column; gap: 8px; }
+.conduct-body strong { color: var(--gold); }
+#conduct-enter { width: 100%; }
+#social-settings-body { display: flex; flex-direction: column; gap: 16px; margin-bottom: 18px; text-align: left; }
+.social-range { width: 100%; accent-color: var(--arcane); }
+.social-ptt-btn { min-width: 88px; }
+#social-close { width: 100%; }
+
+/* ---- Responsive: shrink chat panel width on narrow viewports ---- */
+@media (max-width: 760px) {
+  /* Raised clear of the virtual joystick (bottom:40px, 120px tall -> top ~160px)
+     so the log/input never sits on top of the movement stick. */
+  .chat-panel { width: min(280px, 60vw); bottom: 176px; }
+  .roster-name { max-width: 68px; }
+}
+
+/* ---- Reduced motion: static glyphs, no pulsing/typing animation ---- */
+@media (prefers-reduced-motion: reduce) {
+  .rs-speak.active, .rs-type.active { animation: none !important; opacity: 1 !important; }
+  .chat-line { animation: none !important; }
+  .conduct-panel, .social-panel { animation: none !important; }
 }
