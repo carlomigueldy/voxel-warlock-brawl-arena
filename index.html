@@ -608,11 +608,16 @@
       <div id="timer">0:00</div>
     </div>
     <div id="scoreboard"></div>
-    <div id="hp-wrap"><div id="hp-bar"></div><span id="hp-text"></span></div>
-    <div id="charge-wrap"><div id="charge-bar"></div></div>
     <div id="hazard-warning" class="hidden"></div>
-    <div id="cast-wrap" class="hidden"><div id="cast-bar"></div><span id="cast-label"></span></div>
     <div id="status-icons"></div>
+    <div id="vitals">
+      <div id="cast-wrap" class="hidden"><div id="cast-bar"></div><span id="cast-label"></span></div>
+      <div id="hp-wrap">
+        <div class="hp-track"><div id="hp-chip"></div><div id="hp-bar"></div></div>
+        <span id="hp-text"></span>
+      </div>
+      <div id="charge-wrap"><div id="charge-bar"></div><div class="charge-shimmer"></div><div class="charge-spark"></div></div>
+    </div>
     <div id="mob-banner" class="mob-banner hidden" role="alert" aria-live="assertive"></div>
     <div id="center-msg" class="center-msg hidden"></div>
     <div id="ability-bar" class="hidden"></div>

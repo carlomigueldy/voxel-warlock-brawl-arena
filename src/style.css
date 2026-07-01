@@ -694,18 +694,44 @@ html, body {
    ============================================================ */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
 #hud-top {
-  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 24px; align-items: center;
-  background: rgba(13,11,26,0.7); padding: 8px 20px; border-radius: 12px;
-  border: 1px solid var(--line); font-size: 20px; font-weight: 700;
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 14px;
+  background: linear-gradient(180deg, rgba(40,32,78,0.88), rgba(13,11,26,0.90));
+  padding: 7px 10px 7px 16px; border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--bezel), 0 10px 26px -14px rgba(0,0,0,0.7);
   backdrop-filter: blur(6px);
 }
-#timer { color: var(--ember); font-family: var(--font-display); font-size: 16px; }
+#round-info {
+  font-family: var(--font-display); font-size: 8px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--arcane);
+}
+#timer {
+  color: var(--text); font-family: var(--font-display); font-size: 20px;
+  font-variant-numeric: tabular-nums; letter-spacing: 1px;
+  padding: 3px 10px; border-radius: 8px; background: var(--slot); border: 1px solid var(--line);
+}
+#hud-top.timer-urgent #timer {
+  color: var(--ember); animation: timerUrgencyPulse 0.55s ease-in-out infinite;
+}
+@keyframes timerUrgencyPulse {
+  0%, 100% { transform: scale(1); text-shadow: none; }
+  50% { transform: scale(1.12); text-shadow: 0 0 10px rgba(255,90,60,0.7); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #hud-top.timer-urgent #timer { animation: none !important; }
+}
 #scoreboard {
   position: absolute; top: 16px; right: 16px;
-  background: rgba(13,11,26,0.7); padding: 12px 16px; border-radius: 12px;
-  border: 1px solid var(--line); min-width: 160px; font-size: 14px;
+  background: linear-gradient(180deg, rgba(40,32,78,0.88), rgba(13,11,26,0.90));
+  border: 1px solid var(--line-strong); border-radius: 12px;
+  box-shadow: var(--bezel), 0 10px 26px -14px rgba(0,0,0,0.7);
   backdrop-filter: blur(6px);
+  padding: 10px 14px; min-width: 160px; font-size: 14px;
+}
+#scoreboard::before {
+  content: "Warlocks"; display: block; font-family: var(--font-display); font-size: 8px;
+  letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
 }
 #scoreboard .row { display: flex; justify-content: space-between; gap: 14px; padding: 3px 0; }
 #scoreboard .row.dead { opacity: .4; text-decoration: line-through; }
@@ -753,54 +779,160 @@ html, body {
 .practice-toggle-row input:checked + .practice-toggle-switch::after { transform: translateX(14px); }
 .practice-toggle-row input:focus-visible + .practice-toggle-switch { outline: 2px solid #fff; outline-offset: 2px; }
 .practice-toggle-label { color: #fff; }
-#hp-wrap {
-  position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
-  width: 220px; height: 16px; background: rgba(13,11,26,0.7);
-  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+/* ============================================================
+   THE BOUND RELIQUARY — signature vitals plate (HP / Charge / Cast)
+   One forged obsidian tablet, corner rune-sigils igniting with charge.
+   ============================================================ */
+#vitals {
+  position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+  width: min(300px, 88vw);
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 14px 20px 12px;
+  background: linear-gradient(180deg, rgba(40,32,78,0.90), rgba(13,11,26,0.92));
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  box-shadow: var(--bezel), 0 16px 40px -18px rgba(0,0,0,0.75);
+  backdrop-filter: blur(6px);
+  z-index: 6;
 }
-#hp-bar { width: 100%; height: 100%; background: linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c); transition: width 0.12s; }
-#hp-text { position: absolute; inset: 0; text-align: center; font-size: 11px; font-weight: 700; line-height: 16px; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
-#charge-wrap {
-  position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-  width: 220px; height: 14px; background: rgba(13,11,26,0.7);
-  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+#vitals::before {
+  /* Four corner rune sigils — unlit by default, ignite one-by-one with charge. */
+  content: ""; position: absolute; inset: 0; border-radius: 14px; pointer-events: none;
+  background:
+    radial-gradient(circle 5px at 10px 10px, var(--sigil-1, transparent), transparent 70%),
+    radial-gradient(circle 5px at calc(100% - 10px) 10px, var(--sigil-2, transparent), transparent 70%),
+    radial-gradient(circle 5px at 10px calc(100% - 10px), var(--sigil-3, transparent), transparent 70%),
+    radial-gradient(circle 5px at calc(100% - 10px) calc(100% - 10px), var(--sigil-4, transparent), transparent 70%);
+  transition: opacity 0.3s ease;
 }
-#charge-bar { width: 0%; height: 100%; background: linear-gradient(90deg, var(--arcane), var(--ember)); transition: width 0.1s; }
-#hazard-warning {
-  position: absolute; bottom: 74px; left: 50%; transform: translateX(-50%);
-  background: rgba(255,90,60,0.86); color: #fff; padding: 7px 14px; border-radius: 999px;
-  font-size: 14px; font-weight: bold; letter-spacing: .5px; text-shadow: 0 1px 2px rgba(0,0,0,.35);
+#vitals.charge-1 { --sigil-1: var(--arcane); }
+#vitals.charge-2 { --sigil-1: var(--arcane); --sigil-2: var(--arcane); }
+#vitals.charge-3 { --sigil-1: var(--arcane); --sigil-2: var(--arcane); --sigil-3: var(--arcane); }
+#vitals.charge-4 { --sigil-1: var(--ember); --sigil-2: var(--ember); --sigil-3: var(--ember); --sigil-4: var(--ember); }
+
+/* Full-charge ignition — one-shot border/glow bloom when charge hits max. */
+@keyframes vitalsIgnite {
+  0%   { box-shadow: var(--bezel), 0 16px 40px -18px rgba(0,0,0,0.75), 0 0 0 rgba(255,90,60,0); }
+  40%  { box-shadow: var(--bezel), 0 16px 40px -18px rgba(0,0,0,0.75), 0 0 34px 4px rgba(255,90,60,0.55), 0 0 20px 2px rgba(108,76,255,0.5); }
+  100% { box-shadow: var(--bezel), 0 16px 40px -18px rgba(0,0,0,0.75), 0 0 0 rgba(255,90,60,0); }
 }
-/* Step-3: cast/channel progress bar */
+#vitals.vitals-ignite { animation: vitalsIgnite 0.5s ease-out; }
+
+/* ---- HP row ---- */
+#hp-wrap { position: relative; width: 100%; }
+.hp-track { position: relative; height: 20px; border-radius: 6px; overflow: hidden; background: var(--slot); border: 1px solid var(--line); }
+#hp-chip {
+  position: absolute; inset: 0; width: var(--hp-pct, 100%);
+  background: linear-gradient(90deg, rgba(255,90,60,0.55), rgba(255,255,255,0.65));
+  transition: width 0.5s ease-out 0.15s; /* lags behind #hp-bar → visible "just lost" ghost chunk */
+}
+#hp-bar {
+  position: absolute; inset: 0; width: var(--hp-pct, 100%);
+  transition: width 0.1s linear;
+  background: linear-gradient(90deg, var(--rune), var(--gold) 65%, var(--ember) 100%);
+  background-size: 300% 100%;
+}
+.hp-track::after {
+  content: ""; position: absolute; inset: 0 0 55% 0; background: linear-gradient(180deg, rgba(255,255,255,0.22), transparent); pointer-events: none;
+}
+#hp-wrap.hp-mid #hp-bar { background-position: 50% 0; }
+#hp-wrap.hp-low #hp-bar { background-position: 100% 0; }
+#hp-wrap.hp-low { animation: hpEmberPulse 1.1s ease-in-out infinite; }
+@keyframes hpEmberPulse {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 0 0 2px rgba(255,90,60,0.5), 0 0 14px 2px rgba(255,90,60,0.45); }
+}
+#hp-text {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  font-variant-numeric: tabular-nums; font-weight: 800; font-size: 11px; letter-spacing: 0.3px;
+  padding: 1px 5px; border-radius: 4px; background: rgba(10,8,20,0.5); text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+}
+
+/* ---- Charge row ---- */
+#charge-wrap { position: relative; height: 12px; border-radius: 6px; overflow: hidden; background: var(--slot); border: 1px solid var(--line); }
+#charge-bar { position: relative; z-index: 1; width: 0%; height: 100%; background: linear-gradient(90deg, var(--arcane), var(--ember)); transition: width 0.1s; }
+.charge-shimmer {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(100deg, transparent 40%, rgba(255,255,255,0.35) 50%, transparent 60%);
+  background-size: 220% 100%;
+  animation: chargeShimmer 2.4s linear infinite;
+  opacity: var(--shimmer-on, 0);
+}
+@keyframes chargeShimmer { from { background-position: 140% 0; } to { background-position: -40% 0; } }
+.charge-spark { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0; }
+#vitals.charge-4 .charge-spark { opacity: 1; animation: chargeSparkPop 0.6s ease-out; background: radial-gradient(circle at 50% 50%, var(--gold), transparent 70%); }
+@keyframes chargeSparkPop { 0% { opacity: 0; transform: scaleX(0.2); } 30% { opacity: 0.9; } 100% { opacity: 0; transform: scaleX(1.4); } }
+
+/* ---- Cast/channel row (only rendered while `me.ca` exists) ---- */
 #cast-wrap {
-  position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%);
-  width: 220px; height: 14px; background: rgba(13,11,26,0.7);
-  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
-  display: flex; align-items: center;
+  position: relative; height: 12px; border-radius: 6px; overflow: hidden; background: var(--slot);
+  border: 1px solid var(--line); display: flex; align-items: center;
 }
 #cast-wrap.hidden { display: none; }
-#cast-bar { height: 100%; width: 0%; transition: width 0.08s; background: #66ccff; border-radius: 8px; }
-#cast-wrap.channeling #cast-bar { background: #7cff8a; }
-#cast-wrap.casting #cast-bar { background: #66ccff; }
-#cast-label { position: absolute; inset: 0; text-align: center; font-size: 10px; font-weight: 700; line-height: 14px; text-shadow: 0 1px 2px rgba(0,0,0,.6); white-space: nowrap; overflow: hidden; }
+#cast-bar { height: 100%; width: 0%; transition: width 0.08s; border-radius: 6px; }
+#cast-wrap.casting #cast-bar { background: var(--cyan); }
+#cast-wrap.channeling #cast-bar { background: var(--rune); }
+#cast-wrap.channeling { animation: castChannelPulse 1s ease-in-out infinite; }
+@keyframes castChannelPulse { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 10px 1px rgba(124,255,90,0.4); } }
+#cast-label { position: absolute; inset: 0; text-align: center; font-size: 10px; font-weight: 700; line-height: 12px; text-shadow: 0 1px 2px rgba(0,0,0,.6); white-space: nowrap; overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  #vitals.vitals-ignite,
+  #hp-wrap.hp-low,
+  .charge-shimmer,
+  #vitals.charge-4 .charge-spark,
+  #cast-wrap.channeling {
+    animation: none !important;
+  }
+  #hp-chip { transition-duration: 0.05s; transition-delay: 0s; }
+}
+
+#hazard-warning {
+  position: absolute; bottom: 226px; left: 50%; transform: translateX(-50%);
+  /* re-anchored above #ability-bar (itself re-anchored above the taller
+     #vitals reliquary frame). */
+  background: rgba(255,90,60,0.16); color: var(--ember);
+  border: 1px solid rgba(255,90,60,0.55);
+  backdrop-filter: blur(6px);
+  padding: 7px 14px; border-radius: 999px;
+  font-family: var(--font-ui); font-size: 14px; font-weight: 800; letter-spacing: .5px;
+  animation: hpEmberPulse 1.1s ease-in-out infinite; /* reuse the "danger breathing" motion vocabulary */
+}
+@media (prefers-reduced-motion: reduce) {
+  #hazard-warning { animation: none !important; }
+}
 /* Step-3: status-effect chips */
 #status-icons {
-  position: absolute; bottom: 112px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 4px;
+  position: absolute; bottom: 192px; left: 50%; transform: translateX(-50%);
+  /* re-anchored between #ability-bar and #hazard-warning. */
+  display: flex; gap: 5px;
 }
 .status-chip {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 50%; font-size: 10px; font-weight: 800;
-  color: rgba(0,0,0,0.8); text-shadow: none; border: 1px solid rgba(255,255,255,0.3);
+  width: auto; height: 22px; padding: 0 8px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-ui); font-size: 10px; font-weight: 800; letter-spacing: 0.3px;
+  color: #0a0814; text-shadow: none;
+  border: 1px solid rgba(255,255,255,0.35);
+  animation: statusChipIn 0.22s var(--ease-spring) both;
+}
+.status-chip.buff  { animation: statusChipIn 0.22s var(--ease-spring) both, statusPulse 1.6s ease-in-out 0.22s infinite; }
+.status-chip.debuff { animation: statusChipIn 0.22s var(--ease-spring) both, statusPulse 0.9s ease-in-out 0.22s infinite; }
+@keyframes statusChipIn { from { opacity: 0; transform: translateY(6px) scale(0.7); } to { opacity: 1; transform: none; } }
+@keyframes statusPulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
+@media (prefers-reduced-motion: reduce) {
+  .status-chip, .status-chip.buff, .status-chip.debuff { animation: none !important; opacity: 1 !important; }
 }
 .center-msg {
   position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%);
   font-family: var(--font-display); font-size: clamp(24px, 5vw, 40px); text-align: center;
-  text-shadow: 0 4px 16px rgba(0,0,0,0.8); color: var(--text);
+  text-shadow: 0 4px 16px rgba(0,0,0,0.8), 0 0 24px rgba(108,76,255,0.35); color: var(--text);
   animation: centerPop 0.4s var(--ease-spring);
 }
 @keyframes centerPop { from { opacity: 0; transform: translate(-50%,-50%) scale(0.7); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
 .center-msg small { display:block; font-family: var(--font-ui); font-size: 18px; color: var(--muted); font-weight: normal; margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .center-msg { animation: none !important; }
+}
 
 /* ============================================================
    MOB BANNER — big-mob incoming announcement (displayed above #center-msg)
@@ -824,8 +956,8 @@ html, body {
   padding: 14px 28px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(10, 8, 20, 0.88);
-  backdrop-filter: blur(8px);
+  background: rgba(13, 11, 26, 0.90);
+  backdrop-filter: blur(6px);
   box-shadow:
     0 0 32px rgba(255, 90, 60, 0.35),
     0 8px 32px rgba(0, 0, 0, 0.7);
@@ -897,29 +1029,67 @@ html, body {
 
 /* ===== Ability bar ===== */
 #ability-bar {
-  position: fixed; bottom: 54px; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
+  /* re-anchored clear of the taller #vitals reliquary frame below it (its
+     tallest state — cast/channel bar visible — tops out around 112px). */
   display: flex; gap: 7px; flex-wrap: wrap; justify-content: center;
-  max-width: 96vw; z-index: 6; pointer-events: auto;
+  /* width:max-content, not the implicit shrink-to-fit default: a fixed
+     element with only `left` set (no `right`) computes its shrink-to-fit
+     "available width" as (containing-block width − left), i.e. only ~50vw
+     here — well under max-width — so without this it silently force-wraps
+     to 2-3 columns on ANY viewport, not just narrow ones, before max-width
+     ever becomes the binding constraint. */
+  width: max-content; max-width: 96vw; z-index: 6; pointer-events: auto;
 }
 
 /* ===== Item bar (4 active-item slots, reuses .ability-slot styling) ===== */
 #item-bar {
-  position: fixed; right: 16px; bottom: 130px; left: auto; transform: none;
+  position: fixed; right: 16px; bottom: 138px; left: auto; transform: none;
+  /* re-anchored: the "Bound Reliquary" #vitals frame is taller than the old
+     three-box stack it replaced. */
   display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end;
   max-width: 40vw; z-index: 6; pointer-events: auto;
 }
 .ability-slot {
   position: relative; width: 66px; height: 64px;
-  background: rgba(24,20,51,0.85); border: 1px solid var(--line-strong);
-  border-radius: 8px; overflow: hidden; cursor: pointer;
+  background: linear-gradient(180deg, rgba(30,25,58,0.92), rgba(15,12,34,0.92));
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--bezel);
+  border-radius: 10px; overflow: hidden; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
   padding: 3px; transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
 }
+.ability-slot::after {
+  /* carved inner ring — matches the char-card's forged-tile language */
+  content: ""; position: absolute; inset: 5px; border-radius: 7px; pointer-events: none;
+  border: 1px solid rgba(255,255,255,0.06);
+}
 .ability-slot:hover { transform: translateY(-2px); }
 .ability-slot:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; transform: translateY(-2px); }
-.ability-slot.ready { box-shadow: 0 0 8px rgba(124,255,90,0.35); border-color: rgba(124,255,90,0.6); }
+.ability-slot.ready {
+  border-color: var(--ready-glow, var(--rune));
+  box-shadow: var(--bezel), 0 0 10px var(--ready-glow, rgba(124,255,90,0.4));
+}
+.ability-slot.ready .ability-swatch { animation: abilityReadyFlash 0.5s ease-out; }
+@keyframes abilityReadyFlash {
+  0% { filter: drop-shadow(0 0 0 var(--ready-glow, var(--rune))); transform: translateX(-50%) scale(1.3); }
+  100% { filter: drop-shadow(0 0 4px var(--ready-glow, var(--rune))); transform: translateX(-50%) scale(1); }
+}
 .ability-slot.locked { opacity: 0.35; filter: grayscale(1); }
 .ability-slot.empty { border-style: dashed; }
+/* Silenced reads as a corner badge, not a full-slot overlay — a centered
+   inset:0 mark would sit directly on top of the centered cooldown number
+   (.ability-cd-num) whenever a slot is both on cooldown and silenced,
+   producing an illegible glyph mush. The tinted border + dimmed swatch
+   already communicate "unusable"; the badge adds the "why". */
+.ability-slot.silenced { border-color: rgba(255,90,60,0.6); }
+.ability-slot.silenced .ability-swatch { opacity: 0.4; filter: grayscale(0.6) drop-shadow(0 0 4px currentColor); }
+.ability-slot.silenced::before {
+  content: "\2715"; position: absolute; bottom: 2px; right: 2px; z-index: 4;
+  width: 14px; height: 14px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; color: #fff; font-size: 10px; line-height: 1;
+  background: var(--ember); box-shadow: 0 0 6px rgba(255,90,60,0.9), 0 0 0 1px rgba(10,8,20,0.7);
+}
 .ability-swatch {
   position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
   width: 22px; height: 22px; border-radius: 4px;
@@ -930,18 +1100,34 @@ html, body {
   width: 100%; height: 100%; display: block;
 }
 .ability-key {
-  position: absolute; top: 2px; left: 5px; font-size: 12px; font-weight: bold;
-  color: #fff; text-shadow: 0 1px 2px #000;
+  position: absolute; top: -1px; left: -1px; z-index: 3;
+  min-width: 16px; padding: 1px 4px; text-align: center;
+  font-family: var(--font-ui); font-size: 11px; font-weight: 800; color: var(--text);
+  background: linear-gradient(180deg, rgba(60,50,100,0.95), rgba(20,16,44,0.95));
+  border: 1px solid var(--line-strong); border-radius: 0 0 6px 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -2px 0 rgba(0,0,0,0.35);
 }
 .ability-name { font-size: 9px; line-height: 1.1; text-align: center; color: var(--muted); z-index: 2; }
 .ability-cd {
-  position: absolute; bottom: 0; left: 0; width: 100%; height: 0%;
-  background: rgba(0,0,0,0.62); transition: height 0.08s linear; z-index: 1;
+  /* radial rune-dial sweep, driven purely by --cd-pct (JS writes it per
+     frame) — no CSS transition fighting the write. */
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: conic-gradient(from 0deg, rgba(6,4,16,0.86) 0% calc(var(--cd-pct, 0) * 1%), transparent calc(var(--cd-pct, 0) * 1%) 100%);
+  border-radius: 50%;
+  transform: scale(0.94);
+}
+.ability-cd-num {
+  position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-ui); font-weight: 800; font-variant-numeric: tabular-nums;
+  font-size: 17px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.9); pointer-events: none;
 }
 .hotkey-picker {
   position: absolute; top: 2px; right: 2px; z-index: 3;
   width: 16px; height: 16px; padding: 0; border: none; border-radius: 4px; cursor: pointer;
   font-size: 10px; line-height: 16px; color: #fff; background: rgba(108,76,255,0.65);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ability-slot.ready .ability-swatch { animation: none !important; }
 }
 
 /* Active vs passive item slots — castable items get a bright accent border so
@@ -961,7 +1147,7 @@ html, body {
 .item-toast {
   position: fixed; right: 16px; bottom: 202px; z-index: 8;
   max-width: 280px; padding: 9px 14px; border-radius: 8px;
-  border: 1px solid var(--line-strong); background: rgba(22,17,46,0.95);
+  border: 1px solid var(--line-strong); background: rgba(13,11,26,0.85);
   box-shadow: var(--shadow-panel), 0 0 16px rgba(108,76,255,0.3);
   font-family: var(--font-ui); font-size: 12px; color: var(--text);
   text-align: right; pointer-events: none;
@@ -1048,6 +1234,7 @@ html, body {
   border: 1px solid var(--line-strong); pointer-events: auto;
 }
 #audio-controls button.off { color: var(--muted); border-color: var(--line); }
+#audio-controls button:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
 
 /* ---------- Responsive (menu / HUD panels) ---------- */
 @media (max-width: 760px) {
@@ -1059,6 +1246,24 @@ html, body {
   .ability-slot { width: 50px; height: 50px; }
   .ability-name { display: none; }
   .spell-tooltip { max-width: 180px; font-size: 11px; }
+  /* #hud-top (centered) and #scoreboard (top-right) collide on narrow
+     viewports — drop the roster panel below the round/timer plate instead
+     of letting them fight for the same horizontal space. */
+  #scoreboard { top: 58px; right: 8px; min-width: 130px; padding: 8px 10px; font-size: 12px; }
+  #hud-top { padding: 6px 10px 6px 14px; gap: 10px; }
+  /* #audio-controls (fixed top-right, untouched elsewhere) sits directly
+     under #hud-top's centered plate at narrow widths — move it below the
+     hud-top/scoreboard band entirely, on the clear left side, instead of
+     stacking it into the same top-right corner as #scoreboard. */
+  #audio-controls { top: 70px; left: 8px; right: auto; }
+  /* #item-bar (right-anchored) and #ability-bar (centered) both want the
+     same bottom-of-screen real estate at narrow widths. #ability-bar now
+     resolves to a single row of 6 (see width:max-content fix above) down
+     to ~360px, so give #item-bar a fully separate row underneath it with
+     a fixed pixel max-width (not vw-relative — its 4-slot content width is
+     constant) sized to fit all 4 slots on one row, clear of #ability-bar's
+     row. */
+  #item-bar { bottom: 56px; max-width: 230px; }
 }
 
 /* ---------- Responsive (fullscreen lobby scene) ---------- */
@@ -2366,7 +2571,7 @@ kbd {
   mask-image: linear-gradient(to bottom, transparent, black 18%);
 }
 .chat-line {
-  background: rgba(13, 11, 26, 0.7);
+  background: rgba(13, 11, 26, 0.85);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 6px 10px;
@@ -2437,13 +2642,14 @@ kbd {
 #scoreboard .roster-row.dead { opacity: .4; text-decoration: line-through; }
 #scoreboard .roster-row.dead .roster-status,
 #scoreboard .roster-row.dead .pkd { text-decoration: none; }
+#scoreboard .roster-row + .roster-row { border-top: 1px solid var(--line); padding-top: 5px; margin-top: 1px; }
 .roster-chip {
   width: 12px; height: 12px; border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.4);
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
 }
 .roster-name {
-  font-size: 13px; color: var(--text);
+  font-size: 13px; font-weight: 700; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 108px;
 }
 .roster-status { display: flex; gap: 3px; align-items: center; min-width: 52px; }
@@ -2454,7 +2660,8 @@ kbd {
 .rs-afk.active { color: var(--gold); }
 .rs-muted.active { color: var(--ember); }
 #scoreboard .roster-row .pkd { color: var(--muted); font-size: 11px; text-align: right; }
-#scoreboard .roster-row .pscore { color: var(--ember); font-weight: 700; text-align: right; }
+#scoreboard .roster-row .pkd::before { content: "K/D "; color: rgba(154,147,199,0.6); font-size: 9px; }
+#scoreboard .roster-row .pscore { color: var(--ember); font-weight: 700; text-align: right; font-family: var(--font-ui); }
 .roster-mute-btn {
   width: 20px; height: 20px;
   border-radius: 6px; border: 1px solid var(--line);

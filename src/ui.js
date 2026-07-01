@@ -28,9 +28,10 @@ export class UI {
       mapHero: $("map-hero"),
       lobbyHostConfig: $("lobby-host-config"),
       lobbyClientConfig: $("lobby-client-config"),
-      roundInfo: $("round-info"), timer: $("timer"),
+      roundInfo: $("round-info"), timer: $("timer"), hudTop: $("hud-top"),
       scoreboard: $("scoreboard"), chargeBar: $("charge-bar"),
-      hpBar: $("hp-bar"), hpText: $("hp-text"),
+      vitals: $("vitals"),
+      hpWrap: $("hp-wrap"), hpBar: $("hp-bar"), hpChip: $("hp-chip"), hpText: $("hp-text"),
       hazardWarning: $("hazard-warning"),
       centerMsg: $("center-msg"), touch: $("touch-controls"),
       abilityBar: $("ability-bar"),
@@ -883,7 +884,7 @@ export class UI {
     slot.el.appendChild(picker);
     this._attachTooltip(slot.el);
     this.el.itemBar.appendChild(slot.el);
-    this._itemEls[index] = { slot: slot.el, cd: slot.cd, nm: slot.nm, swatch: slot.swatch, keyEl: slot.key, hotkey };
+    this._itemEls[index] = { slot: slot.el, cd: slot.cd, cdNum: slot.cdNum, nm: slot.nm, swatch: slot.swatch, keyEl: slot.key, hotkey };
   }
 
   updateItemBar(snapshot, localId) {
@@ -916,7 +917,7 @@ export class UI {
     for (let i = 0; i < CFG.ITEM_SLOT_COUNT; i++) {
       const elSet = this._itemEls[i];
       if (!elSet) continue;
-      const { slot, cd, nm, swatch, keyEl } = elSet;
+      const { slot, cd, cdNum, nm, swatch, keyEl } = elSet;
       const key = equippedKeys[i];
       const it = key ? ITEMS[key] : null;
       const empty = !it;
@@ -924,15 +925,20 @@ export class UI {
       slot.dataset.itemKey = empty ? "" : key;
       nm.textContent = empty ? "Empty" : it.name;
       swatch.innerHTML = itemIconSvg(empty ? "" : it.shape);
-      swatch.style.color = "#" + ((empty ? 0x444444 : it.color).toString(16).padStart(6, "0"));
+      const color = empty ? 0x444444 : it.color;
+      swatch.style.color = "#" + (color.toString(16).padStart(6, "0"));
       swatch.style.background = "transparent";
+      slot.style.setProperty("--ready-glow", "#" + (color.toString(16).padStart(6, "0")));
       // Active items show cooldown overlay using the granted spell's cooldown.
       if (isActive && it.grantsSpell) {
         const remain = cds[it.grantsSpell] || 0;
         const total = SPELLS[it.grantsSpell]?.cd || 1;
-        cd.style.height = Math.max(0, Math.min(100, (remain / total) * 100)) + "%";
+        const pct = Math.max(0, Math.min(100, (remain / total) * 100));
+        cd.style.setProperty("--cd-pct", pct);
+        cdNum.textContent = remain > 0 ? Math.ceil(remain) + "" : "";
       } else {
-        cd.style.height = "0%";
+        cd.style.setProperty("--cd-pct", 0);
+        cdNum.textContent = "";
       }
       slot.classList.toggle("empty", empty);
       // Only active (castable) items get the "ready" glow — it signals
@@ -1017,7 +1023,7 @@ export class UI {
     };
     this._attachTooltip(slot.el);
     this.el.abilityBar.appendChild(slot.el);
-    this._abilityEls[index] = { slot: slot.el, cd: slot.cd, key: slot.key, nm: slot.nm, swatch: slot.swatch };
+    this._abilityEls[index] = { slot: slot.el, cd: slot.cd, cdNum: slot.cdNum, key: slot.key, nm: slot.nm, swatch: slot.swatch };
   }
 
   _slotShell(title, keyText, nameText, color) {
@@ -1033,13 +1039,15 @@ export class UI {
     nm.textContent = nameText;
     const cd = document.createElement("div");
     cd.className = "ability-cd";
+    const cdNum = document.createElement("span");
+    cdNum.className = "ability-cd-num";
     const swatch = document.createElement("span");
     swatch.className = "ability-swatch";
     swatch.innerHTML = spellIconSvg("");
     swatch.style.color = "#" + (color.toString(16).padStart(6, "0"));
     swatch.style.background = "transparent";
-    el.append(swatch, key, nm, cd);
-    return { el, key, nm, cd, swatch };
+    el.append(swatch, key, nm, cd, cdNum);
+    return { el, key, nm, cd, cdNum, swatch };
   }
 
   _eventKey(e) {
@@ -1195,9 +1203,12 @@ export class UI {
     if (!this._abilityEls) return;
     const cds = me?.cds || {};
     const spellSlots = Array.isArray(me?.spellSlots) ? me.spellSlots : [];
+    // Whole bar dims + marks every slot uncastable while stunned — the
+    // closest real snapshot flag to "silenced" (no dedicated flag exists).
+    const silenced = (me?.st || 0) > 0;
     for (let i = 0; i < CFG.SPELL_SLOT_COUNT; i++) {
       const id = spellSlots[i];
-      const { slot, cd, nm, swatch } = this._abilityEls[i];
+      const { slot, cd, cdNum, nm, swatch } = this._abilityEls[i];
       const empty = !id || !SPELLS[id];
       const remain = empty ? 0 : (cds[id] || 0);
       const total = empty ? 1 : (SPELLS[id].cd || 1);
@@ -1206,12 +1217,16 @@ export class UI {
       slot.title = empty ? `Empty spell slot ${i + 1}` : "";
       nm.textContent = empty ? "Empty" : SPELLS[id].name;
       swatch.innerHTML = spellIconSvg(empty ? "" : id);
-      swatch.style.color = "#" + ((empty ? 0x444466 : (SPELLS[id].color || 0x8888ff)).toString(16).padStart(6, "0"));
+      const color = empty ? 0x444466 : (SPELLS[id].color || 0x8888ff);
+      swatch.style.color = "#" + (color.toString(16).padStart(6, "0"));
       swatch.style.background = "transparent";
-      cd.style.height = empty ? "100%" : pct + "%";
+      cd.style.setProperty("--cd-pct", empty ? 100 : pct);
+      slot.style.setProperty("--ready-glow", "#" + (color.toString(16).padStart(6, "0")));
+      cdNum.textContent = (!empty && remain > 0) ? Math.ceil(remain) + "" : "";
       slot.classList.toggle("empty", empty);
       slot.classList.toggle("locked", empty);
       slot.classList.toggle("ready", !empty && remain <= 0);
+      slot.classList.toggle("silenced", !empty && silenced);
     }
   }
 
@@ -1900,6 +1915,11 @@ export class UI {
     }[snapshot.phase] || "";
     this.el.roundInfo.textContent = `Round ${snapshot.round} — ${phaseLabel}`;
 
+    // Real countdown urgency only exists during phase:"countdown" (3‑2‑1) —
+    // playTime (used for "playing") counts up with no cap, so there's no
+    // "final seconds of the round" state to decorate here.
+    const timerUrgent = snapshot.phase === "countdown" && snapshot.timer <= 3;
+    this.el.hudTop?.classList.toggle("timer-urgent", timerUrgent);
     if (snapshot.phase === "countdown") {
       this.el.timer.textContent = Math.ceil(snapshot.timer) + "";
     } else if (snapshot.phase === "spellSelection") {
@@ -1912,13 +1932,29 @@ export class UI {
     // change, patch text/glyphs every frame — see updateRoster).
     this.updateRoster(snapshot, localId, meta);
 
-    // Charge bar for local player.
+    // Charge bar for local player — also drives "The Bound Reliquary" corner
+    // sigils (#vitals.charge-N) and its one-shot full-charge ignition flash.
     const me = snapshot.players.find((p) => p.id === localId);
     const pct = me ? Math.min(100, (me.c / CFG.CHARGE_MAX) * 100) : 0;
     this.el.chargeBar.style.width = pct + "%";
+    if (this.el.vitals && me) {
+      const tier = Math.max(0, Math.min(CFG.CHARGE_MAX, Math.floor(me.c)));
+      for (let i = 1; i <= 4; i++) this.el.vitals.classList.toggle(`charge-${i}`, i <= tier);
+      if (tier >= CFG.CHARGE_MAX && (this._prevChargeTier ?? 0) < CFG.CHARGE_MAX) {
+        this._pulseClass(this.el.vitals, "vitals-ignite", 500);
+      }
+      this._prevChargeTier = tier;
+      const shimmer = this._chargeShimmerEl || (this._chargeShimmerEl = this.el.vitals.querySelector(".charge-shimmer"));
+      shimmer?.style.setProperty("--shimmer-on", me.c > 0 ? "1" : "0");
+    }
     if (this.el.hpBar && me) {
       const hpPct = me.mhp ? Math.max(0, Math.min(100, (me.hp / me.mhp) * 100)) : 0;
-      this.el.hpBar.style.width = hpPct + "%";
+      this.el.hpBar.style.setProperty("--hp-pct", hpPct + "%");
+      this.el.hpChip?.style.setProperty("--hp-pct", hpPct + "%");
+      if (this.el.hpWrap) {
+        this.el.hpWrap.classList.toggle("hp-low", hpPct < 25);
+        this.el.hpWrap.classList.toggle("hp-mid", hpPct >= 25 && hpPct < 60);
+      }
       if (this.el.hpText) this.el.hpText.textContent = `${Math.ceil(me.hp ?? 0)}/${me.mhp ?? 0}`;
     }
     if (this.el.hazardWarning) {
@@ -1938,22 +1974,38 @@ export class UI {
         this.el.castLabel.textContent = (SPELLS[ca.s]?.name || "") + (ca.c ? " (channeling)" : " (casting)");
       }
     }
-    // Step-3: status-effect icons
+    // Step-3: status-effect icons — mapped onto the shared token palette
+    // (was raw ad-hoc hex per status) and split buff (calm rune glow) vs.
+    // debuff (ember/curse flicker) by pulse cadence.
     if (this.el.statusIcons && me) {
       const defs = [
-        ["sl", "Slow", "#66ccff"], ["bu", "Burn", "#ff7a2e"], ["cu", "Curse", "#9c2bff"],
-        ["st", "Stun", "#ffe14c"], ["iv", "Invis", "#88aacc"], ["hs", "Haste", "#ffd23c"],
+        ["sl", "Slow", "var(--cyan)", "debuff"],
+        ["bu", "Burn", "var(--ember)", "debuff"],
+        // No existing token maps cleanly onto curse-purple; every other status
+        // does, so this is a deliberate one-off rather than forcing it onto
+        // --arcane (which would read as magic-resource chrome, not a debuff).
+        ["cu", "Curse", "#9c2bff", "debuff"],
+        ["st", "Stun", "var(--gold)", "debuff"],
+        ["iv", "Invis", "var(--muted)", "buff"],
+        ["hs", "Haste", "var(--rune)", "buff"],
       ];
-      this.el.statusIcons.replaceChildren();
-      for (const [k, label, col] of defs) {
-        const on = k === "st" ? (me.st > 0) : (me[k] === 1);
-        if (!on) continue;
-        const chip = document.createElement("span");
-        chip.className = "status-chip";
-        chip.style.background = col;
-        chip.title = label;
-        chip.textContent = label[0];
-        this.el.statusIcons.appendChild(chip);
+      // Rebuild only when the active-status set actually changes — this fn
+      // runs every frame, and recreating chip nodes each frame would reset
+      // their CSS entrance/pulse animations to t=0 on every paint (chips
+      // would render permanently at the 0% keyframe: invisible/jittering).
+      const active = defs.filter(([k]) => (k === "st" ? me.st > 0 : me[k] === 1));
+      const sig = active.map(([k]) => k).join(",");
+      if (this._statusChipSig !== sig) {
+        this._statusChipSig = sig;
+        this.el.statusIcons.replaceChildren();
+        for (const [, label, col, kind] of active) {
+          const chip = document.createElement("span");
+          chip.className = `status-chip ${kind}`;
+          chip.style.background = col;
+          chip.title = label;
+          chip.textContent = label[0];
+          this.el.statusIcons.appendChild(chip);
+        }
       }
     }
 
@@ -2002,6 +2054,21 @@ export class UI {
     const m = Math.floor(s / 60);
     const ss = Math.floor(s % 60).toString().padStart(2, "0");
     return `${m}:${ss}`;
+  }
+
+  /** Restart a one-shot transient CSS animation class on `el` (same pattern as src/fx.js's runClass). */
+  _pulseClass(el, cls, ms) {
+    if (!el) return;
+    this._pulseTimers || (this._pulseTimers = new Map());
+    const prev = this._pulseTimers.get(cls);
+    if (prev) clearTimeout(prev);
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+    this._pulseTimers.set(cls, setTimeout(() => {
+      el.classList.remove(cls);
+      this._pulseTimers.delete(cls);
+    }, ms));
   }
 
   // ---- Tutorial tab switching -----------------------------------------------
