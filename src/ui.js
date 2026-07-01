@@ -1,6 +1,7 @@
 // All DOM/UI wiring: menus, lobby, HUD, room code, invite link, QR code.
 // QRCode is loaded globally from a <script> tag (window.QRCode).
 import { CFG, SPELLS, SPELL_ORDER, SPELL_TEMPLATES, ITEMS, getArenaHazard } from "./config.js";
+import { spellIconSvg } from "./spell-icons.js";
 
 const $ = (id) => document.getElementById(id);
 const escapeHTML = (value) => String(value).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -924,7 +925,9 @@ export class UI {
     cd.className = "ability-cd";
     const swatch = document.createElement("span");
     swatch.className = "ability-swatch";
-    swatch.style.background = "#" + (color.toString(16).padStart(6, "0"));
+    swatch.innerHTML = spellIconSvg("");
+    swatch.style.color = "#" + (color.toString(16).padStart(6, "0"));
+    swatch.style.background = "transparent";
     el.append(swatch, key, nm, cd);
     return { el, key, nm, cd, swatch };
   }
@@ -1045,7 +1048,9 @@ export class UI {
       slot.dataset.spell = empty ? "" : id;
       slot.title = empty ? `Empty spell slot ${i + 1}` : "";
       nm.textContent = empty ? "Empty" : SPELLS[id].name;
-      swatch.style.background = "#" + ((empty ? 0x444466 : (SPELLS[id].color || 0x8888ff)).toString(16).padStart(6, "0"));
+      swatch.innerHTML = spellIconSvg(empty ? "" : id);
+      swatch.style.color = "#" + ((empty ? 0x444466 : (SPELLS[id].color || 0x8888ff)).toString(16).padStart(6, "0"));
+      swatch.style.background = "transparent";
       cd.style.height = empty ? "100%" : pct + "%";
       slot.classList.toggle("empty", empty);
       slot.classList.toggle("locked", empty);
@@ -1361,7 +1366,9 @@ export class UI {
         card.setAttribute("aria-label", `${s.name} — ${s.desc}`);
         const swatch = document.createElement("span");
         swatch.className = "dsc-swatch";
-        swatch.style.background = hex(s.color || 0x6c4cff);
+        swatch.innerHTML = spellIconSvg(id);
+        swatch.style.color = hex(s.color || 0x6c4cff);
+        swatch.style.background = "transparent";
         const nm = document.createElement("span");
         nm.className = "dsc-name";
         nm.textContent = s.name;
