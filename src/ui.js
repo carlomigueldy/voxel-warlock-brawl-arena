@@ -1,7 +1,7 @@
 // All DOM/UI wiring: menus, lobby, HUD, room code, invite link, QR code.
 // QRCode is loaded globally from a <script> tag (window.QRCode).
 import { CFG, SPELLS, SPELL_ORDER, SPELL_TEMPLATES, ITEMS, getArenaHazard } from "./config.js";
-import { spellIconSvg } from "./spell-icons.js";
+import { spellIconSvg, itemIconSvg } from "./spell-icons.js";
 import * as social from "./social.js";
 import { isValidPttKey } from "./input.js";
 
@@ -31,6 +31,7 @@ export class UI {
       centerMsg: $("center-msg"), touch: $("touch-controls"),
       abilityBar: $("ability-bar"),
       itemBar: $("item-bar"),
+      itemToast: $("item-toast"),
       castWrap: $("cast-wrap"), castBar: $("cast-bar"), castLabel: $("cast-label"),
       statusIcons: $("status-icons"),
       btnSfx: $("btn-sfx"), btnMusic: $("btn-music"),
@@ -827,13 +828,43 @@ export class UI {
 
   _buildItemSlot(index) {
     if (!this.itemSlotHotkeys) this.itemSlotHotkeys = CFG.DEFAULT_ITEM_SLOT_HOTKEYS.slice();
-    const key = this.itemSlotHotkeys[index] || CFG.DEFAULT_ITEM_SLOT_HOTKEYS[index];
-    // Passive slots show no hotkey in the label; active slots show the bound key.
-    const slot = this._slotShell(`Item slot ${index + 1}`, null, "Empty", 0x444444);
+    const hotkey = this.itemSlotHotkeys[index] || CFG.DEFAULT_ITEM_SLOT_HOTKEYS[index];
+    // Key label starts blank — updateItemBar fills it in per-frame based on
+    // whether the slot holds an active (castable) item, a passive item, or
+    // nothing, so players are never shown a key that does nothing.
+    const slot = this._slotShell(`Item slot ${index + 1}`, "", "Empty", 0x444444);
     slot.el.dataset.itemSlot = String(index);
+    slot.el.dataset.itemKey = "";
     slot.el.classList.add("empty");
+    // Rebind picker — mirrors _buildSpellSlot's hotkey remap button.
+    const picker = document.createElement("button");
+    picker.className = "hotkey-picker";
+    picker.type = "button";
+    picker.textContent = "↻";
+    picker.setAttribute("aria-label", `Rebind item slot ${index + 1} hotkey`);
+    picker.onclick = (e) => {
+      e.stopPropagation();
+      picker.textContent = "…";
+      const set = (ev) => {
+        ev.preventDefault();
+        const newKey = this._eventKey(ev);
+        if (newKey) {
+          this.handlers.itemSlotHotkey?.(index, newKey);
+          this.itemSlotHotkeys[index] = newKey;
+          const elSet = this._itemEls[index];
+          elSet.hotkey = newKey;
+          // Only active slots display the key badge — refresh it immediately.
+          const curKey = elSet.slot.dataset.itemKey;
+          if (curKey && ITEMS[curKey]?.kind === "active") elSet.keyEl.textContent = newKey;
+        }
+        picker.textContent = "↻";
+      };
+      addEventListener("keydown", set, { once: true });
+    };
+    slot.el.appendChild(picker);
+    this._attachTooltip(slot.el);
     this.el.itemBar.appendChild(slot.el);
-    this._itemEls[index] = { slot: slot.el, cd: slot.cd, nm: slot.nm, swatch: slot.swatch, key };
+    this._itemEls[index] = { slot: slot.el, cd: slot.cd, nm: slot.nm, swatch: slot.swatch, keyEl: slot.key, hotkey };
   }
 
   updateItemBar(snapshot, localId) {
@@ -841,20 +872,43 @@ export class UI {
     this._buildItemBar(false);
     if (!this._itemEls) return;
     const me = snapshot.players.find((p) => p.id === localId);
-    const equippedKeys = me?.items || [];
+    const equippedKeys = (me?.items || []).slice(0, CFG.ITEM_SLOT_COUNT);
     const cds = me?.cds || {};
+
+    // Pickup toast — diff each slot against the previous snapshot's key.
+    // Skip the very first snapshot (no baseline to diff against) and skip
+    // bulk resyncs (e.g. reconnecting mid-match re-delivers an already-owned
+    // loadout across several slots at once) — a genuine live pickup only
+    // ever fills one previously-empty slot at a time.
+    const prevKeys = this._prevItemKeys;
+    if (prevKeys) {
+      const wasFullyEmpty = prevKeys.every((k) => !k);
+      const newlyEquipped = [];
+      for (let i = 0; i < CFG.ITEM_SLOT_COUNT; i++) {
+        const newKey = equippedKeys[i] || null;
+        if (newKey && newKey !== (prevKeys[i] || null)) newlyEquipped.push({ index: i, key: newKey });
+      }
+      if (newlyEquipped.length && !(wasFullyEmpty && newlyEquipped.length > 1)) {
+        for (const { index, key } of newlyEquipped) this._showItemToast(key, index);
+      }
+    }
+    this._prevItemKeys = equippedKeys;
+
     for (let i = 0; i < CFG.ITEM_SLOT_COUNT; i++) {
       const elSet = this._itemEls[i];
       if (!elSet) continue;
-      const { slot, cd, nm, swatch } = elSet;
+      const { slot, cd, nm, swatch, keyEl } = elSet;
       const key = equippedKeys[i];
       const it = key ? ITEMS[key] : null;
       const empty = !it;
+      const isActive = !empty && it.kind === "active";
       slot.dataset.itemKey = empty ? "" : key;
       nm.textContent = empty ? "Empty" : it.name;
-      swatch.style.background = "#" + ((empty ? 0x444444 : it.color).toString(16).padStart(6, "0"));
+      swatch.innerHTML = itemIconSvg(empty ? "" : it.shape);
+      swatch.style.color = "#" + ((empty ? 0x444444 : it.color).toString(16).padStart(6, "0"));
+      swatch.style.background = "transparent";
       // Active items show cooldown overlay using the granted spell's cooldown.
-      if (!empty && it.kind === "active" && it.grantsSpell) {
+      if (isActive && it.grantsSpell) {
         const remain = cds[it.grantsSpell] || 0;
         const total = SPELLS[it.grantsSpell]?.cd || 1;
         cd.style.height = Math.max(0, Math.min(100, (remain / total) * 100)) + "%";
@@ -862,8 +916,44 @@ export class UI {
         cd.style.height = "0%";
       }
       slot.classList.toggle("empty", empty);
-      slot.classList.toggle("ready", !empty && (it.kind !== "active" || (cds[it.grantsSpell] || 0) <= 0));
+      // Only active (castable) items get the "ready" glow — it signals
+      // off-cooldown/castable, which is meaningless for passive stat items.
+      slot.classList.toggle("ready", !empty && isActive && (cds[it.grantsSpell] || 0) <= 0);
+      slot.classList.toggle("item-active", isActive);
+      slot.classList.toggle("item-passive", !empty && !isActive);
+      // Hotkey label: only active (castable) slots show the bound key. Passive
+      // slots get a muted "PSV" marker so players aren't misled into pressing
+      // a key that does nothing; empty slots show nothing.
+      keyEl.textContent = empty ? "" : (isActive ? (elSet.hotkey || "") : "PSV");
+      keyEl.classList.toggle("ability-key-muted", !empty && !isActive);
     }
+  }
+
+  /** Find the item-slot index currently holding `key` (items don't stack, so at most one). */
+  _itemSlotIndexForKey(key) {
+    if (!this._itemEls) return -1;
+    for (const idx of Object.keys(this._itemEls)) {
+      if (this._itemEls[idx].slot.dataset.itemKey === key) return Number(idx);
+    }
+    return -1;
+  }
+
+  /** Transient auto-dismissing pickup toast (~3s). Reduced motion is handled by the global media query. */
+  _showItemToast(key, index) {
+    const el = this.el.itemToast;
+    const it = ITEMS[key];
+    if (!el || !it) return;
+    const isActive = it.kind === "active";
+    const hotkey = this._itemEls?.[index]?.hotkey || CFG.DEFAULT_ITEM_SLOT_HOTKEYS[index] || "?";
+    el.textContent = isActive
+      ? `${it.name} — press ${hotkey} to cast`
+      : `${it.name} — ${it.desc || ""}`;
+    if (this._itemToastTimer != null) clearTimeout(this._itemToastTimer);
+    el.classList.remove("hidden");
+    this._itemToastTimer = setTimeout(() => {
+      el.classList.add("hidden");
+      this._itemToastTimer = null;
+    }, 3000);
   }
 
   // Build the ability bar once, then refresh cooldown overlays each frame.
@@ -988,6 +1078,50 @@ export class UI {
     return frag;
   }
 
+  /** Mirrors _buildTooltipContent for item slots: name + PASSIVE/ACTIVE tag, desc, and (active items) cast/cooldown/key. */
+  _buildItemTooltipContent(key) {
+    const it = ITEMS[key];
+    if (!it) return null;
+    const color = "#" + ((it.color || 0x8888ff) >>> 0).toString(16).padStart(6, "0").slice(-6);
+    const rarity = String(it.rarity || "").replace(/^./, (c) => c.toUpperCase());
+    const isActive = it.kind === "active" && it.grantsSpell;
+
+    const frag = document.createDocumentFragment();
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "spell-tooltip-title";
+    titleEl.style.color = color;
+    titleEl.textContent = it.name;
+    // Passive vs active tag sits where the spell tooltip shows its hotkey, so
+    // hovering a passive item spells out "PASSIVE" rather than leaving players
+    // to infer it from the muted slot badge alone.
+    const tagEl = document.createElement("span");
+    tagEl.className = isActive ? "spell-tooltip-key" : "spell-tooltip-key item-tooltip-passive";
+    tagEl.textContent = isActive ? "ACTIVE" : "PASSIVE";
+    titleEl.appendChild(tagEl);
+    frag.appendChild(titleEl);
+
+    const descEl = document.createElement("div");
+    descEl.className = "spell-tooltip-desc";
+    descEl.textContent = it.desc || "";
+    frag.appendChild(descEl);
+
+    const statsEl = document.createElement("div");
+    statsEl.className = "spell-tooltip-stats";
+    if (isActive) {
+      const spell = SPELLS[it.grantsSpell];
+      const idx = this._itemSlotIndexForKey(key);
+      const hotkey = (idx >= 0 && this._itemEls?.[idx]?.hotkey) || CFG.DEFAULT_ITEM_SLOT_HOTKEYS[idx] || "?";
+      statsEl.textContent = `${rarity} · Cast: ${spell?.name || it.grantsSpell} · Cooldown: ${spell?.cd ?? "?"}s · Key: ${hotkey}`;
+    } else {
+      // Passive items have no key — make the always-on nature explicit.
+      statsEl.textContent = `${rarity} · Passive bonus — always active while equipped`;
+    }
+    frag.appendChild(statsEl);
+
+    return frag;
+  }
+
   _positionTooltip(tt, anchor) {
     tt.style.visibility = "hidden";
     tt.style.display = "block";
@@ -1004,11 +1138,14 @@ export class UI {
   }
 
   _showTooltip(slotEl) {
-    const id = slotEl.dataset.spell;
-    if (!id || !SPELLS[id]) { this._hideTooltip(); return; }
-    const tt = this._initTooltip();
-    const content = this._buildTooltipContent(id);
+    let content = null;
+    if (slotEl.dataset.spell) {
+      content = SPELLS[slotEl.dataset.spell] ? this._buildTooltipContent(slotEl.dataset.spell) : null;
+    } else if (slotEl.dataset.itemKey) {
+      content = ITEMS[slotEl.dataset.itemKey] ? this._buildItemTooltipContent(slotEl.dataset.itemKey) : null;
+    }
     if (!content) { this._hideTooltip(); return; }
+    const tt = this._initTooltip();
     tt.replaceChildren(content);
     tt.removeAttribute("aria-hidden");
     tt.classList.add("visible");
@@ -1069,12 +1206,12 @@ export class UI {
   }
 
   _bind() {
-    // LAN Host — fires hostLan event.
+    // Private Host — fires hostPrivate event.
     if (this.el.btnHost) {
       this.el.btnHost.onclick = () => {
         const name = this._name();
         if (!name) return this.setMenuStatus("Enter a name first.");
-        this.handlers.hostLan?.(name, {
+        this.handlers.hostPrivate?.(name, {
           mobsEnabled: this.mobsEnabled(),
           character: this.selectedCharacter,
           ...this.getArenaSettings(),
@@ -1094,7 +1231,7 @@ export class UI {
       this.el.btnCancelQueue.onclick = () => this.handlers.cancelQueue?.();
     }
 
-    // LAN Join — fires joinByCode event.
+    // Private Join — fires joinByCode event.
     if (this.el.btnJoin) {
       this.el.btnJoin.onclick = () => this._tryJoin();
     }
@@ -1163,8 +1300,8 @@ export class UI {
     if (code) {
       if (this.el.joinCode) this.el.joinCode.value = code.toUpperCase();
       this.setMenuStatus(`Room ${code.toUpperCase()} ready — enter your name and Join.`);
-      // Navigate to LAN screen so the join field is visible.
-      this._showMenuScreen("lan");
+      // Navigate to private screen so the join field is visible.
+      this._showMenuScreen("private");
     }
     const savedName = localStorage.getItem("vwb-name");
     if (savedName && this.el.nameInput) this.el.nameInput.value = savedName;
@@ -1195,7 +1332,7 @@ export class UI {
 
   /**
    * Switch to one of the named sub-screens.
-   * Valid names: "online" | "lan" | "characters" | "settings" | "leaderboards" | "account"
+   * Valid names: "online" | "private" | "characters" | "settings" | "leaderboards" | "account"
    */
   _showMenuScreen(name) {
     this._menuScreen = name;

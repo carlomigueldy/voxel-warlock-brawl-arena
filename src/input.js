@@ -1,6 +1,6 @@
 // Local input collection (keyboard/mouse + touch). Produces an input object
 // that gets sent to the host (or applied directly if we are the host).
-import { CFG, SPELLS, SPELL_ORDER, ITEMS } from "./config.js";
+import { CFG, SPELLS, SPELL_ORDER, ITEMS, ITEM_SLOT_HOTKEY_STORAGE_KEY } from "./config.js";
 
 export const SPELL_SLOT_HOTKEY_STORAGE_KEY = "vwb-spell-slot-hotkeys";
 export const PTT_KEY_STORAGE_KEY = "vwb-ptt-key";
@@ -69,6 +69,22 @@ export function setPttKey(code) {
   return true;
 }
 
+export function normalizeItemSlotHotkeys(value) {
+  const source = Array.isArray(value) ? value : [];
+  return CFG.DEFAULT_ITEM_SLOT_HOTKEYS.map((fallback, i) => {
+    const key = String(source[i] || fallback).trim().toUpperCase();
+    return keyToCode(key) ? key : fallback;
+  });
+}
+
+function loadItemSlotHotkeys() {
+  try {
+    return normalizeItemSlotHotkeys(JSON.parse(localStorage.getItem(ITEM_SLOT_HOTKEY_STORAGE_KEY) || "[]"));
+  } catch {
+    return normalizeItemSlotHotkeys([]);
+  }
+}
+
 // Map keyboard codes to spell ids from the spellbook definition.
 function buildKeyMap() {
   const map = {};
@@ -95,7 +111,7 @@ export class InputController {
     this.spellSlotHotkeys = loadSpellSlotHotkeys();
     this.spellSlots = Array(CFG.SPELL_SLOT_COUNT).fill(null);
     // Item slot bindings — active-item granted spells, keyed by item hotkey (7–0).
-    this.itemSlotHotkeys = CFG.DEFAULT_ITEM_SLOT_HOTKEYS.slice();
+    this.itemSlotHotkeys = loadItemSlotHotkeys();
     this.itemSlots = Array(CFG.ITEM_SLOT_COUNT).fill(null);
     this.touchMove = [0, 0];
     this.onCast = null;          // optional callback (e.g. resume audio)
@@ -189,6 +205,14 @@ export class InputController {
     const normalized = normalizeSpellSlotHotkeys(Object.assign([...this.spellSlotHotkeys], { [index]: key }));
     this.spellSlotHotkeys = normalized;
     localStorage.setItem(SPELL_SLOT_HOTKEY_STORAGE_KEY, JSON.stringify(normalized));
+    return true;
+  }
+
+  setItemSlotHotkey(index, key) {
+    if (index < 0 || index >= CFG.ITEM_SLOT_COUNT) return false;
+    const normalized = normalizeItemSlotHotkeys(Object.assign([...this.itemSlotHotkeys], { [index]: key }));
+    this.itemSlotHotkeys = normalized;
+    localStorage.setItem(ITEM_SLOT_HOTKEY_STORAGE_KEY, JSON.stringify(normalized));
     return true;
   }
 

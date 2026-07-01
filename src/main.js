@@ -26,6 +26,7 @@ const audio = new AudioEngine();
 renderer.setAudio(audio);
 ui.setAudio(audio);
 ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
+ui.setItemSlotHotkeys(input.itemSlotHotkeys);
 
 // Dev FPS/stats overlay — OFF by default; enable with ?stats=1 or F3.
 perf.init();
@@ -565,8 +566,8 @@ function syncLocalSpellSlots(snap) {
 
 // ---------- UI event wiring ----------
 
-// LAN host — pure PeerJS, no matchmaking.
-ui.on("hostLan", async (name, options) => {
+// Private host — pure PeerJS, no matchmaking.
+ui.on("hostPrivate", async (name, options) => {
   await cancelRegionQueue();
   _isOnline = false;
   _matchResultSubmitted = false;
@@ -667,7 +668,7 @@ ui.on("cancelQueue", async () => {
   ui.setMenuStatus("Matchmaking canceled.");
 });
 
-// LAN join by code — pure PeerJS, no matchmaking.
+// Private join by code — pure PeerJS, no matchmaking.
 ui.on("joinByCode", async (name, code, character) => {
   await cancelRegionQueue();
   _isOnline = false;
@@ -831,6 +832,9 @@ ui.on("leaveMatch", leaveMatch);
 ui.on("selectSpell", (id) => input.setSelectedSpell(id));
 ui.on("spellSlotHotkey", (index, key) => {
   if (input.setSpellSlotHotkey(index, key)) ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
+});
+ui.on("itemSlotHotkey", (index, key) => {
+  if (input.setItemSlotHotkey(index, key)) ui.setItemSlotHotkeys(input.itemSlotHotkeys);
 });
 
 // ---- Social UI wiring: chat, mute, settings, disclaimer, PTT rebind ----

@@ -181,9 +181,9 @@
           </button>
         </li>
         <li>
-          <button class="spine-btn" data-screen="lan" aria-current="false">
+          <button class="spine-btn" data-screen="private" aria-current="false">
             <span class="spine-icon" aria-hidden="true">⌁</span>
-            <span>LAN</span>
+            <span>Private</span>
           </button>
         </li>
         <li>
@@ -263,9 +263,9 @@
         </div>
       </div>
 
-      <!-- LAN / PRIVATE sub-screen -->
-      <div class="sub-screen sub-screen-hidden" id="screen-lan" role="region" aria-label="LAN or private game" aria-hidden="true">
-        <h2 class="sub-screen-title">LAN / PRIVATE</h2>
+      <!-- Private/Direct sub-screen -->
+      <div class="sub-screen sub-screen-hidden" id="screen-private" role="region" aria-label="Private or direct game" aria-hidden="true">
+        <h2 class="sub-screen-title">PRIVATE</h2>
         <p class="sub-screen-desc">Host a private game or join by room code — no account needed.</p>
 
         <button id="btn-host" class="btn btn-forge btn-hero">
@@ -273,7 +273,7 @@
           <span class="btn-spark" aria-hidden="true"></span>
         </button>
 
-        <div class="lan-divider" aria-hidden="true"><span>— or —</span></div>
+        <div class="private-divider" aria-hidden="true"><span>— or —</span></div>
 
         <div class="join-box">
           <div class="rune-code">
@@ -592,6 +592,7 @@
     <div id="center-msg" class="center-msg hidden"></div>
     <div id="ability-bar" class="hidden"></div>
     <div id="item-bar" class="hidden"></div>
+    <div id="item-toast" class="item-toast hidden" role="status" aria-live="polite"></div>
     <div id="audio-controls">
       <button id="btn-sfx">SFX: On</button>
       <button id="btn-music">Music: On</button>
@@ -661,7 +662,10 @@
   </div>
 
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script type="module">
+    import QRCode from "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm";
+    window.QRCode = QRCode;
+  </script>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>
