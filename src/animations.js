@@ -123,14 +123,91 @@ export function archetypeForEvent(ev) {
   return { id, archetype };
 }
 
-// Resolve the locomotion clip from movement. Falling always wins so a knocked-off
-// warlock reads as plummeting rather than running in mid-air.
-export function locomotionState({ speed = 0, maxSpeed = 9, falling = false } = {}) {
+// Speed (world units/s) above which a player's velocity reads as "being
+// flung" rather than moving under their own power. Mirrors the movement-
+// control reduction threshold already used in player.js's tick() (control =
+// knockSpeed > 2 ? 0.25 : 1.0) so the visual and the physics agree on what
+// counts as a hard knockback.
+export const KNOCKBACK_SPEED_THRESHOLD = 2;
+
+// Resolve the locomotion clip from movement + status flags. Priority (highest
+// first): death (never resumes locomotion) > falling (plummeting off a ledge)
+// > stunned (fall-stun punish window) > knockback (flung by a hit) > run/walk/
+// idle from raw movement speed. Each higher-priority state fully overrides the
+// ones below it so a stunned, knocked-back player doesn't flicker between poses.
+export function locomotionState({
+  speed = 0,
+  maxSpeed = 9,
+  falling = false,
+  alive = true,
+  stunned = false,
+  knockSpeed = 0,
+} = {}) {
+  if (!alive) return "death";
   if (falling) return "fall";
+  if (stunned) return "stun";
+  if (knockSpeed > KNOCKBACK_SPEED_THRESHOLD) return "knockback";
   const gait = maxSpeed > 0 ? speed / maxSpeed : 0;
   if (gait >= 0.6) return "run";
   if (gait >= 0.12) return "walk";
   return "idle";
+}
+
+// Hit-reaction overlay: a short flinch layered on top of locomotion, exactly
+// like CastAnimator layers cast archetypes, but triggered by the *victim* of a
+// "hit" event rather than the caster (so it deliberately does not reuse
+// ARCHETYPES/CastAnimator — a hit reaction is not a cast).
+export const REACTION_DURATION = { hit: 0.25 };
+
+// Map a simulation "hit" event to the victim's id + reaction, or null. Mirrors
+// archetypeForEvent's shape but reads `victim` (who got hit) instead of `id`/
+// `a` (who cast the ability) — those are different players.
+export function reactionForEvent(ev) {
+  if (!ev || ev.type !== "hit") return null;
+  if (ev.victim == null) return null;
+  return { id: ev.victim, reaction: "hit" };
+}
+
+// Tracks the currently-playing hit-reaction overlay and its 0..1 blend
+// weight, identical state-machine shape to CastAnimator (ease in / hold /
+// ease out) but scoped to REACTION_DURATION instead of ARCHETYPE_DURATION.
+export class ReactionAnimator {
+  constructor() {
+    this.active = false;
+    this.reaction = null;
+    this.weight = 0;
+    this._t = 0;
+    this._dur = 0;
+  }
+
+  trigger(reaction) {
+    if (!REACTION_DURATION[reaction]) return;
+    this.reaction = reaction;
+    this.active = true;
+    this._t = 0;
+    this._dur = REACTION_DURATION[reaction];
+  }
+
+  update(dt) {
+    if (!this.active) {
+      this.weight = Math.max(0, this.weight - dt * 6);
+      return;
+    }
+    this._t += dt;
+    const k = this._dur > 0 ? this._t / this._dur : 1;
+    // Snappier ease in/out than CastAnimator — a flinch reads best as a quick
+    // punctuation, not a held pose.
+    let target;
+    if (k < 0.2) target = k / 0.2;
+    else if (k > 0.6) target = Math.max(0, (1 - k) / 0.4);
+    else target = 1;
+    this.weight += (target - this.weight) * Math.min(1, dt * 24);
+    this.weight = Math.max(0, Math.min(1, this.weight));
+    if (this._t >= this._dur) {
+      this.active = false;
+      this.reaction = null;
+    }
+  }
 }
 
 // A tiny state machine that tracks the currently-playing cast archetype and a
