@@ -167,9 +167,10 @@
       <div class="field name-field">
         <label class="field-label" for="name-input">Warlock name</label>
         <div class="rune-field">
-          <input id="name-input" maxlength="14" placeholder="Name your warlock" autocomplete="off" spellcheck="false" />
+          <input id="name-input" maxlength="14" placeholder="Name your warlock" autocomplete="off" spellcheck="false" aria-describedby="name-error" />
           <span class="rune-field-line"></span>
         </div>
+        <p id="name-error" class="field-error" role="alert" aria-live="assertive" hidden>Name your warlock first.</p>
       </div>
 
       <!-- Vertical navigation spine -->
