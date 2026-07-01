@@ -43,11 +43,19 @@ export function acquireBolt(color, kind = "fireball") {
   return g;
 }
 
-// Release a bolt Group back to its kind's pool. Hides it, detaches it from
-// its current parent (if any), and never disposes shared geometry/materials
-// (those are cache-owned by voxel.js and reused by future acquireBolt calls).
+// Release a bolt Group back to its kind's pool. Flushes any live TrailPool
+// trail shards (src/vfx/projectiles.js's _withTrail attaches
+// userData.flushTrail on registry-routed cores; a no-op for legacy bolts
+// with no trail), hides the group, detaches it from its current parent (if
+// any), and never disposes shared geometry/materials (those are cache-owned
+// by voxel.js and reused by future acquireBolt calls). The flush must run
+// BEFORE the group is removed from this.boltMeshes/the scene: once removed
+// its userData.update(dt) stops being ticked, so any shards left alive would
+// otherwise freeze in place and permanently hold their slot in the shared,
+// capped TrailPool.
 export function releaseBolt(group) {
   if (!group) return;
+  group.userData.flushTrail?.();
   group.visible = false;
   if (group.parent) group.parent.remove(group);
   const kind = group.userData.kind || "fireball";

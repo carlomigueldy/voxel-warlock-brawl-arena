@@ -21,6 +21,9 @@ import {
 } from "./character.js";
 import { archetypeForEvent } from "./animations.js";
 import { effectPos } from "./renderer-util.js";
+import { VFX_REGISTRY, getVfx } from "./vfx/duotone.js";
+import { buildChainBeam } from "./vfx/beams.js";
+import { getReticle } from "./vfx/reticles.js";
 
 export class GameRenderer {
   constructor(canvas) {
@@ -53,6 +56,14 @@ export class GameRenderer {
     this.effects = [];             // transient VFX groups with .userData.update
     this.linkLines = new Map();    // "a|b" -> line
     this.localId = null;
+    // Per-spell targeting reticle (hold-to-aim / release-to-cast, src/input.js).
+    // Persistent — NOT routed through this.effects (that array is for
+    // one-shot transient VFX; the reticle lives for the duration of the hold).
+    this._reticle = null;
+    this._reticleSpellId = null;   // spell id the current _reticle was built for
+    this._aimSpellId = null;       // set via setAimSpell(); null = no active aim
+    this._cursorX = window.innerWidth / 2;
+    this._cursorY = window.innerHeight / 2;
     this.clock = new THREE.Clock();
     this.audio = null;             // set via setAudio()
     this._lastSnapT = -1;          // dedupe events per snapshot
@@ -139,6 +150,16 @@ export class GameRenderer {
   }
 
   setLocalId(id) { this.localId = id; }
+
+  // Called by src/input.js when the local player begins/ends/switches
+  // hold-to-aim on a spell. `id` is a spell id, or null/undefined to hide
+  // the reticle (aim released or cancelled).
+  setAimSpell(id) { this._aimSpellId = id || null; }
+
+  // Called on every mousemove so _updateReticle() can raycast the current
+  // cursor position each frame without re-reading DOM state (mirrors how
+  // src/input.js's screenToPoint/screenToAim already consume clientX/clientY).
+  setCursor(x, y) { this._cursorX = x; this._cursorY = y; }
 
   _makeHpBar(y) {
     const w = 1.4, h = 0.16;
@@ -840,34 +861,110 @@ export class GameRenderer {
           break;
         }
         case "cast": {
-          const col = { fireball: 0xff5a1e, boomerang: 0xffe14c, homing: 0xc04cff, bouncer: 0x4cff9c, splitter: 0xff4ca8, fireSpray: 0xff7a2e, disable: 0xbbbbbb }[ev.spell] || 0xffffff;
-          this._addEffect(this._burstAt(ev.x, ev.z, col, { count: 14, speed: 6, life: 0.35 }));
+          // Call the registry's bespoke cast() when VFX_REGISTRY has an entry
+          // for this spell (getVfx()'s color already covers spells with no
+          // bespoke entry yet, e.g. "projectile"); some entries deliberately
+          // opt out of an extra cast burst (`cast: () => null` — fireball/
+          // boomerang/homing/bouncer/splitter, whose rich duotone bolt core
+          // is now the cast tell) so only the true no-entry case falls back
+          // to the old generic burst.
+          const vfx = getVfx(ev.spell);
+          const entry = VFX_REGISTRY[ev.spell];
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(ev.x, ev.z, { color: vfx.color, y: ev.y }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._burstAt(ev.x, ev.z, vfx.color, { count: 14, speed: 6, life: 0.35 }));
+          }
           break;
         }
-        case "lightning":
-          for (const s of ev.segs || []) this._addEffect(buildLightning(s.x1, s.z1, s.x2, s.z2, ev.color || 0x9fe6ff));
+        case "lightning": {
+          // Initial zap flare at the caster (first segment's origin), then
+          // the jagged duotone chain-arc look for every hop — see
+          // src/vfx/beams.js's buildChainBeam doc for why the chain-hop
+          // visual is exported standalone rather than registry-keyed under
+          // "lightning" (that key is PROJECTILE_VFX's traveling-bolt entry).
+          const vfx = getVfx("lightning");
+          const color = ev.color || vfx.color;
+          const segs = ev.segs || [];
+          const entry = VFX_REGISTRY.lightning;
+          if (entry && segs.length) {
+            const eff = entry.cast(this._vfxCtx(segs[0].x1, segs[0].z1, { color }));
+            if (eff) this._addEffect(eff);
+          }
+          for (const s of segs) this._addEffect(buildChainBeam(s.x1, s.z1, s.x2, s.z2, color));
           // SFX handled by the sfx relay (redundant direct play removed — C7).
           break;
-        case "teleport":
-          this._addEffect(this._burstAt(ev.x1, ev.z1, 0x66ccff, { count: 14 }));
-          this._addEffect(this._burstAt(ev.x2, ev.z2, 0x66ccff, { count: 14 }));
+        }
+        case "teleport": {
+          // teleport and blink share this event (the sim doesn't distinguish
+          // them here), so both always render as the "teleport" duotone —
+          // matches the previous identical-burst-for-both behavior.
+          const vfx = getVfx("teleport");
+          const entry = VFX_REGISTRY.teleport;
+          if (entry) {
+            const departEff = entry.cast(this._vfxCtx(ev.x1, ev.z1, { color: vfx.color }));
+            if (departEff) this._addEffect(departEff);
+            const arriveEff = entry.impact(this._vfxCtx(ev.x2, ev.z2, { color: vfx.color }));
+            if (arriveEff) this._addEffect(arriveEff);
+          } else {
+            this._addEffect(this._burstAt(ev.x1, ev.z1, vfx.color, { count: 14 }));
+            this._addEffect(this._burstAt(ev.x2, ev.z2, vfx.color, { count: 14 }));
+          }
           break;
-        case "thrust":
-          this._addEffect(this._burstAt(ev.x, ev.z, 0xffffff, { count: 8, speed: 5 }));
+        }
+        case "thrust": {
+          const vfx = getVfx("thrust");
+          const entry = VFX_REGISTRY.thrust;
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(ev.x, ev.z, { color: vfx.color }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._burstAt(ev.x, ev.z, vfx.color, { count: 8, speed: 5 }));
+          }
           break;
-        case "swap":
-          this._addEffect(this._burstAt(ev.ax, ev.az, 0xc04cff, { count: 12 }));
-          this._addEffect(this._burstAt(ev.bx, ev.bz, 0xc04cff, { count: 12 }));
+        }
+        case "swap": {
+          const vfx = getVfx("swap");
+          const entry = VFX_REGISTRY.swap;
+          if (entry) {
+            const effA = entry.cast(this._vfxCtx(ev.ax, ev.az, { color: vfx.color }));
+            if (effA) this._addEffect(effA);
+            const effB = entry.impact(this._vfxCtx(ev.bx, ev.bz, { color: vfx.color }));
+            if (effB) this._addEffect(effB);
+          } else {
+            this._addEffect(this._burstAt(ev.ax, ev.az, vfx.color, { count: 12 }));
+            this._addEffect(this._burstAt(ev.bx, ev.bz, vfx.color, { count: 12 }));
+          }
           break;
-        case "drain":
-          this._addEffect(buildLightning(ev.x1, ev.z1, ev.x2, ev.z2, 0x9c2bff));
+        }
+        case "drain": {
+          const vfx = getVfx("drain");
+          const entry = VFX_REGISTRY.drain;
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(ev.x1, ev.z1, { color: vfx.color, x2: ev.x2, z2: ev.z2 }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(buildLightning(ev.x1, ev.z1, ev.x2, ev.z2, vfx.color));
+          }
           break;
-        case "gravity":
-          this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, 0x6c4cff));
+        }
+        case "gravity": {
+          const vfx = getVfx("gravity");
+          const entry = VFX_REGISTRY.gravity;
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(ev.x, ev.z, { color: vfx.color, radius: ev.radius }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, vfx.color));
+          }
           this.audio?.play("gravity", this._panFor(ev.x));
           break;
+        }
         case "meteorCast": {
           // Timed ground decal: a ring at the target that pulses faster as the meteor falls.
+          const vfx = getVfx("meteor");
+          const entry = VFX_REGISTRY.meteor;
           const fallDur = ev.fall || 1.0;
           const decalR  = ev.radius || 7;
           const decalEff = new THREE.Group();
@@ -880,20 +977,33 @@ export class GameRenderer {
             const interval = 0.35 * (1 - k * 0.6); // pulses accelerate toward impact
             if (decalElapsed >= decalNext) {
               decalNext += interval;
-              this._addEffect(this._ringPulse(ev.x, ev.z, decalR * (0.6 + 0.4 * k), 0xff3a1e));
+              this._addEffect(this._ringPulse(ev.x, ev.z, decalR * (0.6 + 0.4 * k), vfx.color));
             }
             if (decalElapsed >= fallDur + 0.05) decalEff.userData.done = true;
           };
           this._addEffect(decalEff);
+          // Bespoke ignition-spark accent alongside the synced fall telegraph above.
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(ev.x, ev.z, { color: vfx.color }));
+            if (eff) this._addEffect(eff);
+          }
           this.audio?.play("meteor", this._panFor(ev.x));
           break;
         }
-        case "meteorImpact":
-          this._addEffect(this._burstAt(ev.x, ev.z, 0xff3a1e, { count: 40, speed: 12, life: 0.7 }));
-          this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, 0xff3a1e));
+        case "meteorImpact": {
+          const vfx = getVfx("meteor");
+          const entry = VFX_REGISTRY.meteor;
+          if (entry) {
+            const eff = entry.impact(this._vfxCtx(ev.x, ev.z, { color: vfx.color, radius: ev.radius }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._burstAt(ev.x, ev.z, vfx.color, { count: 40, speed: 12, life: 0.7 }));
+            this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, vfx.color));
+          }
           this.audio?.play("meteorImpact", this._panFor(ev.x));
           this._shake = Math.min(1.0, this._shake + 0.8);
           break;
+        }
         case "castStart":
           this._addEffect(this._ringPulse(ev.x ?? 0, ev.z ?? 0, 1.5, (SPELLS[ev.spell]?.color ?? 0x88ddff)));
           this.audio?.play("whoosh", this._panFor(ev.x ?? 0));
@@ -907,60 +1017,165 @@ export class GameRenderer {
           this._addEffect(this._burstAt(ev.x ?? 0, ev.z ?? 0, 0xffffff, { count: 6, speed: 4, life: 0.25 }));
           this.audio?.play("whoosh", this._panFor(ev.x ?? 0));
           break;
-        case "explode":
-          this._addEffect(this._burstAt(ev.x, ev.z, 0xff6a1e, { count: 40, speed: 12, life: 0.7 }));
-          this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, 0xff6a1e));
+        case "explode": {
+          const vfx = getVfx("explode");
+          const entry = VFX_REGISTRY.explode;
+          if (entry) {
+            const eff = entry.impact(this._vfxCtx(ev.x, ev.z, { color: vfx.color, radius: ev.radius }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._burstAt(ev.x, ev.z, vfx.color, { count: 40, speed: 12, life: 0.7 }));
+            this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, vfx.color));
+          }
           this.audio?.play("meteorImpact", this._panFor(ev.x));
           this._shake = Math.min(1.0, this._shake + 0.6);
           break;
-        case "vacuumTick":
-          this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, 0x6c4cff));
+        }
+        case "vacuumTick": {
+          const vfx = getVfx("vacuum");
+          const entry = VFX_REGISTRY.vacuum;
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(ev.x, ev.z, { color: vfx.color, radius: ev.radius }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._ringPulse(ev.x, ev.z, ev.radius, vfx.color));
+          }
           break;
-        case "pull":
-          this._addEffect(buildLightning(ev.x1, ev.z1, ev.x2, ev.z2, 0x8fffc4));
+        }
+        case "pull": {
+          const vfx = getVfx("pull");
+          const entry = VFX_REGISTRY.pull;
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(ev.x1, ev.z1, { color: vfx.color, x2: ev.x2, z2: ev.z2 }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(buildLightning(ev.x1, ev.z1, ev.x2, ev.z2, vfx.color));
+          }
           break;
-        case "drag":
-          this._addEffect(buildLightning(ev.x1, ev.z1, ev.x2, ev.z2, 0x4cff9c));
+        }
+        case "drag": {
+          const vfx = getVfx("drag");
+          const entry = VFX_REGISTRY.drag;
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(ev.x1, ev.z1, { color: vfx.color, x2: ev.x2, z2: ev.z2 }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(buildLightning(ev.x1, ev.z1, ev.x2, ev.z2, vfx.color));
+          }
           break;
-        case "push":
-          this._addEffect(this._burstAt(ev.x, ev.z, 0xaef0ff, { count: 14, speed: 8, life: 0.4 }));
+        }
+        case "push": {
+          const vfx = getVfx("push");
+          const entry = VFX_REGISTRY.push;
+          if (entry) {
+            const eff = entry.impact(this._vfxCtx(ev.x, ev.z, { color: vfx.color, angle: ev.dir }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._burstAt(ev.x, ev.z, vfx.color, { count: 14, speed: 8, life: 0.4 }));
+          }
           break;
-        case "target":
-          this._addEffect(this._burstAt(ev.x, ev.z, 0x9c2bff, { count: 16, speed: 7, life: 0.45 }));
+        }
+        case "target": {
+          // Doom has no separate windup/telegraph event — the single
+          // "target" event covers both the cast and the hit in one packet
+          // — so fire the registry's cast() (the crosshair-reticle collapse,
+          // the spell's signature icon echo) alongside impact() rather than
+          // impact() alone; both simply ctx.addEffect() internally and
+          // return null, so there is nothing to double-add here.
+          const vfx = getVfx("target");
+          const entry = VFX_REGISTRY.target;
+          if (entry) {
+            const ctx = this._vfxCtx(ev.x, ev.z, { color: vfx.color });
+            entry.cast(ctx);
+            const eff = entry.impact(ctx);
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._burstAt(ev.x, ev.z, vfx.color, { count: 16, speed: 7, life: 0.45 }));
+          }
           break;
-        case "heal":
-          this._addEffect(this._burstAt(ev.x, ev.z, 0x7cff8a, { count: 6, speed: 3, life: 0.4 }));
+        }
+        case "heal": {
+          const vfx = getVfx("heal");
+          const entry = VFX_REGISTRY.heal;
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(ev.x, ev.z, { color: vfx.color }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._burstAt(ev.x, ev.z, vfx.color, { count: 6, speed: 3, life: 0.4 }));
+          }
           break;
+        }
         case "link": {
-          // Link tether cast: burst at both ends (caster a and target b).
+          // Link tether cast: the registry's steady beam spans both ends
+          // (caster a, target b) for the tether's actual duration; falls
+          // back to the old twin-burst look when no live mesh exists yet.
+          const vfx = getVfx("link");
+          const entry = VFX_REGISTRY.link;
           const aMesh = this.playerMeshes?.get(ev.a);
           const bMesh = this.playerMeshes?.get(ev.b);
-          if (aMesh) this._addEffect(this._burstAt(aMesh.group.position.x, aMesh.group.position.z, 0xff66cc, { count: 14, speed: 7, life: 0.45 }));
-          if (bMesh) this._addEffect(this._burstAt(bMesh.group.position.x, bMesh.group.position.z, 0xff66cc, { count: 14, speed: 7, life: 0.45 }));
+          if (entry && aMesh && bMesh) {
+            const eff = entry.cast(this._vfxCtx(aMesh.group.position.x, aMesh.group.position.z, {
+              color: vfx.color,
+              x2: bMesh.group.position.x, z2: bMesh.group.position.z,
+              duration: SPELLS.link?.duration,
+            }));
+            if (eff) this._addEffect(eff);
+          } else {
+            if (aMesh) this._addEffect(this._burstAt(aMesh.group.position.x, aMesh.group.position.z, vfx.color, { count: 14, speed: 7, life: 0.45 }));
+            if (bMesh) this._addEffect(this._burstAt(bMesh.group.position.x, bMesh.group.position.z, vfx.color, { count: 14, speed: 7, life: 0.45 }));
+          }
           break;
         }
         case "pocketwatch": {
-          // Pocket Watch: golden burst at the caster.
+          // Pocket Watch: golden clock-sweep at the caster.
+          const vfx = getVfx("pocketWatch");
+          const entry = VFX_REGISTRY.pocketWatch;
           const pwMesh = this.playerMeshes?.get(ev.id);
           const pwX = pwMesh ? pwMesh.group.position.x : 0;
           const pwZ = pwMesh ? pwMesh.group.position.z : 0;
-          this._addEffect(this._burstAt(pwX, pwZ, 0xffd23c, { count: 20, speed: 8, life: 0.5 }));
-          this._addEffect(this._ringPulse(pwX, pwZ, 2.0, 0xffd23c));
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(pwX, pwZ, { color: vfx.color }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._burstAt(pwX, pwZ, vfx.color, { count: 20, speed: 8, life: 0.5 }));
+            this._addEffect(this._ringPulse(pwX, pwZ, 2.0, vfx.color));
+          }
           break;
         }
-        case "timeshiftReturn":
-          this._addEffect(this._burstAt(ev.x ?? 0, ev.z ?? 0, 0x88ddff, { count: 10 }));
+        case "timeshiftReturn": {
+          const vfx = getVfx("timeShift");
+          const entry = VFX_REGISTRY.timeShift;
+          if (entry) {
+            const eff = entry.impact(this._vfxCtx(ev.x ?? 0, ev.z ?? 0, { color: vfx.color }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._burstAt(ev.x ?? 0, ev.z ?? 0, vfx.color, { count: 10 }));
+          }
           this.audio?.play("timeshift", this._panFor(ev.x ?? 0));
           break;
+        }
         case "invisible":
         case "speed":
         case "summon":
         case "shield":
         case "windwalk":
         case "rush":
-        case "timeshift":
-          this._addEffect(this._burstAt(ev.x ?? 0, ev.z ?? 0, 0x88ddff, { count: 10 }));
+        case "timeshift": {
+          // Casing note: a few event `type`s don't match their SPELLS/
+          // VFX_REGISTRY key casing (windwalk -> windWalk, timeshift ->
+          // timeShift) — map explicitly rather than assuming a shared name.
+          const spellId = { windwalk: "windWalk", timeshift: "timeShift" }[ev.type] || ev.type;
+          const vfx = getVfx(spellId);
+          const entry = VFX_REGISTRY[spellId];
+          const pos = this._posForId(ev.id, ev.x, ev.z);
+          if (entry) {
+            const eff = entry.cast(this._vfxCtx(pos.x, pos.z, { color: vfx.color }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._burstAt(pos.x, pos.z, vfx.color, { count: 10 }));
+          }
           break;
+        }
         case "runePickup":
           this._addEffect(this._burstAt(ev.x, ev.z, 0x7cff5a, { count: 18, speed: 6 }));
           this.audio?.play("cast", this._panFor(ev.x || 0));
@@ -977,7 +1192,18 @@ export class GameRenderer {
           break;
         case "statusApplied": {
           const statusCol = { slow: 0x66ccff, burn: 0xff7a2e, curse: 0x9c2bff, stun: 0xffe14c }[ev.status] || 0xffffff;
-          this._addEffect(this._ringPulse(ev.x, ev.z, 1.8, statusCol));
+          if (ev.status === "stun" && VFX_REGISTRY.stun) {
+            // Hex Bash (and any mob ability applying the same "stun" status)
+            // emits no dedicated cast/hit event of its own — this
+            // statusApplied packet is the only signal — so route it through
+            // the registry's converging zigzag echo of stun's icon instead
+            // of a generic ring; it is otherwise dead code (see review
+            // finding).
+            const eff = VFX_REGISTRY.stun.impact(this._vfxCtx(ev.x, ev.z, { color: statusCol }));
+            if (eff) this._addEffect(eff);
+          } else {
+            this._addEffect(this._ringPulse(ev.x, ev.z, 1.8, statusCol));
+          }
           this.audio?.play(ev.status, this._panFor(ev.x));
           break;
         }
@@ -1136,6 +1362,34 @@ export class GameRenderer {
     const g = buildBurst(color, opts);
     g.position.set(x, y, z);
     return g;
+  }
+
+  // Build the ctx object src/vfx/*.js's registry cast(ctx)/impact(ctx)
+  // builders expect (see src/vfx/duotone.js's VFX_REGISTRY doc comment):
+  // { x, z, addEffect, ringPulse, burstAt } plus whatever spell-specific
+  // fields the caller supplies (`color`, `y`, `x2`/`z2` for two-endpoint
+  // beams, `radius`, `angle`, `spread`, `duration`, ...). Undefined optional
+  // fields are harmless — every registry builder reads them via `ctx.field
+  // ?? default`.
+  _vfxCtx(x, z, extra = {}) {
+    return {
+      x, z,
+      addEffect: (e) => this._addEffect(e),
+      ringPulse: this._ringPulse.bind(this),
+      burstAt: this._burstAt.bind(this),
+      ...extra,
+    };
+  }
+
+  // Resolve a world position for a spell event that only carries a caster
+  // id (buff casts like shield/rush/windwalk don't emit x/z) — prefers the
+  // event's own x/z when present, otherwise looks up the caster's current
+  // mesh position, otherwise falls back to the origin (matches the previous
+  // hardcoded `ev.x ?? 0, ev.z ?? 0` behavior for ids with no live mesh).
+  _posForId(id, x, z) {
+    if (x !== undefined && z !== undefined) return { x, z };
+    const mesh = this.playerMeshes?.get(id);
+    return mesh ? { x: mesh.group.position.x, z: mesh.group.position.z } : { x: 0, z: 0 };
   }
 
   // Build a persistent ground-ring decal for a mob's active channel (ch snapshot field).
@@ -1299,10 +1553,15 @@ export class GameRenderer {
       }
     }
 
-    // Spin bolts for flair.
+    // Spin bolts for flair, and drive any registry-routed core's own
+    // userData.update(dt) (e.g. a pooled TrailPool trail emitter attached by
+    // src/vfx/projectiles.js's _withTrail, or homing's spinning reticle ring)
+    // — legacy (non-registry) bolt Groups have no userData.update, so this
+    // is a no-op for them.
     for (const m of this.boltMeshes.values()) {
       m.rotation.y += dt * 6;
       m.rotation.x += dt * 4;
+      m.userData.update?.(dt);
     }
 
     // Assign the shared pool of dynamic point lights to the bolts nearest the
@@ -1318,7 +1577,9 @@ export class GameRenderer {
         const bolt = active[i];
         if (bolt) {
           light.position.copy(bolt.position);
-          const core = bolt.userData.core;
+          // Registry-routed cores (src/vfx/duotone.js's facetedDuo) expose
+          // userData.primary instead of userData.core — fall back to it.
+          const core = bolt.userData.core || bolt.userData.primary;
           if (core && core.material && core.material.color) light.color.copy(core.material.color);
           light.intensity = 1.2;
         } else {
@@ -1389,7 +1650,69 @@ export class GameRenderer {
     });
 
     this._updateCamera(dt);
+    this._updateReticle(dt);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  // Position/hide the local player's hold-to-aim targeting reticle
+  // (src/vfx/reticles.js). Rebuilds the reticle Group only when the aimed
+  // spell changes (rare — a keypress, not a per-frame event); every other
+  // frame just repositions/recolors the existing instance in place, so
+  // holding a spell key costs no extra allocation beyond one raycast.
+  _updateReticle(dt) {
+    if (!this._aimSpellId) {
+      if (this._reticle) this._reticle.visible = false;
+      return;
+    }
+    const me = this.playerMeshes.get(this.localId);
+    if (!me) {
+      if (this._reticle) this._reticle.visible = false;
+      return;
+    }
+    const entry = getReticle(this._aimSpellId);
+    if (!this._reticle || this._reticleSpellId !== this._aimSpellId) {
+      if (this._reticle) {
+        this._reticle.userData.dispose?.();
+        this.scene.remove(this._reticle);
+      }
+      this._reticle = entry.build(SPELLS[this._aimSpellId]?.color);
+      this._reticleSpellId = this._aimSpellId;
+      this.scene.add(this._reticle);
+    }
+    // SELF_BUFF reticles start hidden by design (src/vfx/reticles.js's
+    // buildSelfBuff) since self-casts never enter the aim flow — don't force
+    // them visible here, or selecting a self-buff spell would show a faint
+    // ring around the player, contradicting that invariant.
+    if (entry.archetype !== "SELF_BUFF") this._reticle.visible = true;
+
+    const point = this.screenToPoint(this._cursorX, this._cursorY);
+
+    // Best-effort nearest-enemy lookup for the target-lock/tether
+    // archetypes so the reticle previews which foe would actually be
+    // affected. Purely visual — no line-of-sight or cone check (those live
+    // server-side in src/spells.js's nearestEnemy()/aimedEnemy()) — so this
+    // is an approximation, never authoritative over the actual cast.
+    let target = null;
+    if (entry.archetype === "NEAREST_TARGET_LOCK" || entry.archetype === "TETHER_LOCK") {
+      const range = SPELLS[this._aimSpellId]?.range ?? Infinity;
+      let bestD = range * range;
+      for (const [id, e] of this.playerMeshes) {
+        if (id === this.localId || !e.target || e.target.al === false || e.target.f) continue;
+        const dx = e.rx - me.rx, dz = e.rz - me.rz;
+        const d = dx * dx + dz * dz;
+        if (d <= bestD) { bestD = d; target = { x: e.rx, z: e.rz }; }
+      }
+    }
+
+    this._reticle.userData.update({
+      point,
+      casterX: me.rx,
+      casterZ: me.rz,
+      casterAim: me.ra,
+      range: SPELLS[this._aimSpellId]?.range,
+      radius: SPELLS[this._aimSpellId]?.radius,
+      target,
+    });
   }
 
   _updateCamera(dt) {
@@ -1503,8 +1826,11 @@ export class GameRenderer {
 
   reset() {
     for (const id of [...this.playerMeshes.keys()]) this.removePlayer(id);
+    // releaseBolt() (not a bare scene.remove) so any live TrailPool trail
+    // shards get flushed back to the shared pool instead of freezing in the
+    // scene — see pool.js's releaseBolt() doc comment.
     for (const id of [...this.boltMeshes.keys()]) {
-      this.scene.remove(this.boltMeshes.get(id));
+      releaseBolt(this.boltMeshes.get(id));
     }
     this.boltMeshes.clear();
     for (const g of this.meteorMeshes.values()) this.scene.remove(g);
@@ -1520,6 +1846,14 @@ export class GameRenderer {
     this.effects = [];
     for (const l of this.linkLines.values()) this.scene.remove(l);
     this.linkLines.clear();
+    // Dispose the persistent hold-to-aim reticle (not part of this.effects).
+    if (this._reticle) {
+      this._reticle.userData.dispose?.();
+      this.scene.remove(this._reticle);
+      this._reticle = null;
+    }
+    this._reticleSpellId = null;
+    this._aimSpellId = null;
     // Clear map layout meshes (plateaus, ramps, obstacle props).
     this._rebuildMapMeshes(null, CFG.DEFAULT_ARENA_WORLD);
     this._mapVersion = -1;

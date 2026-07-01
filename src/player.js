@@ -23,6 +23,9 @@ export class Player {
     this.alive = true;
     this.spectating = false;
     this.falling = false;    // off the edge, plummeting to lava
+    // Practice mode: when true, this player takes no HP damage and never
+    // falls to hazard death (sim.js sets this for the local practice player).
+    this.invulnerable = false;
     this.score = 0;          // round wins
     this.roundKills = 0;
 
@@ -85,7 +88,6 @@ export class Player {
     this._countedDeath = -1;
     this._castSeen = -1;      // highest cast id consumed (dedupe)
     this.pendingCasts = [];   // cast requests awaiting resolution next step
-    this._nextBotFireAt = 0;
     this._nextBotAbilityAt = 0;
     this._botCastId = 0;
     this._hazardTime = 0;
@@ -295,7 +297,6 @@ export class Player {
     this.activeCast = null;
     this.pendingCasts = [];
     this._castSeen = -1;
-    this._nextBotFireAt = 0;
     this._nextBotAbilityAt = 0;
     this._botCastId = 0;
     this._hazardTime = 0;
@@ -476,7 +477,11 @@ export class Player {
 
     // Off the edge? Begin falling — Lava Treads grants a brief grace window.
     if (!arena.isOnPlatform(this.x, this.z)) {
-      if (this.mods.lavaGrace > 0 && this._lavaGrace === undefined) {
+      if (this.invulnerable) {
+        // Practice mode: never fall to hazard death — snap back onto the platform.
+        this.x = 0; this.z = 0.01; this.vx = 0; this.vz = 0;
+        this._hazardTime = 0;
+      } else if (this.mods.lavaGrace > 0 && this._lavaGrace === undefined) {
         this._lavaGrace = this.mods.lavaGrace;
       }
       if (this._lavaGrace > 0) {
@@ -568,6 +573,7 @@ export class Player {
   // the attacker for kill-credit so an HP kill is attributed even with no hit event.
   applyDamage(amount, byId = null) {
     if (!this.alive || this.falling) return false; // already doomed; ignore
+    if (this.invulnerable) return false; // practice mode: no HP damage
     if (!(amount > 0)) return false;
     if (this.status.curse > 0) amount *= this.status.curseMul;
     this.hp = Math.max(0, this.hp - amount);

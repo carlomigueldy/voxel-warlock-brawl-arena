@@ -1,6 +1,7 @@
 // Local input collection (keyboard/mouse + touch). Produces an input object
 // that gets sent to the host (or applied directly if we are the host).
 import { CFG, SPELLS, SPELL_ORDER, ITEMS, ITEM_SLOT_HOTKEY_STORAGE_KEY } from "./config.js";
+import { isSelfAim } from "./vfx/reticles.js";
 
 export const SPELL_SLOT_HOTKEY_STORAGE_KEY = "vwb-spell-slot-hotkeys";
 export const PTT_KEY_STORAGE_KEY = "vwb-ptt-key";
@@ -117,6 +118,7 @@ export class InputController {
     this.onCast = null;          // optional callback (e.g. resume audio)
     this.selectedSpell = "fireball"; // touch ability selection
     this.paused = false;         // when true (pause menu open) input is neutralized
+    this._aimSpell = null;       // spell id currently held for hold-to-aim / release-to-cast
 
     // ---- Social: chat gate, push-to-talk, auto-AFK idle detection ----
     this.chatting = false;        // chat box open -> gameplay keys + movement neutralized (mirrors this.paused)
@@ -143,31 +145,53 @@ export class InputController {
       }
       // While the pause menu or chat box is open, swallow gameplay keys (no casts).
       if (this.paused || this.chatting) return;
+      if (e.repeat) return;
       this._activity();
-      if (e.code === "Space" && !e.repeat) this.queueCast(this.selectedSpell);
-      // Ability hotkeys queue a cast at the current aim/target point.
+      // Spells are cast only via their ability hotkeys — there is no basic
+      // attack / auto-fire on Space or LMB (spell-only combat, strict slots).
       const spell = this.spellForCode(e.code);
-      if (spell && !e.repeat) this.queueCast(spell);
+      if (!spell) return;
+      // Self-buffs/self-AoEs (shield, heal, windWalk, vacuum, ...) have no
+      // meaningful aim target — cast instantly on keydown, as before.
+      if (isSelfAim(spell)) { this.queueCast(spell); return; }
+      // Every other spell is hold-to-aim / release-to-cast: show the
+      // reticle now; the actual cast fires on keyup. Last-press-wins —
+      // pressing a second aimed ability while one is already held switches
+      // the reticle/pending cast to the new spell.
+      this._aimSpell = spell;
+      this.renderer?.setAimSpell?.(spell);
     });
     addEventListener("keyup", (e) => {
       this.keys[e.code] = false;
+      // Release push-to-talk regardless of the aim state below.
       if (e.code === this.pttKey && this.ptt) {
         this.ptt = false;
         this.onPtt?.(false);
       }
+      if (!this._aimSpell) return;
+      // Only the key that maps to the currently-held aim spell releases it
+      // (last-press-wins: releasing a stale key after switching aim to a
+      // different spell is a no-op).
+      if (this.spellForCode(e.code) !== this._aimSpell) return;
+      const spell = this._aimSpell;
+      this._aimSpell = null;
+      this.renderer?.setAimSpell?.(null);
+      if (this.paused || this.chatting) return; // pause/chat guard: cancel the aim, no cast
+      this.queueCast(spell);
     });
     addEventListener("mousemove", (e) => {
       this.mouseX = e.clientX;
       this.mouseY = e.clientY;
+      this.renderer?.setCursor?.(e.clientX, e.clientY);
       this._activity();
     });
+    // No mouse-button casting: LMB/RMB do not fire spells (spell-only combat via
+    // ability hotkeys). Mouse clicks still count as activity for auto-AFK.
     addEventListener("mousedown", (e) => {
-      if (this.paused || this.chatting) return;  // ignore clicks while paused/chatting
+      if (this.paused || this.chatting) return;
       this._activity();
-      // LMB and RMB both cast the selected spell; LMB is the primary trigger.
-      if (e.button === 0) this.queueCast(this.selectedSpell);
-      if (e.button === 2) this.queueCast(this.selectedSpell);
     });
+    // Suppress the RMB context menu so right-drag camera/aim gestures stay clean.
     addEventListener("contextmenu", (e) => e.preventDefault());
 
     this._bindTouch();
@@ -188,7 +212,15 @@ export class InputController {
   // auto-AFK before the player does anything new.
   resetActivity() { this._activity(); }
 
-  setSelectedSpell(id) { if (SPELLS[id]) this.selectedSpell = id; }
+  // Touch ability selection. The reticle for the selected spell is shown
+  // continuously while it stays selected (Fire button casts it on tap, no
+  // hold-to-aim gesture on touch) — the renderer's own SELF_BUFF builder
+  // starts hidden, so selecting a self-buff spell is a harmless no-op here.
+  setSelectedSpell(id) {
+    if (!SPELLS[id]) return;
+    this.selectedSpell = id;
+    if (!this.paused) this.renderer?.setAimSpell?.(id);
+  }
 
   setSpellSlots(slots = []) {
     this.spellSlots = Array.from({ length: CFG.SPELL_SLOT_COUNT }, (_, i) => slots[i] || null);
@@ -298,6 +330,14 @@ export class InputController {
     if (this.paused || this.chatting) {
       this._castWindow = [];
       this.pendingCasts = [];
+      // Cancel any in-progress hold-to-aim so the reticle doesn't linger
+      // behind the pause menu (mirrors keyup's pause guard above). Also
+      // clear the renderer's aim reticle unconditionally — touch's
+      // continuously-shown selectedSpell reticle (set via setSelectedSpell,
+      // independent of _aimSpell) would otherwise keep rendering behind the
+      // pause overlay every frame since update() runs regardless of pause.
+      if (this._aimSpell) this._aimSpell = null;
+      this.renderer?.setAimSpell?.(null);
       return { move: [0, 0], aim: aimNow, seq: ++this.seq, casts: [] };
     }
 

@@ -7,6 +7,7 @@ import {
   facetedRock, facetedCrystal, facetedOrb, facetedCone, facetedCylinder,
   facetedShard, facetedSlab, facetedAura, facetedPuff,
 } from "./lowpoly.js";
+import { VFX_REGISTRY } from "./vfx/duotone.js";
 
 function box(w, h, d, color, x = 0, y = 0, z = 0, flat = true) {
   const geo = new THREE.BoxGeometry(w, h, d);
@@ -350,7 +351,35 @@ function _boltMatFor(kind, color) {
   return entry;
 }
 
+// Reverse lookup: bolt travel `kind` (src/bolt.js's Bolt.proj — "fireball",
+// "boomerang", "homing", "bouncer", "splitter", ...) -> the first
+// VFX_REGISTRY spell entry that claims it via its `.proj` field, so
+// buildBolt() can route projectile kinds with a bespoke duotone core
+// (src/vfx/projectiles.js) through the registry instead of the generic bolt
+// geo/mat cache below. Built once at module load: VFX_REGISTRY is fully
+// merged by src/vfx/duotone.js before this module's top-level code runs (ES
+// module dependency evaluation order), so a plain eager Map is safe here —
+// no lazy/on-demand rebuild needed. Kinds with no claiming entry (e.g.
+// "disable") simply fall through to the untouched legacy path below.
+const _kindVfxEntry = new Map();
+for (const entry of Object.values(VFX_REGISTRY)) {
+  if (entry.proj && !_kindVfxEntry.has(entry.proj)) _kindVfxEntry.set(entry.proj, entry);
+}
+
 export function buildBolt(color, kind = "fireball") {
+  // Registry-routed path: the traveling bolt gets its bespoke duotone core
+  // (already wired for a pooled TrailPool trail internally when the spell
+  // opts into `trail: true` — see src/vfx/projectiles.js's `_withTrail`) —
+  // this preserves pool.js's per-kind Group reuse (buildBolt is still only
+  // called once per kind until the pool needs another concurrent instance)
+  // without touching the shared _boltGeoFor/_boltMatFor caches below.
+  const vfxEntry = _kindVfxEntry.get(kind);
+  if (vfxEntry && vfxEntry.buildCore) {
+    const g = vfxEntry.buildCore(color);
+    g.userData.kind = kind; // pool.js buckets released bolts by userData.kind
+    return g;
+  }
+
   const g = new THREE.Group();
   const geo = _boltGeoFor(kind);
   const mat = _boltMatFor(kind, color);
