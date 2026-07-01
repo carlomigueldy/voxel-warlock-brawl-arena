@@ -33,7 +33,9 @@ function buildTree(obs) {
   // Faceted hex-prism trunk.
   g.add(facetedCylinder(0.16, 0.20, trunkH, 0x4a2e18, { segments: 6, y: trunkH * 0.5 }));
   // Three faceted conical canopy tiers (low radialSegments → flat facets).
-  g.add(facetedCone(r * 1.7, h * 0.38, 0x2d5a1b, { segments: 7, y: trunkH + h * 0.19 }));
+  // Bottom tier sits h*0.02 below the trunk top (not flush) so it always
+  // interpenetrates the trunk instead of risking a hairline seam.
+  g.add(facetedCone(r * 1.7, h * 0.38, 0x2d5a1b, { segments: 7, y: trunkH + h * 0.17 }));
   g.add(facetedCone(r * 1.2, h * 0.30, 0x3d7a2b, { segments: 7, y: trunkH + h * 0.42 }));
   g.add(facetedCone(r * 0.7, h * 0.22, 0x1e3d12, { segments: 7, y: trunkH + h * 0.60 }));
   return g;
@@ -59,10 +61,15 @@ function buildStone(obs) {
 function buildColumn(obs) {
   const g = new THREE.Group();
   const h = obs.height, r = obs.r;
+  // Each seam below overlaps the one beneath it by h*0.02 (rather than sitting
+  // exactly flush) so segment/perturb rounding never opens a visible gap:
+  //   shaft bottom  = 0.425h - 0.325h = 0.100h  <  base top  0.06h+0.06h = 0.12h
+  //   ring bottom   = 0.77h  - 0.04h  = 0.730h  <  shaft top 0.425h+0.325h = 0.75h
+  //   capital bottom= 0.865h - 0.075h = 0.790h  <  ring top  0.77h+0.04h  = 0.81h
   g.add(facetedSlab(r * 1.8, h * 0.12, r * 1.8, 0xa8a090, { widthSegments: 2, depthSegments: 2, y: h * 0.06 }));
-  g.add(facetedCylinder(r * 1.1, r * 1.1, h * 0.65, 0xc8c0b0, { segments: 8, y: h * 0.44 }));
-  g.add(facetedCylinder(r * 1.05, r * 1.0, h * 0.08, 0xa8a090, { segments: 8, y: h * 0.795 }));
-  g.add(facetedSlab(r * 1.5, h * 0.15, r * 1.5, 0xd8d0c0, { widthSegments: 2, depthSegments: 2, y: h * 0.93 }));
+  g.add(facetedCylinder(r * 1.1, r * 1.1, h * 0.65, 0xc8c0b0, { segments: 8, y: h * 0.425 }));
+  g.add(facetedCylinder(r * 1.05, r * 1.0, h * 0.08, 0xa8a090, { segments: 8, y: h * 0.77 }));
+  g.add(facetedSlab(r * 1.5, h * 0.15, r * 1.5, 0xd8d0c0, { widthSegments: 2, depthSegments: 2, y: h * 0.865 }));
   return g;
 }
 
@@ -90,9 +97,10 @@ function buildWall(obs) {
   const h = obs.height, r = obs.r;
   // Main slab with width/height segments so the face reads as faceted masonry.
   g.add(facetedSlab(r * 3.5, h, 0.5, 0x9a8878, { widthSegments: 6, heightSegments: 3, y: h * 0.5 }));
-  // Crumbled notches above the parapet.
-  g.add(facetedSlab(r * 0.6, h * 0.30, 0.6, 0x7a6858, { y: h + h * 0.15, x: -r * 1.0 }));
-  g.add(facetedSlab(r * 0.5, h * 0.38, 0.6, 0x6a5848, { y: h + h * 0.19, x: r * 0.8 }));
+  // Crumbled notches above the parapet, nudged h*0.02 below flush so they bite
+  // into the parapet top rather than resting exactly on it.
+  g.add(facetedSlab(r * 0.6, h * 0.30, 0.6, 0x7a6858, { y: h + h * 0.13, x: -r * 1.0 }));
+  g.add(facetedSlab(r * 0.5, h * 0.38, 0.6, 0x6a5848, { y: h + h * 0.17, x: r * 0.8 }));
   return g;
 }
 
@@ -121,9 +129,10 @@ function buildDeadGiant(obs) {
   g.add(facetedSlab(r * 3.5, h * 0.80, r * 1.2, 0x8a7062, { widthSegments: 4, heightSegments: 2, depthSegments: 2, y: h * 0.40 }));
   // Head
   g.add(facetedRock(r * 0.6, 0xc8a88a, { detail: 1, perturb: 0.12, sx: 1.2, sy: 0.9, sz: 1.0, x: r * 2.0, y: h * 0.45 }));
-  // Arms
-  g.add(facetedSlab(r * 2.0, h * 0.38, r * 0.55, 0x8a7062, { x: r * 0.5, y: h * 0.19, z: r * 1.1 }));
-  g.add(facetedSlab(r * 2.0, h * 0.38, r * 0.55, 0x8a7062, { x: -r * 0.4, y: h * 0.19, z: -r * 1.1 }));
+  // Arms — z offset keeps the inner edge (z ± 0.55r half-depth) tucked inside
+  // the torso's z ± 0.6r half-depth instead of past it, so shoulders overlap.
+  g.add(facetedSlab(r * 2.0, h * 0.38, r * 0.55, 0x8a7062, { x: r * 0.5, y: h * 0.19, z: r * 0.8 }));
+  g.add(facetedSlab(r * 2.0, h * 0.38, r * 0.55, 0x8a7062, { x: -r * 0.4, y: h * 0.19, z: -r * 0.8 }));
   // Legs
   g.add(facetedSlab(r * 0.7, h * 0.38, r * 2.5, 0x6a5040, { x: -r * 1.5, y: h * 0.19, z: r * 0.4 }));
   g.add(facetedSlab(r * 0.7, h * 0.38, r * 2.5, 0x6a5040, { x: -r * 1.5, y: h * 0.19, z: -r * 0.4 }));
