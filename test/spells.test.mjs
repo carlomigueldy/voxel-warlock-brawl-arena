@@ -263,7 +263,7 @@ test("Step 4 items: vitalityCore raises maxHp, berserkerBlade raises dmgMul, bla
   const a = sim.players.get("a");
   a.hp = a.maxHp; // ensure hp is at base before applying
   a.applyItems(["vitalityCore"]);
-  assert.strictEqual(a.maxHp, CFG.PLAYER_HP_MAX + 40, "vitalityCore should add 40 max hp");
+  assert.strictEqual(a.maxHp, CFG.PLAYER_HP_MAX + ITEMS.vitalityCore.value, "vitalityCore should add its configured max hp bonus");
   a.applyItems(["berserkerBlade"]);
   assert.ok(a.mods.dmgMul > 1, "berserkerBlade did not raise dmgMul");
   a.applyItems(["blastTome"]);

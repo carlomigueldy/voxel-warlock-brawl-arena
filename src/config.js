@@ -131,7 +131,7 @@ export const CFG = {
   CHARGE_DECAY: 0.05,        // charge bleeds off slowly per sec while alive
 
   // --- Health / damage (Step 1: HP layered over the charge model) ---
-  PLAYER_HP_MAX: 100,        // full health on (re)spawn
+  PLAYER_HP_MAX: 180,        // full health on (re)spawn
   BOLT_BASE_DAMAGE: 8,       // fallback projectile damage when a spell omits `dmg`
 
   // --- Ability slots ---
@@ -510,7 +510,7 @@ export const SPELL_TEMPLATES = [
 // Applied as persistent modifiers on each warlock via applyItems(); active items
 // grant a spell through acquireItem() and cast through the existing pipeline.
 export const ITEMS = {
-  vitalityCore:   { name: "Vitality Core",   kind: "maxHp",  value: 40,   shape: "orb",   color: 0xff4d6d, rarity: "common", desc: "+40 max health." },
+  vitalityCore:   { name: "Vitality Core",   kind: "maxHp",  value: 72,   shape: "orb",   color: 0xff4d6d, rarity: "common", desc: "+72 max health." },
   berserkerBlade: { name: "Berserker Blade", kind: "damage", value: 1.25, shape: "blade", color: 0xff7a2e, rarity: "common", desc: "+25% spell & bolt damage." },
   swiftBoots:     { name: "Swift Boots",     kind: "speed",  value: 1.18, shape: "boots", color: 0x4cff9c, rarity: "common", desc: "+18% move speed." },
   wardingHelm:    { name: "Warding Helm",    kind: "kbResist", value: 0.2, shape: "crown", color: 0x6fc0ff, rarity: "common", desc: "-20% knockback taken." },
