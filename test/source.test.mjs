@@ -513,4 +513,108 @@ test("item bar has a positioned CSS rule with pointer-events auto", () => {
   assert.match(css, /#item-bar\s*\{[\s\S]*?position:\s*fixed[\s\S]*?pointer-events:\s*auto/);
 });
 
+const voxel = fs.readFileSync("src/voxel.js", "utf8");
+
+function sourceWithoutComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+function builderBody(src, name) {
+  const start = src.indexOf(`export function ${name}(`);
+  assert.ok(start >= 0, `builder ${name} must exist`);
+  const open = src.indexOf("{", start);
+  let depth = 0, i = open;
+  for (; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") { depth--; if (depth === 0) { i++; break; } }
+  }
+  return sourceWithoutComments(src.slice(open, i));
+}
+
+test("mob builders stay procedural (no GLB/Meshy asset loading)", () => {
+  const code = sourceWithoutComments(voxel);
+  assert.doesNotMatch(code, /GLTFLoader/);
+  assert.doesNotMatch(code, /assets\/meshy\//);
+  assert.doesNotMatch(code, /\.glb\b/i);
+});
+
+test("stone giant gains stratified plates, shoulder boulders, knuckles and spine crystals", () => {
+  const b = builderBody(voxel, "buildStoneGiant");
+  assert.match(b, /accents/, "stone giant must expose an accents group");
+  assert.ok((b.match(/facetedSlab/g) || []).length >= 4,
+    "stone giant needs layered stratified plates (>=4 slabs)");
+  assert.match(b, /shoulder/i, "stone giant needs shoulder boulders");
+  assert.match(b, /knuckle/i, "stone giant needs fist knuckles");
+  assert.match(b, /facetedCrystal/, "stone giant needs spine/back crystals");
+  assert.ok((b.match(/facetedRock/g) || []).length >= 5,
+    "stone giant needs more faceted rock detail (head + fists + shoulders)");
+});
+
+test("storming vortex gains more shards, extra ring and arc crystals", () => {
+  const b = builderBody(voxel, "buildStormingVortex");
+  assert.match(b, /i < 12/, "inner shard ring must have >=12 shards");
+  assert.match(b, /i < 6/, "outer shard ring must have >=6 shards");
+  assert.match(b, /arcCrystals|arcs/, "vortex needs an arc-crystal accent group");
+  assert.match(b, /facetedCrystal/, "vortex arc crystals use facetedCrystal");
+});
+
+test("giant dwarf gains helmet horns, pauldrons, beard braids and boots/gauntlets", () => {
+  const b = builderBody(voxel, "buildGiantDwarf");
+  assert.match(b, /horn/i, "dwarf needs helmet horns");
+  assert.match(b, /pauldron/i, "dwarf needs shoulder pauldrons");
+  assert.match(b, /braid/i, "dwarf needs beard braids");
+  assert.match(b, /gauntlet/i, "dwarf needs gauntlet detail");
+  assert.ok((b.match(/facetedCone/g) || []).length >= 3,
+    "dwarf needs helmet top + two horns (>=3 cones)");
+});
+
+test("fire elemental gains layered flame crown, core shell, more motes and tendrils", () => {
+  const b = builderBody(voxel, "buildFireElemental");
+  assert.match(b, /crown/i, "elemental needs a layered flame crown");
+  assert.match(b, /tendril/i, "elemental needs flame tendrils");
+  assert.match(b, /i < 8/, "elemental must orbit >=8 motes");
+  assert.ok((b.match(/facetedCone/g) || []).length >= 2,
+    "flame crown needs a ring of cones plus a central tongue");
+});
+
+test("minion gains robe panels, a staff/lantern and a better hat/face", () => {
+  const b = builderBody(voxel, "buildMinion");
+  assert.match(b, /robe|panel/i, "minion needs robe panels");
+  assert.match(b, /staff|lantern/i, "minion needs a staff or lantern prop");
+  assert.match(b, /facetedOrb|glowBox|emissive/, "minion staff/lantern needs a glow accent");
+});
+
+test("animateMob drives newly named secondary accent groups without gameplay change", () => {
+  const b = builderBody(voxel, "animateMob");
+  assert.match(b, /accents|arcCrystals|arcs/,
+    "animateMob must animate the new accent/arc groups");
+});
+
+// Fidelity: "increase the poly count of each" means the structural limbs on the
+// big, count-bounded mobs must be higher-resolution than the default 6-sided
+// hex-prism — raising per-primitive tessellation, not only part count. Octagonal
+// (>=8-gon) prisms still read as deliberately faceted while shedding the blocky
+// "lazy" silhouette on colossal mobs with cinematic entrances.
+function countHiResCylinders(body) {
+  return (body.match(/facetedCylinder\([^;]*segments:\s*(8|10|12)\b/g) || []).length;
+}
+
+test("stone giant limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
+  const b = builderBody(voxel, "buildStoneGiant");
+  assert.ok(countHiResCylinders(b) >= 4,
+    "stone giant arms + legs must use >=8-segment faceted cylinders");
+});
+
+test("giant dwarf limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
+  const b = builderBody(voxel, "buildGiantDwarf");
+  assert.ok(countHiResCylinders(b) >= 4,
+    "giant dwarf arms + legs must use >=8-segment faceted cylinders");
+});
+
+test("fire elemental limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
+  const b = builderBody(voxel, "buildFireElemental");
+  assert.ok(countHiResCylinders(b) >= 2,
+    "fire elemental tendril arms must use >=8-segment faceted cylinders");
+});
+
 console.log(`\n${passed} source checks passed.`);
