@@ -196,6 +196,19 @@ export const CFG = {
   MAX_PLAYERS: 6,
   BOT_SKILLS: ["smart", "brilliant", "expert"],
 
+  // --- Social (chat, presence, voice) ---
+  SOCIAL: {
+    CHAT_MAX_LEN: 140,        // hard length cap (sanitizeChat)
+    CHAT_RATE_MAX: 5,         // msgs per window per sender (host rate-limit)
+    CHAT_RATE_WINDOW_MS: 3000,
+    TYPING_TTL_MS: 4000,      // typingUntil lifetime; refreshed per keystroke
+    AFK_IDLE_MS: 20000,       // auto-AFK after this much no-input
+    CHAT_BUBBLE_TTL_MS: 4000, // world-space bubble auto-dismiss
+    CHAT_LOG_MAX: 8,          // chat lines retained in HUD log
+    CHAT_LINE_FADE_MS: 8000,  // per-line dim delay
+    PTT_DEFAULT_KEY: "Backquote", // rebindable push-to-talk (non-spell key)
+  },
+
   // Player colors (low-poly palette) assigned by join order.
   COLORS: [0xff5a3c, 0x4cc9ff, 0x7cff5a, 0xffd23c, 0xc04cff, 0xff4ca8],
 
@@ -545,8 +558,13 @@ export const MSG = {
   // snapshot player field `st` = stun remaining (seconds, like `hz`) added in player.js
   ROUND_END: "roundEnd", // {winnerId, scores}
   MATCH_END: "matchEnd", // {winnerId, scores}
-  CHAT: "chat",          // reserved
   DRAFT: "draft",        // {action:"toggle"|"template"|"ready"|"clear", spell?, template?}
+  // ---- social (host relays; fromId stamped by host) ----
+  CHAT:    "chat",    // host->all: {fromId, text, kind:"text", t}   (client->host: {text, kind})
+  TYPING:  "typing",  // client->host: {typing:bool}                 (state; host mirrors into snapshot ty)
+  AFK:     "afk",     // client->host: {afk:bool}                    (state; host mirrors into snapshot afk)
+  SPEAK:   "speak",   // client->host: {speaking:bool}               (state; host mirrors into snapshot spk)
+  ROSTER:  "roster",  // host->all: {peers:[peerId,...]}             (real peers only; drives voice mesh)
 };
 
 // Deterministic short room code from a peer id suffix.

@@ -3,6 +3,7 @@
 // camera that follows the local warlock.
 import * as THREE from "three";
 import { CFG, SPELLS, isOnArenaWorld } from "./config.js";
+import * as social from "./social.js";
 import { Arena } from "./arena.js";
 import {
   buildWarlock, animateWarlock,
@@ -63,6 +64,12 @@ export class GameRenderer {
 
     // Smoothed camera target.
     this._camTarget = new THREE.Vector3(0, 0, 0);
+
+    // Social overlays: cached for showChatBubble (called directly by main.js,
+    // outside the apply() snapshot loop) and for the reduced-motion gate on
+    // the typing/speaking pulse animations (checked once, not per frame).
+    this._playerMeta = null;
+    this._reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
     // Preload every selectable character so any player's pick renders as a GLB
     // (falling back to the voxel warlock per-player only if its load fails).
@@ -172,6 +179,239 @@ export class GameRenderer {
     return spr;
   }
 
+  // =========================================================================
+  // ---- Social overlays: chat bubble, typing dots, AFK badge, speak ring ---
+  // =========================================================================
+
+  // Shared rounded-rect canvas path (manual arcTo, matches every card overlay
+  // below — avoids relying on the still-inconsistently-supported roundRect()).
+  _roundedRectPath(ctx, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.arcTo(w, 0, w, h, r);
+    ctx.arcTo(w, h, 0, h, r);
+    ctx.arcTo(0, h, 0, 0, r);
+    ctx.arcTo(0, 0, w, 0, r);
+    ctx.closePath();
+  }
+
+  // Greedy word-wrap capped at maxLines; ellipsizes the final line when text
+  // overflows the line budget. ctx must already have its font set.
+  _wrapText(ctx, text, maxWidth, maxLines) {
+    const words = String(text).trim().split(/\s+/).filter(Boolean);
+    const lines = [];
+    let line = "";
+    let idx = 0;
+    while (idx < words.length && lines.length < maxLines) {
+      const word = words[idx];
+      const test = line ? `${line} ${word}` : word;
+      if (!line || ctx.measureText(test).width <= maxWidth) {
+        line = test;
+        idx++;
+      } else {
+        lines.push(line);
+        line = "";
+      }
+    }
+    if (line && lines.length < maxLines) {
+      lines.push(line);
+    } else if (idx < words.length && lines.length > 0) {
+      let last = lines[lines.length - 1];
+      while (last.length > 1 && ctx.measureText(`${last}…`).width > maxWidth) {
+        last = last.slice(0, -1).trimEnd();
+      }
+      lines[lines.length - 1] = `${last}…`;
+    }
+    return lines.length ? lines : [""];
+  }
+
+  // Rounded speech-balloon sprite, player-color border, word-wrapped to ≤2
+  // lines with an ellipsis on overflow. Reuses the canvas-sprite pattern from
+  // _makeLabel above.
+  _makeBubble(text, color) {
+    const fontPx = 26, padX = 16, padY = 10, lineHeight = 30, maxLines = 2, maxTextWidth = 300;
+    const cv = document.createElement("canvas");
+    const ctx = cv.getContext("2d");
+    ctx.font = `600 ${fontPx}px "Chakra Petch", sans-serif`;
+    const lines = this._wrapText(ctx, text, maxTextWidth, maxLines);
+    const textWidth = Math.max(...lines.map((l) => ctx.measureText(l).width), 40);
+    const w = Math.min(340, Math.ceil(textWidth) + padX * 2);
+    const h = lines.length * lineHeight + padY * 2;
+    cv.width = w;
+    cv.height = h;
+    // Resizing the canvas resets its 2D state, so font/align must be reapplied.
+    ctx.font = `600 ${fontPx}px "Chakra Petch", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    this._roundedRectPath(ctx, w, h, 14);
+    ctx.fillStyle = "rgba(13,11,26,0.88)";
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#" + new THREE.Color(color).getHexString();
+    ctx.stroke();
+
+    ctx.fillStyle = "#ece9ff";
+    lines.forEach((l, i) => ctx.fillText(l, w / 2, padY + lineHeight * (i + 0.5)));
+
+    const tex = new THREE.CanvasTexture(cv);
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    spr.scale.set(w / 85, h / 85, 1);
+    spr.renderOrder = 998;
+    return spr;
+  }
+
+  // Spawns/refreshes a world-space chat bubble above a player's head. Called
+  // directly by main.js on receipt of a CHAT relay (chat text is event-relayed,
+  // never part of the snapshot). Skips entirely for locally-muted senders.
+  showChatBubble(id, text, color) {
+    const e = this.playerMeshes.get(id);
+    if (!e) return;
+    const meta = this._playerMeta?.get(id);
+    if (social.isMuted(id, meta?.userId || null)) return;
+    if (e.chatBubble) {
+      e.group.remove(e.chatBubble);
+      e.chatBubble.material?.dispose?.();
+    }
+    const spr = this._makeBubble(text, color);
+    spr.position.y = (e.label?.position.y ?? 3.4) + 0.9;
+    e.group.add(spr);
+    e.chatBubble = spr;
+    e._bubbleExpiry = performance.now() + CFG.SOCIAL.CHAT_BUBBLE_TTL_MS;
+  }
+
+  // Small pulsing "···" balloon shown above a player's head while typing.
+  _makeDotsSprite() {
+    const cv = document.createElement("canvas");
+    cv.width = 96;
+    cv.height = 48;
+    const ctx = cv.getContext("2d");
+    const w = cv.width, h = cv.height;
+    this._roundedRectPath(ctx, w, h, 14);
+    ctx.fillStyle = "rgba(13,11,26,0.85)";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(124,108,196,0.6)";
+    ctx.stroke();
+    ctx.fillStyle = "#ece9ff";
+    ctx.font = `700 30px "Chakra Petch", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("···", w / 2, h / 2 + 2);
+    const tex = new THREE.CanvasTexture(cv);
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    spr.scale.set(w / 85, h / 85, 1);
+    spr.renderOrder = 998;
+    spr.userData.pulseSeed = Math.random() * Math.PI * 2;
+    return spr;
+  }
+
+  // Adds/removes the animated typing indicator above a player's head.
+  _setTyping(e, on) {
+    if (on && !e.typingBubble) {
+      const spr = this._makeDotsSprite();
+      spr.position.y = (e.label?.position.y ?? 3.4) + 0.55;
+      e.group.add(spr);
+      e.typingBubble = spr;
+    } else if (!on && e.typingBubble) {
+      e.group.remove(e.typingBubble);
+      e.typingBubble.material?.dispose?.();
+      e.typingBubble = null;
+    }
+  }
+
+  // "AFK 💤" badge shown above a player's head while marked away.
+  _makeAfkBadge() {
+    const cv = document.createElement("canvas");
+    cv.width = 168;
+    cv.height = 48;
+    const ctx = cv.getContext("2d");
+    const w = cv.width, h = cv.height;
+    this._roundedRectPath(ctx, w, h, 12);
+    ctx.fillStyle = "rgba(20,16,10,0.85)";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#ffd23c";
+    ctx.stroke();
+    ctx.fillStyle = "#ffd23c";
+    ctx.font = `700 24px "Chakra Petch", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("AFK 💤", w / 2, h / 2 + 1);
+    const tex = new THREE.CanvasTexture(cv);
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    spr.scale.set(w / 85, h / 85, 1);
+    spr.renderOrder = 998;
+    return spr;
+  }
+
+  // Desaturates (or restores) every material on a player's model to sell the
+  // "away" state at a glance. Runs once per state transition, not per frame.
+  // Only walks the character-model subtree — the label sprite, HP-bar
+  // billboard, and social overlay sprites (chat bubble/typing dots/AFK badge/
+  // speak ring) are direct children of e.group too, but must stay full-color
+  // and are excluded here.
+  _applyAfkDim(e, on) {
+    const hsl = { h: 0, s: 0, l: 0 };
+    const excluded = new Set(
+      [e.label, e.hpBar?.group, e.chatBubble, e.typingBubble, e.afkBadge, e.speakRing].filter(Boolean)
+    );
+    for (const child of e.group.children) {
+      if (excluded.has(child)) continue;
+      child.traverse((o) => {
+        if (!o.material) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if (!m.color) continue;
+          if (on) {
+            if (!m.userData._afkOrigColor) m.userData._afkOrigColor = m.color.clone();
+            m.userData._afkOrigColor.getHSL(hsl);
+            m.color.setHSL(hsl.h, hsl.s * 0.25, hsl.l * 0.7);
+          } else if (m.userData._afkOrigColor) {
+            m.color.copy(m.userData._afkOrigColor);
+          }
+        }
+      });
+    }
+  }
+
+  // Adds/removes the AFK badge + model desaturation. Never mute-gated (this
+  // reflects the player's own state, not something a viewer can silence).
+  _setAfk(e, on) {
+    if (on && !e.afkBadge) {
+      const spr = this._makeAfkBadge();
+      spr.position.y = (e.label?.position.y ?? 3.4) + 0.55;
+      e.group.add(spr);
+      e.afkBadge = spr;
+      this._applyAfkDim(e, true);
+    } else if (!on && e.afkBadge) {
+      e.group.remove(e.afkBadge);
+      e.afkBadge.material?.dispose?.();
+      e.afkBadge = null;
+      this._applyAfkDim(e, false);
+    }
+  }
+
+  // Adds/removes a glowing ring around a speaking player's feet.
+  _setSpeaking(e, on) {
+    if (on && !e.speakRing) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.7, 0.95, 32),
+        new THREE.MeshBasicMaterial({ color: 0x7cff5a, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.05;
+      ring.userData.pulseSeed = Math.random() * Math.PI * 2;
+      e.group.add(ring);
+      e.speakRing = ring;
+    } else if (!on && e.speakRing) {
+      e.group.remove(e.speakRing);
+      e.speakRing.geometry?.dispose?.();
+      e.speakRing.material?.dispose?.();
+      e.speakRing = null;
+    }
+  }
+
   _ensurePlayerMesh(snap, meta) {
     let entry = this.playerMeshes.get(snap.id);
     if (!entry) {
@@ -226,9 +466,26 @@ export class GameRenderer {
     });
   }
 
+  // Removes + disposes the four social overlay sprites/mesh (chat bubble,
+  // typing dots, AFK badge, speak ring) from a player entry, if present.
+  // The group-wide _disposeGroup traversal in removePlayer would also catch
+  // these (they're all group children), but this keeps teardown explicit and
+  // safe to call independently (e.g. before rebuilding a bubble).
+  _disposeSocialOverlays(e) {
+    for (const key of ["chatBubble", "typingBubble", "afkBadge", "speakRing"]) {
+      const obj = e[key];
+      if (!obj) continue;
+      e.group.remove(obj);
+      obj.geometry?.dispose?.();
+      obj.material?.dispose?.();
+      e[key] = null;
+    }
+  }
+
   removePlayer(id) {
     const e = this.playerMeshes.get(id);
     if (e) {
+      this._disposeSocialOverlays(e);
       const char = e.group.userData.character;
       if (char?.mixer) char.mixer.stopAllAction();
       char?.dispose?.(); // frees per-instance glyph texture + geometry + material
@@ -241,6 +498,9 @@ export class GameRenderer {
   // Apply a snapshot from the simulation/network.
   apply(snapshot, playerMeta) {
     if (!snapshot) return;
+    // Cached so showChatBubble() (called directly by main.js on a chat event,
+    // outside this per-frame pass) can resolve userId for the mute check.
+    this._playerMeta = playerMeta;
     // Events fire once per distinct snapshot (the same snapshot may be drawn on
     // many frames on the client between network updates).
     const isNewSnap = snapshot.t !== this._lastSnapT;
@@ -282,10 +542,20 @@ export class GameRenderer {
       if (!seen.has(id)) this.removePlayer(id);
     }
 
-    // Status auras on warlocks (wind walk fade, shield bubble, etc.).
+    // Status auras on warlocks (wind walk fade, shield bubble, etc.), plus the
+    // social presence overlays (typing/AFK/speaking). ty/afk/spk are
+    // non-authoritative flags that ride the STATE snapshot (see player.js);
+    // typing and speaking are suppressed per-viewer for locally-muted remotes
+    // (AFK is the player's own state, so it is never mute-gated).
     for (const ps of snapshot.players) {
       const e = this.playerMeshes.get(ps.id);
-      if (e) this._applyStatusVisuals(e, ps);
+      if (!e) continue;
+      this._applyStatusVisuals(e, ps);
+      const meta = playerMeta?.get(ps.id);
+      const muted = social.isMuted(ps.id, meta?.userId || null);
+      this._setTyping(e, !!ps.ty && !muted);
+      this._setAfk(e, !!ps.afk);
+      this._setSpeaking(e, !!ps.spk && !muted);
     }
 
     // Bolts (every projectile kind shares the renderer path).
@@ -953,6 +1223,36 @@ export class GameRenderer {
         e.hpBar.fill.position.x = -w * (1 - frac) / 2; // anchor-left shrink
         e.hpBar.fill.material.color.setRGB(frac > 0.5 ? (1 - frac) * 2 : 1, frac > 0.5 ? 1 : frac * 2, 0.18);
         e.hpBar.group.quaternion.copy(this.camera.quaternion); // billboard
+      }
+
+      // Social overlays: billboard the chat/typing/AFK sprites, expire the
+      // chat bubble past its TTL, and advance the speak-ring pulse.
+      if (e.chatBubble) {
+        e.chatBubble.quaternion.copy(this.camera.quaternion);
+        if (performance.now() > (e._bubbleExpiry || 0)) {
+          e.group.remove(e.chatBubble);
+          e.chatBubble.material?.dispose?.();
+          e.chatBubble = null;
+        }
+      }
+      if (e.typingBubble) {
+        e.typingBubble.quaternion.copy(this.camera.quaternion);
+        if (!this._reducedMotion) {
+          e.typingBubble.material.opacity = 0.55 + 0.45 * Math.sin(t * 5 + (e.typingBubble.userData.pulseSeed || 0));
+        }
+      }
+      if (e.afkBadge) {
+        e.afkBadge.quaternion.copy(this.camera.quaternion);
+      }
+      if (e.speakRing) {
+        if (this._reducedMotion) {
+          e.speakRing.scale.setScalar(1);
+          e.speakRing.material.opacity = 0.8;
+        } else {
+          const k = 0.5 + 0.5 * Math.sin(t * 6 + (e.speakRing.userData.pulseSeed || 0));
+          e.speakRing.scale.setScalar(1 + k * 0.15);
+          e.speakRing.material.opacity = 0.5 + k * 0.35;
+        }
       }
 
       const inst = Math.hypot(e.rx - px, e.rz - pz) / dt;

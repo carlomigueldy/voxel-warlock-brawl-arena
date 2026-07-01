@@ -2,13 +2,15 @@
 import { CFG, MSG, getCharacter } from "./config.js";
 import { Simulation, PHASE } from "./sim.js";
 import { GameRenderer } from "./renderer.js";
-import { InputController } from "./input.js";
+import { InputController, setPttKey } from "./input.js";
 import { Host, Client } from "./net.js";
 import { UI } from "./ui.js";
 import { AudioEngine } from "./audio.js";
 import { CharacterPreview } from "./preview.js";
 import { preloadAssets } from "./loader.js";
 import { perf } from "./perf.js";
+import { VoiceChat } from "./voice.js";
+import * as social from "./social.js";
 
 // Online services — all modules no-op gracefully when Supabase is not configured.
 import { isEnabled } from "./supabase.js";
@@ -52,6 +54,54 @@ let localId         = null;
 let latestSnapshot  = null;
 let inGame          = false;
 let sessionGen      = 0;       // bumped on leave/disconnect to stop stale rAF loops
+
+// --- Social/voice state ---
+let voice           = null;   // VoiceChat instance, created lazily on match start
+let lastRoster      = [];     // most recent ROSTER peer list (real peers only)
+// Per-role social senders, set once role/host/client are established; chat/typing/
+// afk/speak all route through these so callers never branch on host vs client.
+let socialSend      = null;   // { chat(text), typing(v), afk(v), speak(v) }
+
+// Resolves local mute for a remote using both peerId and userId (see social.js).
+function isPeerMuted(peerId) {
+  const m = playerMeta.get(peerId);
+  return social.isMuted(peerId, m?.userId || null);
+}
+
+// Applies a chat relay {fromId,text,kind,t} to the local log + world-space
+// bubble. Shared by the host's own relay path and every client's onChat.
+function applyChat(relay) {
+  if (isPeerMuted(relay.fromId)) return; // local mute suppresses log + bubble
+  const meta = playerMeta.get(relay.fromId);
+  const color = CFG.COLORS[(meta?.colorIndex ?? 0) % CFG.COLORS.length];
+  ui.addChatLine(meta?.name || "warlock", relay.text, color, relay.fromId === localId);
+  if (ui.getSocialPrefs().showBubbles) renderer.showChatBubble(relay.fromId, relay.text, color);
+}
+
+// Uniform social senders — main.js callers never branch on role.
+function sendChat(text)  { socialSend?.chat(text); }
+function sendTyping(v)   { socialSend?.typing(v); }
+function sendAfk(v)      { socialSend?.afk(v); }
+function sendSpeak(v)    { socialSend?.speak(v); }
+
+// Lazily constructs the voice mesh once per match (idempotent). Mic capture is
+// opt-in: only actually requested if the player has enabled it in settings.
+function ensureVoice() {
+  if (voice) return voice;
+  voice = new VoiceChat({
+    getPeer: () => (host?.peer || client?.peer) || null,
+    getRoster: () => lastRoster,
+    isMuted: isPeerMuted,
+    onSpeakingChange: (on) => sendSpeak(on),
+    getPrefs: () => ui.getSocialPrefs(),
+  });
+  if (ui.getSocialPrefs().micEnabled) voice.init();
+  // Seed the mesh immediately so a ROSTER that arrived before voice existed
+  // (e.g. a mid-match joiner's onPlayerJoin roster racing ensureVoice) isn't
+  // silently dropped — updateRoster() itself gates mesh formation on opt-in.
+  voice.updateRoster(lastRoster);
+  return voice;
+}
 
 // --- Online state ---
 let _isOnline           = false;  // true when game was started via Online flow
@@ -103,10 +153,12 @@ function startHosting(name, options = {}) {
         if (!beginMatch()) {
           // Fallback: show the lobby so practice never dead-ends.
           ui.showLobby(code, { isHost: true });
+          ui.maybeShowConduct();
           pushLobby();
         }
       } else {
         ui.showLobby(code, { isHost: true });
+        ui.maybeShowConduct();
         pushLobby();
         const hostReady = options.onHostReady?.(code);
         if (options.matchmaking) {
@@ -128,6 +180,8 @@ function startHosting(name, options = {}) {
       });
       if (sim.phase === PHASE.LOBBY) applyBotSettings();
       pushLobby();
+      lastRoster = host.emitRoster();
+      voice?.updateRoster(lastRoster);
       if (sim.phase !== PHASE.LOBBY) {
         const welcomeSnap = sim.snapshot({ trackSend: false });
         host.sendTo(peerId, { type: MSG.STATE, ...welcomeSnap, mapLayout: sim.mapLayout });
@@ -144,6 +198,8 @@ function startHosting(name, options = {}) {
       sim.removePlayer(peerId);
       playerMeta.delete(peerId);
       pushLobby();
+      lastRoster = host.emitRoster();
+      voice?.updateRoster(lastRoster);
       if (sim.phase === PHASE.LOBBY) {
         applyBotSettings();
         ui.showLobby(host.code, { isHost: true });
@@ -156,6 +212,28 @@ function startHosting(name, options = {}) {
 
   host.onInput((peerId, msg) => sim.setInput(peerId, msg));
   host.onDraft((peerId, msg) => sim.applyDraft(peerId, msg));
+
+  // Social relay: net.js already sanitizes/rate-limits/stamps fromId for CHAT
+  // and normalizes TYPING/AFK/SPEAK to booleans before these fire.
+  host.onChat((fromId, msg) => {
+    const relay = { type: MSG.CHAT, fromId, text: msg.text, kind: msg.kind, t: Date.now() };
+    host.broadcast(relay);   // reaches every client incl. the sender (echo/confirm)
+    applyChat(relay);        // host's own display
+  });
+  host.onTyping((fromId, v) => { const p = sim.players.get(fromId); if (p) p.typingUntil = v ? Date.now() + CFG.SOCIAL.TYPING_TTL_MS : 0; });
+  host.onAfk((fromId, v)    => { const p = sim.players.get(fromId); if (p) p.afk = v; });
+  host.onSpeak((fromId, v)  => { const p = sim.players.get(fromId); if (p) p.speaking = v; });
+
+  // Host is a player too: its own social actions bypass the wire entirely.
+  socialSend = {
+    chat(text) {
+      const relay = host.localChat(text);
+      if (relay) { host.broadcast(relay); applyChat(relay); }
+    },
+    typing(v) { const p = sim.players.get(localId); if (p) p.typingUntil = v ? Date.now() + CFG.SOCIAL.TYPING_TTL_MS : 0; },
+    afk(v)    { const p = sim.players.get(localId); if (p) p.afk = !!v; },
+    speak(v)  { const p = sim.players.get(localId); if (p) p.speaking = !!v; },
+  };
 
   // Host handles draft picks from its own UI locally; clients send them over the wire.
   ui.on("draft", (action) => {
@@ -194,7 +272,11 @@ function startHosting(name, options = {}) {
     }
     clearMatchmakingHostTimeout();
     host.broadcast({ type: MSG.START, round: sim.round });
+    lastRoster = host.emitRoster();
+    ensureVoice();
+    voice.updateRoster(lastRoster);
     ui.showGame();
+    ui.maybeShowConduct();
     inGame = true;
     return true;
   }
@@ -308,6 +390,7 @@ function startJoining(name, code, character, { userId, region, matchmaking } = {
       renderer.setLocalId(localId);
       playerMeta.set(localId, { name, colorIndex: 0, character: getCharacter(character).id, userId: userId || getUser()?.id || null });
       ui.showLobby(code, { isHost: false });
+      ui.maybeShowConduct();
       ui.setLobbyStatus("Connected! Waiting for host to start…");
     },
     onLobby: (msg) => {
@@ -319,17 +402,23 @@ function startJoining(name, code, character, { userId, region, matchmaking } = {
       ui.renderPlayerList(msg.players, msg.hostId);
     },
     onStart: () => {
+      ensureVoice();
       ui.showGame();
+      ui.maybeShowConduct();
       inGame = true;
     },
     onState: (snap) => {
       if (latestSnapshot && snap.t <= latestSnapshot.t) return;
       latestSnapshot = snap;
       if (!inGame && snap.phase !== PHASE.LOBBY) {
+        ensureVoice();
         ui.showGame();
+        ui.maybeShowConduct();
         inGame = true;
       }
     },
+    onChat:   (msg) => applyChat(msg),                  // {fromId,text,kind,t}
+    onRoster: (msg) => { lastRoster = msg.peers || []; voice?.updateRoster(lastRoster); },
     onError: (err) => {
       const t = err.type || "";
       if (t === "peer-unavailable") ui.setMenuStatus("Room not found. Check the code.");
@@ -350,6 +439,15 @@ function startJoining(name, code, character, { userId, region, matchmaking } = {
   ui.on("draft", (action) => {
     client.sendDraft(action);
   });
+
+  // Client social sends just forward over the wire; display happens only when
+  // the host relay comes back via onChat, keeping ordering host-authoritative.
+  socialSend = {
+    chat(text)  { client.sendChat(text); },
+    typing(v)   { client.sendTyping(v); },
+    afk(v)      { client.sendAfk(v); },
+    speak(v)    { client.sendSpeak(v); },
+  };
 
   // ---- Client loop: send input, render last snapshot ----
   const inputMs = 1000 / CFG.INPUT_RATE;
@@ -670,8 +768,15 @@ function resetMatchState() {
   clearMatchmakingHostTimeout();
   ui.hidePause();
   input.paused = false;
+  input.chatting = false;
   try { host?.destroy(); } catch { /* ignore */ }
   try { client?.destroy(); } catch { /* ignore */ }
+  try { voice?.teardown(); } catch { /* ignore */ }
+  voice = null;
+  socialSend = null;
+  lastRoster = [];
+  ui.closeChat();
+  ui.clearChatLog();
   playerMeta.clear();
   inGame = false;
   role = null;
@@ -691,6 +796,7 @@ async function leaveMatch() {
 }
 
 // ESC toggles the pause menu during active play (not in lobby/menu/spell-draft).
+// Opening pause also marks the local player AFK; resuming clears it.
 addEventListener("keydown", (e) => {
   if (e.code !== "Escape") return;
   if (!inGame || !latestSnapshot || latestSnapshot.phase === PHASE.LOBBY) return;
@@ -700,17 +806,85 @@ addEventListener("keydown", (e) => {
   e.preventDefault();
   const paused = ui.togglePause();
   input.paused = paused;
+  sendAfk(paused);
+  // Resuming: the idle timer was frozen while paused, so reset it now or the
+  // very next sample() would immediately re-trip auto-AFK and undo this.
+  if (!paused) input.resetActivity();
+});
+
+// Enter opens the chat box during active play (not in lobby/spell-draft), and
+// only when the pause menu isn't open and chat isn't already open.
+addEventListener("keydown", (e) => {
+  if (e.code !== "Enter") return;
+  if (!inGame || !latestSnapshot || latestSnapshot.phase === PHASE.LOBBY) return;
+  if (latestSnapshot.phase === PHASE.SPELL_SELECTION) return;
+  if (ui.isChatOpen() || input.paused || ui.isDialogOpen()) return;
+  e.preventDefault();
+  ui.openChat();
 });
 
 ui.on("host", startHosting);
 ui.on("join", startJoining);
 ui.on("practice", (name, options) => startHosting(name, { ...options, practice: true }));
-ui.on("resume", () => { input.paused = false; });
+ui.on("resume", () => { input.paused = false; sendAfk(false); input.resetActivity(); });
 ui.on("leaveMatch", leaveMatch);
 ui.on("selectSpell", (id) => input.setSelectedSpell(id));
 ui.on("spellSlotHotkey", (index, key) => {
   if (input.setSpellSlotHotkey(index, key)) ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
 });
+
+// ---- Social UI wiring: chat, mute, settings, disclaimer, PTT rebind ----
+ui.on("chatOpen", (open) => {
+  input.chatting = !!open;
+  if (!open) {
+    sendTyping(false);
+    // Chat swallows keystrokes without counting them as activity (see
+    // input.js), so the idle timer is frozen while open. Reset it on close
+    // or a chat session longer than AFK_IDLE_MS trips a spurious auto-AFK
+    // the instant the player closes the box and starts playing again.
+    input.resetActivity();
+  }
+});
+ui.on("chatSend", (text) => {
+  if (text) sendChat(text);
+  sendTyping(false);
+});
+ui.on("chatTyping", (typing) => sendTyping(typing));
+ui.on("toggleMute", (peerId) => {
+  const m = playerMeta.get(peerId);
+  const muted = social.toggleMute(peerId, m?.userId || null);
+  voice?.setMuted(peerId, muted);
+  ui.refreshRosterMute(peerId, muted);
+});
+ui.on("clearMutes", (peerIds) => {
+  // social.clearMuteList() already wiped the persisted list and the DOM
+  // glyphs; voice's <audio> sinks are only reachable from here, so unmute
+  // every roster peer's sink too or they stay silently muted all session.
+  for (const id of peerIds || []) voice?.setMuted(id, false);
+});
+ui.on("socialPrefs", (prefs) => {
+  if (prefs?.masterVolume != null) voice?.setMasterVolume(prefs.masterVolume);
+  if (prefs?.micEnabled && voice && !voice.isAvailable()) voice.init();
+  // Re-run the mesh diff immediately: updateRoster() itself gates mesh
+  // formation on the mic-enabled opt-in, so toggling it off tears the mesh
+  // down right away, and toggling it on forms it right away.
+  voice?.updateRoster(lastRoster);
+});
+ui.on("conductDismiss", () => {});
+ui.on("pttKey", (code) => {
+  if (setPttKey(code)) input.pttKey = code;
+});
+
+// Push-to-talk: enable/disable the outgoing mic track (if voice is available),
+// which itself fires onSpeakingChange -> sendSpeak. When the mic was never
+// granted, send SPEAK directly so the ring still shows for other viewers.
+input.onPtt = (on) => {
+  if (voice?.isAvailable()) voice.setTransmitting(on);
+  else sendSpeak(on);
+};
+
+// Auto-AFK after ~CFG.SOCIAL.AFK_IDLE_MS of no real input; cleared on activity.
+input.onAfkChange = (idle) => sendAfk(idle);
 
 // ---- Loading gate: preload assets, then wait for a user gesture to enter. ----
 (async () => {
