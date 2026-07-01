@@ -233,6 +233,7 @@
       <!-- ONLINE sub-screen (shown by default) -->
       <div class="sub-screen" id="screen-online" role="region" aria-label="Online play" aria-hidden="false">
         <h2 class="sub-screen-title">ONLINE PLAY</h2>
+        <p class="sub-screen-desc">Queue into a hidden 1v1. We start in your home region, then widen automatically.</p>
 
         <!-- Shown when Supabase is not configured -->
         <div id="online-disabled-notice" class="supabase-notice hidden" role="alert">
@@ -255,15 +256,10 @@
           <span class="btn-spark" aria-hidden="true"></span>
         </button>
 
-        <!-- Secondary: Host Online -->
-        <button id="btn-host-online" class="btn btn-ghost">Host Online Game</button>
-
-        <!-- Live room browser -->
-        <div class="field">
-          <span class="field-label">Open Rooms</span>
-          <div id="rooms-list" class="rooms-list" role="list" aria-label="Open rooms">
-            <p class="rooms-empty">No open rooms. Be the first to host!</p>
-          </div>
+        <div class="queue-panel" aria-live="polite">
+          <span class="field-label">Queue status</span>
+          <p id="online-queue-status" class="queue-status">Search your home region first. We widen the queue automatically.</p>
+          <button id="btn-cancel-queue" class="btn btn-ghost hidden">Cancel</button>
         </div>
       </div>
 

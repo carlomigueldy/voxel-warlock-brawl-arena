@@ -14,7 +14,7 @@ import { perf } from "./perf.js";
 import { isEnabled } from "./supabase.js";
 import { initAuth, getUser, onAuthChange, signUpEmail, signInEmail, signInWithEthereum, signInWithSolana, signInAsGuest, upgradeGuest, signOut } from "./auth.js";
 import { getRegion, setRegion } from "./region.js";
-import { publishRoom, heartbeat, closeRoom, listRooms, subscribeRooms, quickMatch as qmatch } from "./matchmaking.js";
+import { RegionQueue } from "./matchmaking.js";
 import { submitMatchResult, fetchLeaderboard } from "./leaderboard.js";
 
 const ui = new UI();
@@ -57,14 +57,16 @@ let sessionGen      = 0;       // bumped on leave/disconnect to stop stale rAF l
 let _isOnline           = false;  // true when game was started via Online flow
 let _onlineRegion       = null;   // region id for the current online session
 let _currentRegion      = "sea";  // latest known region (from getRegion / regionChange)
-let _heartbeatInterval  = null;
 let _matchResultSubmitted = false;
-let _roomsUnsub         = null;   // teardown fn from subscribeRooms
+let _regionQueue        = null;
+let _matchmakingHostTimeout = null;
+const ONLINE_QUEUE_IDLE_STATUS = "Search your home region first. We widen the queue automatically.";
 
 // ---------- HOST FLOW ----------
 function startHosting(name, options = {}) {
   role = "host";
   ui.setMenuStatus("Creating room…");
+  clearMatchmakingHostTimeout();
 
   const sim = new Simulation({
     mobsEnabled: options.mobsEnabled,
@@ -78,6 +80,12 @@ function startHosting(name, options = {}) {
 
   host = new Host({
     name,
+    matchmaking: options.matchmaking
+      ? {
+          matchId: options.matchmaking.matchId,
+          allowedQueueIds: options.matchmaking.allowedQueueIds,
+        }
+      : null,
     onReady: ({ code, localId: hid }) => {
       localId = hid;
       renderer.setLocalId(localId);
@@ -92,11 +100,7 @@ function startHosting(name, options = {}) {
         // Practice mode: add one Smart bot and skip the lobby straight to the game.
         sim.setBotRoster(1, "smart");
         syncBotMeta();
-        if (sim.startMatch()) {
-          host.broadcast({ type: MSG.START, round: sim.round });
-          ui.showGame();
-          inGame = true;
-        } else {
+        if (!beginMatch()) {
           // Fallback: show the lobby so practice never dead-ends.
           ui.showLobby(code, { isHost: true });
           pushLobby();
@@ -104,8 +108,14 @@ function startHosting(name, options = {}) {
       } else {
         ui.showLobby(code, { isHost: true });
         pushLobby();
-        // Let main.js do online setup (publish room, heartbeat) after host is ready.
-        options.onHostReady?.(code);
+        const hostReady = options.onHostReady?.(code);
+        if (options.matchmaking) {
+          Promise.resolve(hostReady)
+            .then((sent) => {
+              if (sent !== false) armMatchmakingHostTimeout();
+            })
+            .catch((err) => handleHostError(err));
+        }
       }
     },
     onPlayerJoin: (peerId, pname, character, extraMeta) => {
@@ -123,6 +133,11 @@ function startHosting(name, options = {}) {
         host.sendTo(peerId, { type: MSG.STATE, ...welcomeSnap, mapLayout: sim.mapLayout });
       }
       ui.setLobbyStatus(`${pname} joined.`);
+      if (options.matchmaking && sim.phase === PHASE.LOBBY && humanPlayers() >= 2) {
+        clearMatchmakingHostTimeout();
+        ui.setLobbyStatus("Opponent connected. Starting match...");
+        beginMatch();
+      }
     },
     onPlayerLeave: (peerId) => {
       const m = playerMeta.get(peerId);
@@ -136,7 +151,7 @@ function startHosting(name, options = {}) {
       }
       if (m) ui.setLobbyStatus(`${m.name} left.`);
     },
-    onError: (err) => ui.setMenuStatus("Host error: " + (err.type || err.message || err)),
+    onError: (err) => handleHostError(err),
   });
 
   host.onInput((peerId, msg) => sim.setInput(peerId, msg));
@@ -154,23 +169,53 @@ function startHosting(name, options = {}) {
 
   ui.on("start", () => {
     applyBotSettings();
-    if (!sim.startMatch()) {
-      ui.setLobbyStatus("Need at least 2 warlocks to start.");
-      return;
-    }
-    host.broadcast({ type: MSG.START, round: sim.round });
-    // Transition online room to in-progress.
-    if (_isOnline && isEnabled()) {
-      heartbeat({ code: host.code, playerCount: playerMeta.size, status: "in_progress" }).catch(() => {});
-    }
-    ui.showGame();
-    inGame = true;
+    beginMatch();
   });
 
   function applyBotSettings() {
+    if (options.matchmaking) {
+      sim.setBotRoster(0, "smart");
+      syncBotMeta();
+      return;
+    }
     const { count, skill } = ui.getBotSettings();
     sim.setBotRoster(count, skill);
     syncBotMeta();
+  }
+
+  function humanPlayers() {
+    return [...playerMeta.values()].filter((meta) => !meta.isBot).length;
+  }
+
+  function beginMatch() {
+    if (!sim.startMatch()) {
+      ui.setLobbyStatus("Need at least 2 warlocks to start.");
+      return false;
+    }
+    clearMatchmakingHostTimeout();
+    host.broadcast({ type: MSG.START, round: sim.round });
+    ui.showGame();
+    inGame = true;
+    return true;
+  }
+
+  function armMatchmakingHostTimeout() {
+    if (!options.matchmaking) return;
+    clearMatchmakingHostTimeout();
+    const timeoutHost = host;
+    _matchmakingHostTimeout = setTimeout(() => {
+      if (host !== timeoutHost || role !== "host" || sim.phase !== PHASE.LOBBY || humanPlayers() >= 2) return;
+      options.onMatchmakingTimeout?.();
+    }, CFG.MATCHMAKING.OFFER_TIMEOUT_MS);
+  }
+
+  function handleHostError(err) {
+    clearMatchmakingHostTimeout();
+    if (options.matchmaking && options.onHostError) {
+      options.onHostError(err);
+      return;
+    }
+    ui.setMenuStatus("Host error: " + (err.type || err.message || err));
   }
 
   function syncBotMeta() {
@@ -187,8 +232,8 @@ function startHosting(name, options = {}) {
     const players = metaToArray();
     host.broadcast({ type: MSG.LOBBY, players, hostId: localId });
     ui.renderPlayerList(players, localId);
-    ui.el.btnStart.classList.toggle("hidden", false);
-    ui.el.btnStart.disabled = !sim.canStartMatch();
+    ui.el.btnStart.classList.toggle("hidden", !!options.matchmaking);
+    ui.el.btnStart.disabled = !!options.matchmaking || !sim.canStartMatch();
   }
 
   // ---- Host authoritative loop ----
@@ -248,7 +293,7 @@ function startHosting(name, options = {}) {
 }
 
 // ---------- CLIENT FLOW ----------
-function startJoining(name, code, character, { userId, region } = {}) {
+function startJoining(name, code, character, { userId, region, matchmaking } = {}) {
   role = "client";
   ui.setMenuStatus("Connecting to room " + code + "…");
 
@@ -257,6 +302,7 @@ function startJoining(name, code, character, { userId, region } = {}) {
     // These extra fields are passed per the data team's net.js contract.
     userId: userId || getUser()?.id || null,
     region: region || _currentRegion,
+    matchmaking,
     onWelcome: (msg) => {
       localId = client.localId;
       renderer.setLocalId(localId);
@@ -288,6 +334,7 @@ function startJoining(name, code, character, { userId, region } = {}) {
       const t = err.type || "";
       if (t === "peer-unavailable") ui.setMenuStatus("Room not found. Check the code.");
       else if (t === "room-full") ui.setMenuStatus("Room is full.");
+      else if (t === "matchmaking-rejected") ui.setMenuStatus("Matchmaking join rejected. Search again.");
       else ui.setMenuStatus("Connection error: " + (t || err.message || err));
       resetMatchState();
       ui.showMenu();
@@ -345,14 +392,10 @@ function startJoining(name, code, character, { userId, region } = {}) {
 
 // ---------- Online room teardown (host-side) ----------
 async function _teardownOnlineRoom(snap) {
-  if (_heartbeatInterval) { clearInterval(_heartbeatInterval); _heartbeatInterval = null; }
   if (!isEnabled()) return;
   try {
     const payload = _buildMatchPayload(snap);
     await submitMatchResult(payload);
-  } catch { /* non-fatal */ }
-  try {
-    await closeRoom(host.code);
   } catch { /* non-fatal */ }
 }
 
@@ -373,6 +416,19 @@ function _buildMatchPayload(snap) {
       };
     }),
   };
+}
+
+async function cancelRegionQueue({ clearStatus = true } = {}) {
+  const queue = _regionQueue;
+  _regionQueue = null;
+  if (queue) await queue.cancel();
+  ui.setOnlineQueueState({ searching: false, status: clearStatus ? ONLINE_QUEUE_IDLE_STATUS : undefined, canCancel: false });
+}
+
+function clearMatchmakingHostTimeout() {
+  if (!_matchmakingHostTimeout) return;
+  clearTimeout(_matchmakingHostTimeout);
+  _matchmakingHostTimeout = null;
 }
 
 // ---------- Audio transition cues ----------
@@ -412,72 +468,110 @@ function syncLocalSpellSlots(snap) {
 // ---------- UI event wiring ----------
 
 // LAN host — pure PeerJS, no matchmaking.
-ui.on("hostLan", (name, options) => {
+ui.on("hostLan", async (name, options) => {
+  await cancelRegionQueue();
   _isOnline = false;
   _matchResultSubmitted = false;
   startHosting(name, options);
 });
 
-// Online host — PeerJS + matchmaking publish + heartbeat.
-ui.on("hostOnline", async (name, options) => {
-  _isOnline = true;
-  _matchResultSubmitted = false;
-  _onlineRegion = _currentRegion;
-
-  startHosting(name, {
-    ...options,
-    onHostReady: async (code) => {
-      if (!isEnabled()) return;
-      try {
-        await publishRoom({
-          code,
-          hostName: name,
-          region: _onlineRegion,
-          map: options.arenaWorld || CFG.DEFAULT_ARENA_WORLD,
-          maxPlayers: CFG.MAX_PLAYERS,
-        });
-        _heartbeatInterval = setInterval(() => {
-          heartbeat({
-            code,
-            // Count only human players; bots are stored in playerMeta with
-            // isBot:true and must not inflate the reported player_count used
-            // by matchmaking to determine room capacity.
-            playerCount: [...playerMeta.values()].filter(m => !m.isBot).length,
-            status: inGame ? "in_progress" : "open",
-          }).catch(() => {});
-        }, 15000);
-      } catch { /* non-fatal: fall back to LAN-only behavior */ }
-    },
-  });
-});
-
-// Quick Match — find best open room for current region and join it.
+// Quick Match — queue into Supabase Realtime region channels.
 ui.on("quickMatch", async () => {
   if (!isEnabled()) return ui.setMenuStatus("Online play requires a Supabase project.");
   const name = ui.getName();
   if (!name) return ui.setMenuStatus("Enter a name first.");
-  ui.setMenuStatus("Finding a room…");
-  try {
-    const code = await qmatch(_currentRegion);
-    if (code) {
-      startJoining(name, code, ui.getCharacter(), { region: _currentRegion });
-    } else {
-      ui.setMenuStatus("No open rooms found — try hosting instead.");
-    }
-  } catch {
-    ui.setMenuStatus("Quick match failed. Try again.");
-  }
+  if (_regionQueue) return;
+  _isOnline = false;
+  _onlineRegion = null;
+  _matchResultSubmitted = false;
+
+  const regionQueue = new RegionQueue({
+    homeRegion: _currentRegion,
+    player: {
+      name,
+      character: ui.getCharacter(),
+    },
+    regions: CFG.REGIONS,
+    onStatus: (status) => {
+      if (_regionQueue !== regionQueue) return;
+      ui.setOnlineQueueState({
+        searching: true,
+        status,
+        canCancel: status.startsWith("Searching ") || status.startsWith("Widening "),
+      });
+    },
+    onHostElected: (match) => {
+      if (_regionQueue !== regionQueue) return;
+      _isOnline = true;
+      _onlineRegion = match.region;
+      _matchResultSubmitted = false;
+      startHosting(name, {
+        mobsEnabled: ui.mobsEnabled(),
+        character: ui.getCharacter(),
+        ...ui.getArenaSettings(),
+        matchmaking: {
+          matchId: match.matchId,
+          allowedQueueIds: [match.guestQueueId],
+        },
+        onHostReady: async (code) => {
+          if (_regionQueue !== regionQueue) return false;
+          const sent = await regionQueue.sendOffer(match, { code });
+          if (!sent) {
+            resetMatchState();
+            ui.showMenu();
+            ui.setOnlineQueueState({ searching: false, status: "Match offer failed. Search again.", canCancel: false });
+            return false;
+          }
+          if (_regionQueue === regionQueue) _regionQueue = null;
+          return true;
+        },
+        onHostError: async () => {
+          if (_regionQueue === regionQueue) await cancelRegionQueue({ clearStatus: false });
+          resetMatchState();
+          ui.showMenu();
+          ui.setOnlineQueueState({ searching: false, status: "Quick Match host failed. Search again.", canCancel: false });
+        },
+        onMatchmakingTimeout: () => {
+          resetMatchState();
+          ui.showMenu();
+          ui.setOnlineQueueState({ searching: false, status: "Opponent did not connect. Search again.", canCancel: false });
+        },
+      });
+    },
+    onOffer: async ({ match, code }) => {
+      if (_regionQueue !== regionQueue) return;
+      _isOnline = true;
+      _onlineRegion = match.region;
+      _matchResultSubmitted = false;
+      await regionQueue.cancel();
+      if (_regionQueue === regionQueue) _regionQueue = null;
+      startJoining(name, code, ui.getCharacter(), {
+        region: match.region,
+        matchmaking: {
+          matchId: match.matchId,
+          queueId: regionQueue.queueId,
+        },
+      });
+    },
+    onError: () => {
+      if (_regionQueue !== regionQueue) return;
+      _regionQueue = null;
+      ui.setOnlineQueueState({ searching: false, status: "Quick Match unavailable. Try again.", canCancel: false });
+    },
+  });
+
+  _regionQueue = regionQueue;
+  regionQueue.start();
 });
 
-// Join from room browser (online).
-ui.on("joinRoom", (code) => {
-  const name = ui.getName();
-  if (!name) return ui.setMenuStatus("Enter a name first.");
-  startJoining(name, code, ui.getCharacter(), { region: _currentRegion });
+ui.on("cancelQueue", async () => {
+  await cancelRegionQueue();
+  ui.setMenuStatus("Matchmaking canceled.");
 });
 
 // LAN join by code — pure PeerJS, no matchmaking.
-ui.on("joinByCode", (name, code, character) => {
+ui.on("joinByCode", async (name, code, character) => {
+  await cancelRegionQueue();
   _isOnline = false;
   startJoining(name, code, character);
 });
@@ -486,24 +580,10 @@ ui.on("joinByCode", (name, code, character) => {
 ui.on("regionChange", async (id) => {
   _currentRegion = id;
   setRegion(id);
-  if (!isEnabled()) return;
-  // Refresh rooms for new region.
-  if (_roomsUnsub) { _roomsUnsub(); _roomsUnsub = null; }
-  _roomsUnsub = subscribeRooms(id, (rooms) => ui.renderRooms(rooms || []));
 });
 
-// Screen change — subscribe/unsubscribe rooms when online tab becomes active.
+// Screen change — leaderboards refresh on demand.
 ui.on("screenChange", async (name) => {
-  if (name === "online" && isEnabled()) {
-    // (Re)subscribe to real-time room list for current region.
-    if (_roomsUnsub) { _roomsUnsub(); _roomsUnsub = null; }
-    _roomsUnsub = subscribeRooms(_currentRegion, (rooms) => ui.renderRooms(rooms || []));
-  } else if (name !== "online" && _roomsUnsub) {
-    // Unsubscribe when leaving online screen to save bandwidth.
-    _roomsUnsub();
-    _roomsUnsub = null;
-  }
-
   if (name === "leaderboards" && isEnabled()) {
     fetchLeaderboard({ region: null, metric: "wins", limit: 20 })
       .then((rows) => ui.renderLeaderboard(rows || [], { metric: "wins", scope: "global" }))
@@ -587,6 +667,7 @@ ui.on("signOut", async () => {
 // running rAF loop can't leak into the menu. Shared by the deliberate Leave
 // Match action and by involuntary client disconnects (onClose/onError).
 function resetMatchState() {
+  clearMatchmakingHostTimeout();
   ui.hidePause();
   input.paused = false;
   try { host?.destroy(); } catch { /* ignore */ }
@@ -597,10 +678,14 @@ function resetMatchState() {
   host = null;
   client = null;
   latestSnapshot = null;
+  _isOnline = false;
+  _onlineRegion = null;
+  _matchResultSubmitted = false;
   sessionGen++; // stops the running rAF loop
 }
 
-function leaveMatch() {
+async function leaveMatch() {
+  await cancelRegionQueue();
   resetMatchState();
   ui.showMenu();
 }

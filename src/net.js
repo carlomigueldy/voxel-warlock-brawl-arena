@@ -25,7 +25,7 @@ const PEER_OPTS = {
 
 // ---------------- HOST ----------------
 export class Host {
-  constructor({ name, onLobby, onPlayerJoin, onPlayerLeave, onReady, onError }) {
+  constructor({ name, matchmaking = null, onLobby, onPlayerJoin, onPlayerLeave, onReady, onError }) {
     this.name = name;
     this.code = makeRoomCode();
     this.peerId = codeToPeerId(this.code);
@@ -33,6 +33,7 @@ export class Host {
     // Per-peer identity metadata populated on JOIN: { userId, region }
     // The host's own entry must be set by the caller via playerMeta.set(host.localId, {...}).
     this.playerMeta = new Map();
+    this.matchmaking = matchmaking;
     this.callbacks = { onLobby, onPlayerJoin, onPlayerLeave, onReady, onError };
     this.localId = this.peerId; // host plays too
     this._initPeer();
@@ -73,13 +74,17 @@ export class Host {
     conn.on("data", (msg) => this._onData(conn, msg));
     conn.on("close", () => {
       this.conns.delete(conn.peer);
-      this.playerMeta.delete(conn.peer);
-      this.callbacks.onPlayerLeave?.(conn.peer);
+      if (this.playerMeta.has(conn.peer)) {
+        this.playerMeta.delete(conn.peer);
+        this.callbacks.onPlayerLeave?.(conn.peer);
+      }
     });
     conn.on("error", () => {
       this.conns.delete(conn.peer);
-      this.playerMeta.delete(conn.peer);
-      this.callbacks.onPlayerLeave?.(conn.peer);
+      if (this.playerMeta.has(conn.peer)) {
+        this.playerMeta.delete(conn.peer);
+        this.callbacks.onPlayerLeave?.(conn.peer);
+      }
     });
   }
 
@@ -87,10 +92,17 @@ export class Host {
     if (!msg || !msg.type) return;
     switch (msg.type) {
       case MSG.JOIN:
+        if (this.matchmaking && !this._acceptsMatchmakingJoin(msg)) {
+          this.conns.delete(conn.peer);
+          conn.send({ type: MSG.WELCOME, matchmakingRejected: true });
+          setTimeout(() => conn.close(), 50);
+          break;
+        }
         conn._playerName = sanitizeName(msg.name);
         conn._character = typeof msg.character === "string" ? msg.character : null;
         conn._userId = typeof msg.userId === "string" ? msg.userId : null;
         conn._region = typeof msg.region === "string" ? msg.region : null;
+        conn._queueId = typeof msg.queueId === "string" ? msg.queueId : null;
         this.playerMeta.set(conn.peer, { userId: conn._userId, region: conn._region });
         this.callbacks.onPlayerJoin?.(conn.peer, conn._playerName, conn._character, { userId: conn._userId, region: conn._region });
         // Acknowledge with the player's authoritative id.
@@ -120,6 +132,17 @@ export class Host {
     if (c && c.open) c.send(obj);
   }
 
+  _acceptsMatchmakingJoin(msg) {
+    const expectedMatchId = this.matchmaking?.matchId;
+    if (!expectedMatchId) return true;
+    if (msg?.matchId !== expectedMatchId) return false;
+    const allowedQueueIds = Array.isArray(this.matchmaking?.allowedQueueIds)
+      ? this.matchmaking.allowedQueueIds
+      : [];
+    if (!allowedQueueIds.length) return true;
+    return allowedQueueIds.includes(msg?.queueId);
+  }
+
   destroy() {
     try { this.peer?.destroy(); } catch {}
   }
@@ -127,15 +150,17 @@ export class Host {
 
 // ---------------- CLIENT ----------------
 export class Client {
-  constructor({ name, code, character, userId, region, onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose }) {
+  constructor({ name, code, character, userId, region, matchmaking = null, onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose }) {
     this.name = name;
     this.character = character || null;
     this.userId = userId || null;
     this.region = region || null;
+    this.matchmaking = matchmaking;
     this.code = code.toUpperCase();
     this.hostId = codeToPeerId(this.code);
     this.callbacks = { onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose };
     this.localId = null;
+    this._terminalError = false;
     this._initPeer();
   }
 
@@ -151,10 +176,21 @@ export class Client {
   _wireConn() {
     this.conn.on("open", () => {
       this.localId = this.peer.id;
-      this.conn.send({ type: MSG.JOIN, name: this.name, character: this.character, userId: this.userId, region: this.region });
+      const join = {
+        type: MSG.JOIN,
+        name: this.name,
+        character: this.character,
+        userId: this.userId,
+        region: this.region,
+      };
+      if (this.matchmaking?.matchId) join.matchId = this.matchmaking.matchId;
+      if (this.matchmaking?.queueId) join.queueId = this.matchmaking.queueId;
+      this.conn.send(join);
     });
     this.conn.on("data", (msg) => this._onData(msg));
-    this.conn.on("close", () => this.callbacks.onClose?.());
+    this.conn.on("close", () => {
+      if (!this._terminalError) this.callbacks.onClose?.();
+    });
     this.conn.on("error", (err) => this.callbacks.onError?.(err));
   }
 
@@ -162,7 +198,16 @@ export class Client {
     if (!msg || !msg.type) return;
     switch (msg.type) {
       case MSG.WELCOME:
-        if (msg.full) { this.callbacks.onError?.({ type: "room-full" }); return; }
+        if (msg.full) {
+          this._terminalError = true;
+          this.callbacks.onError?.({ type: "room-full" });
+          return;
+        }
+        if (msg.matchmakingRejected) {
+          this._terminalError = true;
+          this.callbacks.onError?.({ type: "matchmaking-rejected" });
+          return;
+        }
         this.callbacks.onWelcome?.(msg);
         break;
       case MSG.LOBBY: this.callbacks.onLobby?.(msg); break;
@@ -189,4 +234,3 @@ export class Client {
     try { this.peer?.destroy(); } catch {}
   }
 }
-
