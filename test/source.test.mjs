@@ -309,28 +309,24 @@ test("projectile clash events trigger dedicated VFX and SFX", () => {
   assert.match(audio, /case "projectileClash"/);
 });
 
-test("renderer declares Meshy GLB assets for runes and projectile kinds", () => {
-  assert.match(renderer, /MESHY_ASSETS/);
-  for (const asset of [
-    "assets/meshy/ability-rune.glb",
-    "assets/meshy/projectile-fireball.glb",
-    "assets/meshy/projectile-boomerang.glb",
-    "assets/meshy/projectile-homing.glb",
-    "assets/meshy/projectile-bouncer.glb",
-    "assets/meshy/projectile-splitter.glb",
-    "assets/meshy/projectile-disable.glb",
-    "assets/meshy/projectile-meteor.glb",
-  ]) {
-    assert.match(renderer, new RegExp(asset.replace(/[./-]/g, "\\$&")));
-    assert.ok(fs.existsSync(asset), `${asset} should exist`);
-  }
+test("renderer builds projectiles and runes procedurally (no Meshy GLB loading)", () => {
+  // Non-character assets are rebuilt procedurally from Three.js geometry — the
+  // renderer must not declare or load any Meshy GLB for projectiles or runes.
+  assert.doesNotMatch(renderer, /MESHY_ASSETS/);
+  assert.doesNotMatch(renderer, /GLTFLoader/);
+  assert.doesNotMatch(renderer, /_loadMeshyAsset|_installMeshyAsset|_installMeshyMeteor/);
+  assert.doesNotMatch(renderer, /assets\/meshy\//);
 });
 
-test("renderer loads Meshy GLBs with procedural fallbacks", () => {
-  assert.match(renderer, /GLTFLoader/);
-  assert.match(renderer, /_loadMeshyAsset/);
+test("renderer builds bolts and runes via the procedural voxel builders", () => {
   assert.match(renderer, /buildBolt\(b\.c, b\.k \|\| "fireball"\)/);
   assert.match(renderer, /buildRune\(r\.c \|\| 0xffffff\)/);
+});
+
+test("loader preloads only character GLBs (no Meshy fetch priming)", () => {
+  const loader = fs.readFileSync("src/loader.js", "utf8");
+  assert.doesNotMatch(loader, /MESHY_ASSETS|meshy|assets\/meshy\//);
+  assert.match(loader, /loadCharacterTemplate/);
 });
 
 test("renderer labels ability runes with spell names", () => {
@@ -338,8 +334,10 @@ test("renderer labels ability runes with spell names", () => {
   assert.match(renderer, /SPELLS\[r\.spell\]\?\.name/);
   assert.match(renderer, /_makeLabel\(name, r\.c \|\| 0xffffff, 1\.65\)/);
   assert.match(renderer, /userData\.label/);
-  assert.match(renderer, /const label = group\.userData\.label/);
-  assert.match(renderer, /if \(label\) group\.add\(label\)/);
+  // The rune's label is added directly to the procedural rune group (no GLB
+  // overlay step), and tracked on userData for later updates.
+  assert.match(renderer, /g\.add\(label\)/);
+  assert.match(renderer, /g\.userData\.label = label/);
 });
 
 // --- Phase 5: rendering map elevation + obstacle props + stun VFX ---
@@ -364,11 +362,28 @@ test("props.js exports PROP_BUILDERS registry with all eight obstacle types", ()
   assert.doesNotMatch(props, /meshy/i);
 });
 
-test("props.js builders use BoxGeometry and flat-shaded MeshLambertMaterial", () => {
+test("props.js builders use the shared lowpoly faceted helpers (flat-shaded)", () => {
   const props = fs.readFileSync("src/props.js", "utf8");
-  assert.match(props, /BoxGeometry/);
-  assert.match(props, /MeshLambertMaterial/);
-  assert.match(props, /flatShading: true/);
+  // Props are rebuilt procedurally from stylized low-poly faceted geometry that
+  // lives in the shared lowpoly.js module — no inline BoxGeometry/MeshLambertMaterial.
+  assert.match(props, /from "\.\/lowpoly\.js"/);
+  assert.match(props, /faceted/);
+  assert.doesNotMatch(props, /new THREE\.BoxGeometry/);
+  assert.doesNotMatch(props, /GLTFLoader|\.glb/i);
+  assert.doesNotMatch(props, /meshy/i);
+  // The faceted flat-shading recipe itself lives in lowpoly.js.
+  const lowpoly = fs.readFileSync("src/lowpoly.js", "utf8");
+  assert.match(lowpoly, /flatShading: true/);
+  assert.match(lowpoly, /MeshLambertMaterial/);
+});
+
+test("voxel.js rebuilds non-character assets via lowpoly faceted helpers", () => {
+  const voxel = fs.readFileSync("src/voxel.js", "utf8");
+  assert.match(voxel, /from "\.\/lowpoly\.js"/);
+  assert.match(voxel, /facetedRock|facetedCylinder|facetedCone|facetedShard/);
+  // The character fallback (buildWarlock) stays on the box recipe — it is
+  // explicitly excluded from the low-poly faceted conversion.
+  assert.match(voxel, /export function buildWarlock/);
 });
 
 test("renderer imports map elevation builders and PROP_BUILDERS from new modules", () => {

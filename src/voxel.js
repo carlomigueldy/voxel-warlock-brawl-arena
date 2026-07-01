@@ -3,6 +3,10 @@
 import * as THREE from "three";
 import { CFG, getArenaWorld, getArenaHazard, isOnArenaWorld } from "./config.js";
 import { CastAnimator } from "./animations.js";
+import {
+  facetedRock, facetedCrystal, facetedOrb, facetedCone, facetedCylinder,
+  facetedShard, facetedSlab, facetedAura, facetedPuff,
+} from "./lowpoly.js";
 
 function box(w, h, d, color, x = 0, y = 0, z = 0, flat = true) {
   const geo = new THREE.BoxGeometry(w, h, d);
@@ -289,35 +293,41 @@ function applyVoxelCastOverlay(rig, cast, time) {
   }
 }
 
-// A glowing projectile. `kind` lets each spell get a distinct silhouette while
-// reusing the same voxel-glow recipe (core box + translucent halo + light).
+// A glowing projectile. `kind` lets each spell get a distinct faceted silhouette
+// while reusing the same flat-shaded emissive recipe (polyhedron core + translucent
+// faceted halo + light). Cores use different polyhedra per kind so fireball /
+// homing / splitter / bouncer / boomerang all read differently at a glance.
 export function buildBolt(color, kind = "fireball") {
   const g = new THREE.Group();
-  let coreSize = 0.5, haloSize = 0.8, haloOpacity = 0.25;
+  let coreR = 0.34, haloR = 0.62, haloOp = 0.25;
   switch (kind) {
-    case "boomerang": coreSize = 0.65; haloSize = 1.0; break;
-    case "homing": coreSize = 0.4; haloSize = 0.9; haloOpacity = 0.35; break;
-    case "bouncer": coreSize = 0.55; haloSize = 0.85; break;
-    case "splitter": coreSize = 0.6; haloSize = 0.95; break;
+    case "boomerang": coreR = 0.40; haloR = 0.80; break;
+    case "homing":    coreR = 0.28; haloR = 0.70; haloOp = 0.35; break;
+    case "bouncer":   coreR = 0.36; haloR = 0.74; break;
+    case "splitter":  coreR = 0.38; haloR = 0.76; break;
   }
-  const core = new THREE.Mesh(
-    new THREE.BoxGeometry(coreSize, coreSize, coreSize),
-    new THREE.MeshBasicMaterial({ color })
-  );
-  const halo = new THREE.Mesh(
-    new THREE.BoxGeometry(haloSize, haloSize, haloSize),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: haloOpacity })
-  );
+  // Distinct faceted polyhedron per kind — all flat-shaded + emissive so they
+  // glow yet still show crisp facet shading from scene lights.
+  const coreGeo =
+    kind === "boomerang" ? new THREE.OctahedronGeometry(coreR, 0) :
+    kind === "homing"    ? new THREE.DodecahedronGeometry(coreR, 0) :
+    kind === "splitter"  ? new THREE.TetrahedronGeometry(coreR * 1.15, 0) :
+                           new THREE.IcosahedronGeometry(coreR, 1);
+  const core = new THREE.Mesh(coreGeo, new THREE.MeshLambertMaterial({
+    color, emissive: color, emissiveIntensity: 1.4, flatShading: true,
+  }));
   core.rotation.set(0.6, 0.6, 0);
+  const halo = facetedAura(haloR, color, { opacity: haloOp });
   halo.rotation.set(0.6, 0.6, 0);
   g.add(halo, core);
   if (kind === "boomerang") {
-    // Cross-blade so it reads as a spinning boomerang.
-    const blade = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 0.18, 0.18),
-      new THREE.MeshBasicMaterial({ color })
-    );
+    // Faceted cross-blades so it reads as a spinning boomerang.
+    const blade = facetedShard(1.2, color, { emissive: color, emissiveIntensity: 1.2, cast: false });
+    blade.rotation.z = Math.PI / 2;
     g.add(blade);
+    const blade2 = facetedShard(1.2, color, { emissive: color, emissiveIntensity: 1.2, cast: false });
+    blade2.rotation.x = Math.PI / 2;
+    g.add(blade2);
   }
   const light = new THREE.PointLight(color, 1.2, 6);
   g.add(light);
@@ -327,16 +337,13 @@ export function buildBolt(color, kind = "fireball") {
 
 export function buildRune(color) {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(
-    new THREE.BoxGeometry(0.9, 0.25, 0.9),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45 })
-  );
-  const core = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.5, 0.5),
-    new THREE.MeshBasicMaterial({ color })
-  );
-  core.position.y = 0.55;
-  core.rotation.set(0.5, 0.5, 0);
+  // Faceted glowing base pad (flat-shaded slab, translucent).
+  const base = facetedSlab(0.9, 0.25, 0.9, color, {
+    widthSegments: 2, depthSegments: 2, transparent: true, opacity: 0.45, y: 0.12,
+  });
+  // Faceted floating crystal core (tall octahedron, emissive).
+  const core = facetedCrystal(0.34, color, { emissive: color, emissiveIntensity: 1.4, y: 0.55 });
+  core.rotation.set(0.4, 0.4, 0);
   const light = new THREE.PointLight(color, 1.2, 5);
   light.position.y = 1.0;
   g.add(base, core, light);
@@ -345,17 +352,17 @@ export function buildRune(color) {
 }
 
 // A short-lived particle burst (used for hits, casts, impacts). Returns a group
-// with a per-frame `update(dt)` and a `done` flag the renderer polls.
+// with a per-frame `update(dt)` and a `done` flag the renderer polls. Particles
+// are faceted shards (octahedra) so impacts scatter sharp flat-shaded fragments.
 export function buildBurst(color, opts = {}) {
   const count = opts.count || 14;
   const speed = opts.speed || 6;
-  const size = opts.size || 0.18;
+  const size = opts.size || 0.22;
   const life = opts.life || 0.5;
   const g = new THREE.Group();
   const parts = [];
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
   for (let i = 0; i < count; i++) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), mat.clone());
+    const m = facetedShard(size, color, { emissive: color, emissiveIntensity: 0.8, transparent: true, cast: false });
     const a = Math.random() * Math.PI * 2;
     const el = (Math.random() - 0.3) * 1.4;
     const sp = speed * (0.5 + Math.random());
@@ -372,7 +379,7 @@ export function buildBurst(color, opts = {}) {
       m.position.addScaledVector(m.userData.v, dt);
       m.userData.v.y -= 14 * dt;
       m.userData.v.multiplyScalar(1 - 1.5 * dt);
-      m.material.opacity = Math.max(0, 1 - k);
+      if (m.material) m.material.opacity = Math.max(0, 1 - k);
       m.scale.setScalar(Math.max(0.05, 1 - k));
     }
     if (k >= 1) g.userData.done = true;
@@ -415,13 +422,13 @@ export function buildLightning(x1, z1, x2, z2, color) {
   return g;
 }
 
-// A telegraphed meteor: a falling rock plus a ground ring marker.
+// A telegraphed meteor: a falling faceted rock plus a ground ring marker.
 export function buildMeteor(x, z, fall, radius, color) {
   const g = new THREE.Group();
-  const rock = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 1.6, 1.6),
-    new THREE.MeshLambertMaterial({ color: 0x552211, emissive: 0xff3a1e, emissiveIntensity: 0.6, flatShading: true })
-  );
+  const rock = facetedRock(0.9, 0x552211, {
+    detail: 1, perturb: 0.18, sx: 1.6, sy: 1.6, sz: 1.6,
+    emissive: 0xff3a1e, emissiveIntensity: 0.6,
+  });
   rock.position.set(x, 30, z);
   g.add(rock);
   const ring = new THREE.Mesh(
@@ -456,7 +463,7 @@ export function buildStormClouds(x, z) {
   const cloudColor  = 0x3a4a88;
   const accentColor = 0x7adfff;
 
-  // Cluster of dark blocky puff shapes at varying offsets for depth.
+  // Cluster of faceted puff shapes at varying offsets for depth.
   const offsets = [
     [0,    0,    0   ],
     [-1.4, 0.3,  0.6 ],
@@ -466,18 +473,12 @@ export function buildStormClouds(x, z) {
   ];
   for (let i = 0; i < offsets.length; i++) {
     const [ox, oy, oz] = offsets[i];
-    const w = 1.2 + (i % 3) * 0.35;
-    const h = 0.45 + (i % 2) * 0.20;
-    const d = 0.9  + (i % 2) * 0.25;
-    const cloud = new THREE.Mesh(
-      new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshBasicMaterial({
-        color: i % 2 === 0 ? cloudColor : 0x4a5aaa,
-        transparent: true,
-        opacity: 0.80,
-      })
-    );
-    cloud.position.set(x + ox, cloudY + oy, z + oz);
+    const r = 0.7 + (i % 3) * 0.22;
+    const cloud = facetedPuff(r, i % 2 === 0 ? cloudColor : 0x4a5aaa, {
+      opacity: 0.80, detail: 0,
+      x: x + ox, y: cloudY + oy, z: z + oz,
+      sx: 1.4 + (i % 3) * 0.2, sy: 0.7, sz: 1.1,
+    });
     g.add(cloud);
   }
 
@@ -656,7 +657,7 @@ export function buildHazardDetails(size, y, hazard) {
       );
     }
     return new THREE.Mesh(
-      new THREE.BoxGeometry(baseSize, baseSize, baseSize),
+      new THREE.IcosahedronGeometry(baseSize, 0),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 })
     );
   };
@@ -742,26 +743,21 @@ export function buildPlateau(pl, worldId = CFG.DEFAULT_ARENA_WORLD) {
   const world = getArenaWorld(worldId);
 
   // Body: spans from PLATFORM_TOP to the plateau surface; uses world.side color
-  // to match the vertical edges of buildPlatform tiles.
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(pl.w, pl.height, pl.d),
-    new THREE.MeshLambertMaterial({ color: world.side, flatShading: true })
-  );
-  body.position.set(pl.x, CFG.PLATFORM_TOP + pl.height * 0.5, pl.z);
-  body.castShadow    = true;
-  body.receiveShadow = true;
+  // to match the vertical edges of buildPlatform tiles. Segmented so each face
+  // breaks into flat facets that catch the low-poly aesthetic.
+  const body = facetedSlab(pl.w, pl.height, pl.d, world.side, {
+    widthSegments: 3, heightSegments: 2, depthSegments: 3,
+    x: pl.x, y: CFG.PLATFORM_TOP + pl.height * 0.5, z: pl.z,
+  });
   g.add(body);
 
   // Top cap: a thin slab proud of the surface so it reads as the walkable top
   // (mirrors the single-step top tiles in buildPlatform).
   const capH = 0.35;
-  const top  = new THREE.Mesh(
-    new THREE.BoxGeometry(pl.w, capH, pl.d),
-    new THREE.MeshLambertMaterial({ color: world.top, flatShading: true })
-  );
-  top.position.set(pl.x, CFG.PLATFORM_TOP + pl.height + capH * 0.5, pl.z);
-  top.castShadow    = true;
-  top.receiveShadow = true;
+  const top  = facetedSlab(pl.w, capH, pl.d, world.top, {
+    widthSegments: 3, depthSegments: 3,
+    x: pl.x, y: CFG.PLATFORM_TOP + pl.height + capH * 0.5, z: pl.z,
+  });
   g.add(top);
 
   return g;
@@ -807,7 +803,7 @@ export function buildRamp(ramp, plateauHeight, worldId = CFG.DEFAULT_ARENA_WORLD
     const bw  = isX ? stepLen : rampWid;
     const bd  = isX ? rampWid : stepLen;
 
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, h, bd), mat);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, h, bd, 2, 1, 2), mat);
 
     // Advance from the foot (low end) toward the head (plateau edge).
     let px, pz;
@@ -845,12 +841,9 @@ export function buildRamp(ramp, plateauHeight, worldId = CFG.DEFAULT_ARENA_WORLD
 
 function _buildOrb(color) {
   const g    = new THREE.Group();
-  const core = glowBox(0.45, 0.45, 0.45, color, { emissive: color, intensity: 1.2 });
-  core.rotation.set(0.4, 0.4, 0);
-  core.position.y = 0.55;
-  const halo = auraBox(0.72, 0.72, 0.72, color, { opacity: 0.28 });
+  const core = facetedOrb(0.4, color, { emissive: color, emissiveIntensity: 1.2, y: 0.55 });
+  const halo = facetedAura(0.72, color, { opacity: 0.28, y: 0.55 });
   halo.rotation.set(0.4, 0.4, 0);
-  halo.position.y = 0.55;
   g.add(halo, core);
   return { group: g, core };
 }
@@ -858,80 +851,71 @@ function _buildOrb(color) {
 function _buildTome(color) {
   const g = new THREE.Group();
   const coverColor = tint(color, 0, -0.1, -0.2);
-  g.add(box(0.7, 0.5, 0.18, coverColor, 0, 0.25, 0));         // book body
-  const sp = glowBox(0.1, 0.55, 0.22, color, { emissive: color, intensity: 0.8 });
-  sp.position.set(-0.36, 0.27, 0);                              // spine glowBox
-  g.add(sp);
-  g.add(box(0.56, 0.44, 0.12, shade(0xfff8e8, 0), 0.03, 0.27, 0.05)); // page edges
-  // Floating rune above the book — the bob target.
-  const core = glowBox(0.22, 0.22, 0.22, color, { emissive: color, intensity: 1.4 });
-  core.position.y = 0.55;
-  core.rotation.set(0.5, 0.5, 0);
+  g.add(facetedSlab(0.7, 0.5, 0.18, coverColor, { widthSegments: 2, y: 0.25 }));        // book body
+  const sp = facetedCylinder(0.06, 0.06, 0.55, color, { segments: 4, emissive: color, emissiveIntensity: 0.8, x: -0.36, y: 0.27 });
+  g.add(sp);                                                                               // spine
+  g.add(facetedSlab(0.56, 0.44, 0.12, shade(0xfff8e8, 0), { y: 0.27, z: 0.05 }));        // page edges
+  // Floating crystal above the book — the bob target.
+  const core = facetedCrystal(0.16, color, { emissive: color, emissiveIntensity: 1.4, y: 0.55 });
   g.add(core);
   return { group: g, core };
 }
 
 function _buildBlade(color) {
   const g = new THREE.Group();
-  g.add(box(0.16, 1.1, 0.06, shade(color, 0.1),  0,     0.55, 0)); // blade
-  g.add(box(0.55, 0.12, 0.14, shade(color, -0.15), 0,   0.07, 0)); // crossguard
-  const core = glowBox(0.2, 0.2, 0.2, color, { emissive: color, intensity: 1.1 });
-  core.position.y = -0.05;                                           // pommel (core)
-  g.add(core);
+  // Faceted blade — elongated octahedron shard with a diamond cross-section.
+  g.add(facetedShard(1.1, shade(color, 0.1), { y: 0.55 }));
+  g.add(facetedSlab(0.55, 0.12, 0.14, shade(color, -0.15), { y: 0.07 }));                // crossguard
+  const core = facetedOrb(0.13, color, { emissive: color, emissiveIntensity: 1.1, detail: 0, y: -0.05 });
+  g.add(core);                                                                            // pommel (core)
   return { group: g, core };
 }
 
 function _buildBoots(color) {
   const g      = new THREE.Group();
   const lColor = shade(color, -0.1);
-  // Left and right boots (foot + shaft boxes each).
-  g.add(box(0.28, 0.42, 0.32, lColor, -0.2,  0.21,  0));
-  g.add(box(0.28, 0.18, 0.52, lColor, -0.2,  0.02,  0.08));
-  g.add(box(0.28, 0.42, 0.32, lColor,  0.2,  0.21,  0));
-  g.add(box(0.28, 0.18, 0.52, lColor,  0.2,  0.02,  0.08));
-  const core = glowBox(0.14, 0.14, 0.14, color, { emissive: color, intensity: 1.0 });
-  core.position.y = 0.55;                                            // central accent
-  g.add(core);
+  // Left and right boots (foot + shaft faceted slabs each).
+  g.add(facetedSlab(0.28, 0.42, 0.32, lColor, { x: -0.2, y: 0.21 }));
+  g.add(facetedSlab(0.28, 0.18, 0.52, lColor, { x: -0.2, y: 0.02, z: 0.08 }));
+  g.add(facetedSlab(0.28, 0.42, 0.32, lColor, { x:  0.2, y: 0.21 }));
+  g.add(facetedSlab(0.28, 0.18, 0.52, lColor, { x:  0.2, y: 0.02, z: 0.08 }));
+  const core = facetedOrb(0.12, color, { emissive: color, emissiveIntensity: 1.0, detail: 0, y: 0.55 });
+  g.add(core);                                                                            // central accent
   return { group: g, core };
 }
 
 function _buildCrown(color) {
   const g = new THREE.Group();
-  g.add(box(0.9, 0.22, 0.9, shade(color, -0.12), 0, 0.11, 0));    // base ring
+  // Faceted ring base (wide octagonal prism).
+  g.add(facetedCylinder(0.45, 0.45, 0.22, shade(color, -0.12), { segments: 8, y: 0.11 }));
   const spikeH = [0.52, 0.42, 0.52, 0.42, 0.52];
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2;
-    g.add(box(0.14, spikeH[i], 0.14, shade(color, 0.05),
-      Math.cos(a) * 0.33, 0.22 + spikeH[i] * 0.5, Math.sin(a) * 0.33));
+    g.add(facetedCone(0.1, spikeH[i], shade(color, 0.05), {
+      segments: 4, x: Math.cos(a) * 0.33, y: 0.22 + spikeH[i] * 0.5, z: Math.sin(a) * 0.33,
+    }));
   }
   // Three decorative jewels at evenly-spaced positions around the band.
   const jewelsA = [0, (2 / 5) * Math.PI * 2, (4 / 5) * Math.PI * 2];
   for (let i = 0; i < 3; i++) {
     const a  = jewelsA[i];
     const jc = i === 0 ? color : tint(color, (i * 0.15) % 0.4, 0.1, 0.05);
-    g.add(glowBox(0.16, 0.16, 0.16, jc, {
-      emissive: jc, intensity: 1.3,
+    g.add(facetedOrb(0.1, jc, {
+      emissive: jc, emissiveIntensity: 1.3, detail: 0,
       x: Math.cos(a) * 0.32, y: 0.28, z: Math.sin(a) * 0.32,
     }));
   }
-  const core = glowBox(0.2, 0.2, 0.2, color, { emissive: color, intensity: 1.5, y: 0.55 });
+  const core = facetedOrb(0.14, color, { emissive: color, emissiveIntensity: 1.5, y: 0.55 });
   g.add(core);
   return { group: g, core };
 }
 
-// Re-uses the buildRune recipe so buildItemDrop("rune") is visually identical to
-// the standalone buildRune() — a clear migration path for the renderer rune loop.
+// Re-uses the faceted rune recipe so buildItemDrop("rune") is visually identical
+// to the standalone buildRune() — a clear migration path for the renderer rune loop.
 function _buildRuneShape(color) {
   const g    = new THREE.Group();
-  const base = new THREE.Mesh(
-    new THREE.BoxGeometry(0.9, 0.25, 0.9),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45 })
-  );
-  const core = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.5, 0.5),
-    new THREE.MeshBasicMaterial({ color })
-  );
-  core.position.y = 0.55;
+  const base = facetedSlab(0.9, 0.25, 0.9, color, { widthSegments: 2, depthSegments: 2, transparent: true, opacity: 0.45, y: 0.12 });
+  const core = facetedCrystal(0.34, color, { emissive: color, emissiveIntensity: 1.4, y: 0.55 });
   core.rotation.set(0.5, 0.5, 0);
   g.add(base, core);
   return { group: g, core };
@@ -1091,22 +1075,23 @@ function _makeHealthBar(color, yPos = 3.5) {
 }
 
 // Stone Giant — grey stone colossus, oversized fists, glowing red eye slits.
+// Faceted polyhedron head/fists + hex-prism limbs for a hewn-stone silhouette.
 export function buildStoneGiant(color = 0x888888) {
   const g = new THREE.Group();
   const stone = color;
   const dark  = shade(stone, -0.15);
   const light = shade(stone, 0.08);
 
-  // Torso (tall slab)
+  // Torso (tall faceted slab)
   const torso = joint(0, 2.0, 0);
   g.add(torso);
-  torso.add(box(2.4, 1.6, 1.8, stone, 0, 0, 0));
-  torso.add(box(2.6, 0.34, 2.0, dark, 0, -0.85, 0)); // belt ridge
+  torso.add(facetedSlab(2.4, 1.6, 1.8, stone, { widthSegments: 3, heightSegments: 2, depthSegments: 2 }));
+  torso.add(facetedSlab(2.6, 0.34, 2.0, dark, { y: -0.85 })); // belt ridge
 
-  // Head (boulder)
+  // Head (faceted boulder)
   const head = joint(0, 1.2, 0);
   torso.add(head);
-  head.add(box(1.6, 1.2, 1.4, light, 0, 0.2, 0));
+  head.add(facetedRock(0.8, light, { detail: 1, perturb: 0.1, sx: 1.0, sy: 0.75, sz: 0.88, y: 0.2 }));
   const glowMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
   const eL = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.08), glowMat);
   const eR = eL.clone();
@@ -1114,21 +1099,21 @@ export function buildStoneGiant(color = 0x888888) {
   eR.position.set( 0.3, 0.35, 0.72);
   head.add(eL, eR);
 
-  // Arms (huge, oversized fists)
+  // Arms (hex-prism limbs + faceted fist boulders)
   const armL = joint(-1.7, 0.3, 0.1);
   const armR = joint( 1.7, 0.3, 0.1);
   torso.add(armL, armR);
-  armL.add(box(0.8, 1.8, 0.8, stone, 0, -0.9, 0));
-  armL.add(box(1.3, 1.2, 1.3, dark,  0, -2.3, 0));
-  armR.add(box(0.8, 1.8, 0.8, stone, 0, -0.9, 0));
-  armR.add(box(1.3, 1.2, 1.3, dark,  0, -2.3, 0));
+  armL.add(facetedCylinder(0.4, 0.4, 1.8, stone, { segments: 6, y: -0.9 }));
+  armL.add(facetedRock(0.65, dark, { detail: 1, perturb: 0.14, sx: 1.0, sy: 0.92, sz: 1.0, y: -2.3 }));
+  armR.add(facetedCylinder(0.4, 0.4, 1.8, stone, { segments: 6, y: -0.9 }));
+  armR.add(facetedRock(0.65, dark, { detail: 1, perturb: 0.14, sx: 1.0, sy: 0.92, sz: 1.0, y: -2.3 }));
 
   // Legs
   const legL = joint(-0.65, 0, 0);
   const legR = joint( 0.65, 0, 0);
   g.add(legL, legR);
-  legL.add(box(0.9, 1.8, 0.9, stone, 0, -0.9, 0));
-  legR.add(box(0.9, 1.8, 0.9, stone, 0, -0.9, 0));
+  legL.add(facetedCylinder(0.45, 0.45, 1.8, stone, { segments: 6, y: -0.9 }));
+  legR.add(facetedCylinder(0.45, 0.45, 1.8, stone, { segments: 6, y: -0.9 }));
 
   const hb = _makeHealthBar(0xff3a1e, 5.2);
   g.add(hb.group);
@@ -1139,30 +1124,31 @@ export function buildStoneGiant(color = 0x888888) {
 }
 
 // Storming Vortex — translucent spinning shard ring with glowing core.
+// Faceted octahedron shards + a hex-prism crystal core.
 export function buildStormingVortex(color = 0x7adfff) {
   const g = new THREE.Group();
   const c1 = color;
   const c2 = shade(color, 0.2);
 
-  // Inner shard ring
+  // Inner shard ring (faceted octahedron shards)
   const spin = new THREE.Group();
   g.add(spin);
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
-    const shard = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 1.4, 0.18),
-      new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? c1 : c2, transparent: true, opacity: 0.75 })
-    );
+    const shard = facetedShard(1.4, i % 2 === 0 ? c1 : c2, {
+      emissive: i % 2 === 0 ? c1 : c2, emissiveIntensity: 0.9,
+      transparent: true, opacity: 0.75, cast: false,
+    });
     shard.position.set(Math.cos(a) * 0.9, 0.2, Math.sin(a) * 0.9);
     shard.rotation.y = a;
     shard.rotation.x = 0.28;
     spin.add(shard);
   }
 
-  // Core body
+  // Core body (hex-prism crystal)
   const core = joint(0, 0.8, 0);
   g.add(core);
-  core.add(box(0.8, 1.6, 0.8, c1, 0, 0, 0));
+  core.add(facetedCylinder(0.4, 0.4, 1.6, c1, { segments: 6, emissive: c1, emissiveIntensity: 0.7 }));
   const eyeM = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const eye = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.08), eyeM);
   eye.position.set(0, 0.35, 0.42);
@@ -1173,10 +1159,10 @@ export function buildStormingVortex(color = 0x7adfff) {
   g.add(outerSpin);
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2;
-    const shard = new THREE.Mesh(
-      new THREE.BoxGeometry(0.2, 0.8, 0.2),
-      new THREE.MeshBasicMaterial({ color: c2, transparent: true, opacity: 0.5 })
-    );
+    const shard = facetedShard(0.8, c2, {
+      emissive: c2, emissiveIntensity: 0.7,
+      transparent: true, opacity: 0.5, cast: false,
+    });
     shard.position.set(Math.cos(a) * 1.5, 0.4, Math.sin(a) * 1.5);
     outerSpin.add(shard);
   }
@@ -1195,6 +1181,7 @@ export function buildStormingVortex(color = 0x7adfff) {
 }
 
 // Giant Dwarf — short/wide armoured figure, heavy stomp posture.
+// Faceted armour slabs + hex-prism limbs + a cone helmet.
 export function buildGiantDwarf(color = 0xc47a2e) {
   const g = new THREE.Group();
   const body  = shade(color, -0.05);
@@ -1204,17 +1191,17 @@ export function buildGiantDwarf(color = 0xc47a2e) {
   // Wide stocky torso
   const torso = joint(0, 1.1, 0);
   g.add(torso);
-  torso.add(box(2.2, 1.2, 1.6, body,  0,  0,    0));
-  torso.add(box(2.4, 0.3, 1.8, armor, 0, -0.6,  0)); // belt plate
-  torso.add(box(2.4, 0.3, 1.8, armor, 0,  0.55, 0)); // chest plate
+  torso.add(facetedSlab(2.2, 1.2, 1.6, body,  { widthSegments: 3, heightSegments: 2, depthSegments: 2 }));
+  torso.add(facetedSlab(2.4, 0.3, 1.8, armor, { y: -0.6 }));  // belt plate
+  torso.add(facetedSlab(2.4, 0.3, 1.8, armor, { y:  0.55 })); // chest plate
 
   // Broad head + beard
   const neck = joint(0, 0.9, 0);
   torso.add(neck);
-  neck.add(box(1.2, 1.0, 1.0, skin,    0, 0.1,  0));
-  neck.add(box(1.0, 0.5, 0.5, 0x884422, 0, -0.38, 0)); // beard
-  neck.add(box(1.3, 0.32, 1.1, armor,   0,  0.62, 0)); // helmet brim
-  neck.add(box(0.5, 0.38, 0.5, armor,   0,  0.84, 0)); // helmet top
+  neck.add(facetedRock(0.55, skin, { detail: 1, perturb: 0.06, sx: 1.09, sy: 0.91, sz: 0.91, y: 0.1 }));
+  neck.add(facetedSlab(1.0, 0.5, 0.5, 0x884422, { y: -0.38 }));               // beard
+  neck.add(facetedSlab(1.3, 0.32, 1.1, armor, { y: 0.62 }));                   // helmet brim
+  neck.add(facetedCone(0.32, 0.42, armor, { segments: 6, y: 0.86 }));          // helmet top
   const em2 = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const dL = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, 0.08), em2);
   const dR = dL.clone();
@@ -1226,19 +1213,19 @@ export function buildGiantDwarf(color = 0xc47a2e) {
   const armL = joint(-1.35, 0.25, 0.1);
   const armR = joint( 1.35, 0.25, 0.1);
   torso.add(armL, armR);
-  armL.add(box(0.65, 1.2, 0.65, body,  0, -0.6, 0));
-  armL.add(box(0.88, 0.9, 0.88, armor, 0, -1.4, 0));
-  armR.add(box(0.65, 1.2, 0.65, body,  0, -0.6, 0));
-  armR.add(box(0.88, 0.9, 0.88, armor, 0, -1.4, 0));
+  armL.add(facetedCylinder(0.33, 0.33, 1.2, body,  { segments: 6, y: -0.6 }));
+  armL.add(facetedRock(0.44, armor, { detail: 0, perturb: 0.08, sx: 1.0, sy: 1.0, sz: 1.0, y: -1.4 }));
+  armR.add(facetedCylinder(0.33, 0.33, 1.2, body,  { segments: 6, y: -0.6 }));
+  armR.add(facetedRock(0.44, armor, { detail: 0, perturb: 0.08, sx: 1.0, sy: 1.0, sz: 1.0, y: -1.4 }));
 
   // Short wide legs
   const legL = joint(-0.58, 0, 0);
   const legR = joint( 0.58, 0, 0);
   g.add(legL, legR);
-  legL.add(box(0.78, 0.9, 0.78, body,  0, -0.45, 0));
-  legL.add(box(0.9,  0.38, 1.0, armor, 0, -0.98, 0.08)); // boot
-  legR.add(box(0.78, 0.9, 0.78, body,  0, -0.45, 0));
-  legR.add(box(0.9,  0.38, 1.0, armor, 0, -0.98, 0.08));
+  legL.add(facetedCylinder(0.39, 0.39, 0.9, body,  { segments: 6, y: -0.45 }));
+  legL.add(facetedSlab(0.9, 0.38, 1.0, armor, { y: -0.98, z: 0.08 }));        // boot
+  legR.add(facetedCylinder(0.39, 0.39, 0.9, body,  { segments: 6, y: -0.45 }));
+  legR.add(facetedSlab(0.9, 0.38, 1.0, armor, { y: -0.98, z: 0.08 }));
 
   const hb = _makeHealthBar(0xffd23c, 3.8);
   g.add(hb.group);
@@ -1249,37 +1236,33 @@ export function buildGiantDwarf(color = 0xc47a2e) {
   return g;
 }
 
-// Fire Elemental — emissive boxes with orbiting flame motes, per-frame flicker.
+// Fire Elemental — emissive faceted flame-forms with orbiting flame motes,
+// per-frame flicker. Bodies are perturbed icosahedra so the silhouette reads as
+// hewn flame rather than a plain box.
 export function buildFireElemental(color = 0xff5a1e) {
   const g = new THREE.Group();
   const hot  = color;
   const core = 0xffcc44;
 
-  // Body stack (emissive)
+  // Body stack (emissive faceted rocks)
   const torso = joint(0, 1.2, 0);
   g.add(torso);
-  const bodyM = new THREE.Mesh(
-    new THREE.BoxGeometry(1.4, 2.0, 1.2),
-    new THREE.MeshLambertMaterial({ color: hot, emissive: 0xff3300, emissiveIntensity: 0.8, flatShading: true })
-  );
-  bodyM.castShadow = true; bodyM.receiveShadow = true;
-  torso.add(bodyM);
-  const coreM = new THREE.Mesh(
-    new THREE.BoxGeometry(0.7, 1.2, 0.7),
-    new THREE.MeshLambertMaterial({ color: core, emissive: 0xffcc00, emissiveIntensity: 1.4, flatShading: true })
-  );
-  coreM.castShadow = true; coreM.position.y = 0.1;
-  torso.add(coreM);
+  torso.add(facetedRock(0.7, hot, {
+    detail: 1, perturb: 0.16, sx: 1.0, sy: 1.43, sz: 0.86,
+    emissive: 0xff3300, emissiveIntensity: 0.8,
+  }));
+  torso.add(facetedRock(0.4, core, {
+    detail: 1, perturb: 0.1, sx: 0.875, sy: 1.5, sz: 0.875,
+    emissive: 0xffcc00, emissiveIntensity: 1.4, y: 0.1,
+  }));
 
   // Head (flame crown)
   const head = joint(0, 1.2, 0);
   torso.add(head);
-  const headM = new THREE.Mesh(
-    new THREE.BoxGeometry(1.1, 1.0, 1.0),
-    new THREE.MeshLambertMaterial({ color: hot, emissive: 0xff5500, emissiveIntensity: 1.0, flatShading: true })
-  );
-  headM.castShadow = true;
-  head.add(headM);
+  head.add(facetedRock(0.55, hot, {
+    detail: 1, perturb: 0.12, sx: 1.0, sy: 0.91, sz: 0.91,
+    emissive: 0xff5500, emissiveIntensity: 1.0,
+  }));
   const em3 = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const fL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.08), em3);
   const fR = fL.clone();
@@ -1287,26 +1270,22 @@ export function buildFireElemental(color = 0xff5a1e) {
   fR.position.set( 0.22, 0.06, 0.52);
   head.add(fL, fR);
 
-  // Flame tendril arms
+  // Flame tendril arms (hex-prism emissive)
   const armL = joint(-0.85, 0.5, 0.1);
   const armR = joint( 0.85, 0.5, 0.1);
   torso.add(armL, armR);
-  const armMatL = new THREE.MeshLambertMaterial({ color: hot, emissive: 0xff3300, emissiveIntensity: 0.7, flatShading: true });
-  const aML = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.5, 0.5), armMatL);
-  aML.position.y = -0.75; aML.castShadow = true;
-  armL.add(aML);
-  const aMR = aML.clone();
-  armR.add(aMR);
+  armL.add(facetedCylinder(0.25, 0.25, 1.5, hot, { segments: 6, y: -0.75, emissive: 0xff3300, emissiveIntensity: 0.7 }));
+  armR.add(facetedCylinder(0.25, 0.25, 1.5, hot, { segments: 6, y: -0.75, emissive: 0xff3300, emissiveIntensity: 0.7 }));
 
-  // Orbiting flame motes
+  // Orbiting flame motes (faceted shards)
   const motes = new THREE.Group();
   g.add(motes);
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2;
-    const mote = new THREE.Mesh(
-      new THREE.BoxGeometry(0.22, 0.36, 0.22),
-      new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0xffcc44 : hot, transparent: true, opacity: 0.85 })
-    );
+    const mc = i % 2 === 0 ? 0xffcc44 : hot;
+    const mote = facetedShard(0.36, mc, {
+      emissive: mc, emissiveIntensity: 0.8, transparent: true, opacity: 0.85, cast: false,
+    });
     mote.position.set(Math.cos(a) * 0.85, 1.0, Math.sin(a) * 0.85);
     mote.userData.baseA = a;
     motes.add(mote);
@@ -1326,6 +1305,7 @@ export function buildFireElemental(color = 0xff5a1e) {
 }
 
 // Minion — tiny warlock silhouette tinted to parent colour, 0.7× warlock.
+// Faceted slabs + hex-prism limbs + a cone hat.
 export function buildMinion(color = 0x999999) {
   const g = new THREE.Group();
   const c     = color;
@@ -1334,12 +1314,12 @@ export function buildMinion(color = 0x999999) {
 
   const spine = joint(0, 0.6, 0);
   g.add(spine);
-  spine.add(box(1.1, 0.6, 1.1, cDark, 0, -0.30, 0));
-  spine.add(box(0.9, 0.7, 0.9, c,     0,  0.35, 0));
+  spine.add(facetedSlab(1.1, 0.6, 1.1, cDark, { y: -0.30 }));
+  spine.add(facetedSlab(0.9, 0.7, 0.9, c,     { y:  0.35 }));
 
   const neck = joint(0, 1.25, 0);
   spine.add(neck);
-  neck.add(box(0.6, 0.6, 0.6, skin, 0, 0, 0));
+  neck.add(facetedRock(0.3, skin, { detail: 1, perturb: 0.05, sx: 1.0, sy: 1.0, sz: 1.0 }));
   const em4 = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const me1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.06), em4);
   const me2 = me1.clone();
@@ -1349,21 +1329,21 @@ export function buildMinion(color = 0x999999) {
 
   const hat = joint(0, 0.35, 0);
   neck.add(hat);
-  hat.add(box(0.75, 0.25, 0.75, cDark, 0, 0.0,  0));
-  hat.add(box(0.5,  0.4,  0.5,  c,     0, 0.3,  0));
-  hat.add(box(0.22, 0.4,  0.22, cDark, 0, 0.65, 0));
+  hat.add(facetedSlab(0.75, 0.25, 0.75, cDark, { y: 0.0 }));
+  hat.add(facetedCylinder(0.25, 0.15, 0.4, c, { segments: 6, y: 0.45 }));  // tapered hat body
+  hat.add(facetedCone(0.11, 0.4, cDark, { segments: 4, y: 0.85 }));         // hat tip
 
   const armL = joint(-0.62, 0.75, 0.1);
   const armR = joint( 0.62, 0.75, 0.1);
   spine.add(armL, armR);
-  armL.add(box(0.25, 0.6, 0.25, c, 0, -0.3, 0));
-  armR.add(box(0.25, 0.6, 0.25, c, 0, -0.3, 0));
+  armL.add(facetedCylinder(0.13, 0.13, 0.6, c, { segments: 6, y: -0.3 }));
+  armR.add(facetedCylinder(0.13, 0.13, 0.6, c, { segments: 6, y: -0.3 }));
 
   const legL = joint(-0.24, 0.5, 0);
   const legR = joint( 0.24, 0.5, 0);
   g.add(legL, legR);
-  legL.add(box(0.26, 0.5, 0.26, cDark, 0, -0.25, 0));
-  legR.add(box(0.26, 0.5, 0.26, cDark, 0, -0.25, 0));
+  legL.add(facetedCylinder(0.13, 0.13, 0.5, cDark, { segments: 6, y: -0.25 }));
+  legR.add(facetedCylinder(0.13, 0.13, 0.5, cDark, { segments: 6, y: -0.25 }));
 
   const hb = _makeHealthBar(0xcccccc, 2.2);
   g.add(hb.group);
