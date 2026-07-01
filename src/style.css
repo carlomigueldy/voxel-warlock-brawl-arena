@@ -660,6 +660,37 @@ html, body {
   font-size: 10px; line-height: 16px; color: #fff; background: rgba(108,76,255,0.65);
 }
 
+/* Active vs passive item slots — castable items get a bright accent border so
+   they read as "press this key"; passive stat items stay muted so players
+   don't expect a key to do anything. */
+.ability-slot.item-active { border-color: rgba(102,204,255,0.6); }
+.ability-slot.item-active.ready { box-shadow: 0 0 8px rgba(102,204,255,0.4); }
+.ability-slot.item-passive { border-color: var(--line-strong); }
+.ability-slot.item-passive .ability-swatch { opacity: 0.85; }
+.ability-key-muted {
+  font-size: 8px; font-weight: 700; letter-spacing: 0.4px;
+  color: var(--muted); padding: 0 3px; border-radius: 3px;
+  background: rgba(12,9,28,0.7); text-shadow: 0 1px 2px #000;
+}
+
+/* ===== Item pickup toast ===== */
+.item-toast {
+  position: fixed; right: 16px; bottom: 202px; z-index: 8;
+  max-width: 280px; padding: 9px 14px; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: rgba(22,17,46,0.95);
+  box-shadow: var(--shadow-panel), 0 0 16px rgba(108,76,255,0.3);
+  font-family: var(--font-ui); font-size: 12px; color: var(--text);
+  text-align: right; pointer-events: none;
+  animation: itemToastIn 0.3s var(--ease-spring) both;
+}
+@keyframes itemToastIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .item-toast { animation: none; }
+}
+
 /* ===== Spell tooltip ===== */
 .spell-tooltip {
   position: fixed;
@@ -706,6 +737,11 @@ html, body {
   color: var(--muted);
   flex-shrink: 0;
   white-space: nowrap;
+}
+/* Passive item tag reads muted (no accent) to contrast the castable ACTIVE tag. */
+.spell-tooltip-key.item-tooltip-passive {
+  background: rgba(154, 147, 199, 0.14);
+  letter-spacing: 0.5px;
 }
 .spell-tooltip-desc {
   color: var(--text);
@@ -1135,7 +1171,7 @@ html, body {
 
 /* ============================================================
    REGION-BASED MATCHMAKING — NEW SCREENS
-   (Online, LAN, Leaderboards, Account)
+   (Online, Private, Leaderboards, Account)
    Design tokens only: --ember, --arcane, --panel, --panel-2,
    --text, --muted, --line, --line-strong, --font-display,
    --font-ui, --ease-spring.
@@ -1183,42 +1219,29 @@ html, body {
   font-size: 13px; color: var(--muted);
 }
 
-/* ---- LAN divider ---- */
-.lan-divider {
+/* ---- Private divider ---- */
+.private-divider {
   display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px;
   letter-spacing: 2px; text-transform: uppercase;
 }
-.lan-divider::before, .lan-divider::after {
+.private-divider::before, .private-divider::after {
   content: ""; flex: 1; height: 1px; background: var(--line);
 }
 
-/* ---- Rooms list ---- */
-.rooms-list {
-  display: flex; flex-direction: column; gap: 6px;
-  max-height: 220px; overflow-y: auto;
+/* ---- Online queue ---- */
+.queue-panel {
+  display: flex; flex-direction: column; gap: 14px;
   border: 1px solid var(--line); border-radius: 12px;
-  padding: 4px;
-  background: var(--panel-2);
+  padding: 16px;
+  background: linear-gradient(180deg, rgba(108,76,255,0.09), rgba(10,8,20,0.68));
 }
-.rooms-list::-webkit-scrollbar { width: 4px; }
-.rooms-list::-webkit-scrollbar-thumb { background: rgba(108,76,255,0.4); border-radius: 2px; }
-.rooms-empty {
-  padding: 16px 12px; text-align: center; font-size: 13px; color: var(--muted);
+.queue-status {
+  margin: 0;
+  min-height: 44px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
 }
-.room-row {
-  display: grid; grid-template-columns: 1fr auto auto auto;
-  align-items: center; gap: 10px;
-  background: rgba(108,76,255,0.05);
-  border: 1px solid transparent; border-radius: 9px;
-  padding: 10px 12px;
-  transition: background 0.18s, border-color 0.18s;
-  animation: playerIn 0.28s var(--ease-spring) both;
-}
-.room-row:hover { background: rgba(108,76,255,0.12); border-color: var(--line); }
-.room-host { font-weight: 700; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.room-map { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
-.room-players { font-size: 12px; color: var(--gold); font-weight: 700; white-space: nowrap; }
-.room-join-btn { padding: 7px 14px; font-size: 12px; flex-shrink: 0; }
 
 /* ---- Leaderboard table ---- */
 .leaderboard-table {
@@ -1309,9 +1332,7 @@ html, body {
 
 /* ---- Responsive — new screens at 800px breakpoint ---- */
 @media (max-width: 800px) {
-  .rooms-list { max-height: 180px; }
-  .room-row { grid-template-columns: 1fr auto auto; }
-  .room-map { display: none; }
+  .queue-panel { padding: 14px; }
   .lb-row { padding: 8px 10px; gap: 6px; }
   .lb-name { font-size: 13px; }
   .auth-tab-btn { font-size: 10px; padding: 8px 4px; }
@@ -1320,7 +1341,7 @@ html, body {
 
 /* Reduced motion: instant swap for new screens too. */
 @media (prefers-reduced-motion: reduce) {
-  .rooms-list, .leaderboard-table, .identity-badge { animation: none !important; }
+  .queue-panel, .leaderboard-table, .identity-badge { animation: none !important; }
 }
 /* ============================================================
    TUTORIAL SUB-SCREEN

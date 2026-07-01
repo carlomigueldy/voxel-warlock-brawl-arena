@@ -178,6 +178,12 @@ export const CFG = {
     { id: "oce",      label: "Oceania"         },
   ],
   DEFAULT_REGION: "sea",
+  MATCHMAKING: {
+    MATCH_SIZE: 2,
+    REGION_DWELL_MS: 7000,
+    OFFER_TIMEOUT_MS: 10000,
+    CHANNEL_PREFIX: "matchmaking",
+  },
 
   // --- Kill attribution ---
   // A kill is credited to the last attacker within this many seconds of the death.
@@ -531,6 +537,11 @@ export const SPELL_TEMPLATES = [
     spells: ["drain", "shield", "rush", "thrust", "windWalk", "boomerang"] },
 ];
 
+// localStorage key for persisted item-slot hotkey remaps (mirrors the
+// spell-slot equivalent in input.js). Kept here so both input.js and any
+// other module that needs to read/write the same storage slot agree on it.
+export const ITEM_SLOT_HOTKEY_STORAGE_KEY = "vwb-item-slot-hotkeys";
+
 // --- Items / lootable drops (Step 4) ---
 // Exactly 10 items: mix of passive stat mods and active (spell-binding) pickups.
 // Applied as persistent modifiers on each warlock via applyItems(); active items
@@ -551,10 +562,10 @@ export const ITEMS = {
 // Message types exchanged over PeerJS data channels.
 export const MSG = {
   // client -> host
-  JOIN: "join",          // {name, character, userId, region}  userId: string|null; region: string
+  JOIN: "join",          // {name, character, userId, region, matchId?, queueId?}
   INPUT: "input",        // {seq, move:[x,z], aim, casts:[{id,spell,tx,tz}]}
   // host -> client
-  WELCOME: "welcome",    // {id, players, hostName}
+  WELCOME: "welcome",    // {id, players, hostName, full?, matchmakingRejected?}
   LOBBY: "lobby",        // {players}
   START: "start",        // {round} — mapLayout travels in the first STATE packet, not here
   STATE: "state",        // {t, players[], bolts[], arenaR, phase, ...}
