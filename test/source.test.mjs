@@ -589,4 +589,31 @@ test("animateMob drives newly named secondary accent groups without gameplay cha
     "animateMob must animate the new accent/arc groups");
 });
 
+// Fidelity: "increase the poly count of each" means the structural limbs on the
+// big, count-bounded mobs must be higher-resolution than the default 6-sided
+// hex-prism — raising per-primitive tessellation, not only part count. Octagonal
+// (>=8-gon) prisms still read as deliberately faceted while shedding the blocky
+// "lazy" silhouette on colossal mobs with cinematic entrances.
+function countHiResCylinders(body) {
+  return (body.match(/facetedCylinder\([^;]*segments:\s*(8|10|12)\b/g) || []).length;
+}
+
+test("stone giant limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
+  const b = builderBody(voxel, "buildStoneGiant");
+  assert.ok(countHiResCylinders(b) >= 4,
+    "stone giant arms + legs must use >=8-segment faceted cylinders");
+});
+
+test("giant dwarf limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
+  const b = builderBody(voxel, "buildGiantDwarf");
+  assert.ok(countHiResCylinders(b) >= 4,
+    "giant dwarf arms + legs must use >=8-segment faceted cylinders");
+});
+
+test("fire elemental limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
+  const b = builderBody(voxel, "buildFireElemental");
+  assert.ok(countHiResCylinders(b) >= 2,
+    "fire elemental tendril arms must use >=8-segment faceted cylinders");
+});
+
 console.log(`\n${passed} source checks passed.`);

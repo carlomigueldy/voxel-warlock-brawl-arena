@@ -1120,10 +1120,10 @@ export function buildStoneGiant(color = 0x888888) {
   const armL = joint(-1.7, 0.3, 0.1);
   const armR = joint( 1.7, 0.3, 0.1);
   torso.add(armL, armR);
-  armL.add(facetedCylinder(0.4, 0.4, 1.8, stone, { segments: 6, y: -0.9 }));
+  armL.add(facetedCylinder(0.4, 0.4, 1.8, stone, { segments: 8, y: -0.9 }));
   const fistL = facetedRock(0.65, dark, { detail: 1, perturb: 0.14, sx: 1.0, sy: 0.92, sz: 1.0, y: -2.3 });
   armL.add(fistL);
-  armR.add(facetedCylinder(0.4, 0.4, 1.8, stone, { segments: 6, y: -0.9 }));
+  armR.add(facetedCylinder(0.4, 0.4, 1.8, stone, { segments: 8, y: -0.9 }));
   const fistR = facetedRock(0.65, dark, { detail: 1, perturb: 0.14, sx: 1.0, sy: 0.92, sz: 1.0, y: -2.3 });
   armR.add(fistR);
   const knuckleX = [-0.28, 0, 0.28];
@@ -1138,8 +1138,8 @@ export function buildStoneGiant(color = 0x888888) {
   const legL = joint(-0.65, 0, 0);
   const legR = joint( 0.65, 0, 0);
   g.add(legL, legR);
-  legL.add(facetedCylinder(0.45, 0.45, 1.8, stone, { segments: 6, y: -0.9 }));
-  legR.add(facetedCylinder(0.45, 0.45, 1.8, stone, { segments: 6, y: -0.9 }));
+  legL.add(facetedCylinder(0.45, 0.45, 1.8, stone, { segments: 8, y: -0.9 }));
+  legR.add(facetedCylinder(0.45, 0.45, 1.8, stone, { segments: 8, y: -0.9 }));
 
   const hb = _makeHealthBar(0xff3a1e, 5.2);
   g.add(hb.group);
@@ -1291,11 +1291,11 @@ export function buildGiantDwarf(color = 0xc47a2e) {
   const armL = joint(-1.35, 0.25, 0.1);
   const armR = joint( 1.35, 0.25, 0.1);
   torso.add(armL, armR);
-  armL.add(facetedCylinder(0.33, 0.33, 1.2, body,  { segments: 6, y: -0.6 }));
+  armL.add(facetedCylinder(0.33, 0.33, 1.2, body,  { segments: 8, y: -0.6 }));
   const gauntletL = facetedRock(0.44, armor, { detail: 0, perturb: 0.08, sx: 1.0, sy: 1.0, sz: 1.0, y: -1.4 });
   armL.add(gauntletL);
   armL.add(facetedSlab(0.7, 0.3, 0.7, shade(armor, -0.12), { y: -1.15 }));
-  armR.add(facetedCylinder(0.33, 0.33, 1.2, body,  { segments: 6, y: -0.6 }));
+  armR.add(facetedCylinder(0.33, 0.33, 1.2, body,  { segments: 8, y: -0.6 }));
   const gauntletR = facetedRock(0.44, armor, { detail: 0, perturb: 0.08, sx: 1.0, sy: 1.0, sz: 1.0, y: -1.4 });
   armR.add(gauntletR);
   armR.add(facetedSlab(0.7, 0.3, 0.7, shade(armor, -0.12), { y: -1.15 }));
@@ -1304,10 +1304,10 @@ export function buildGiantDwarf(color = 0xc47a2e) {
   const legL = joint(-0.58, 0, 0);
   const legR = joint( 0.58, 0, 0);
   g.add(legL, legR);
-  legL.add(facetedCylinder(0.39, 0.39, 0.9, body,  { segments: 6, y: -0.45 }));
+  legL.add(facetedCylinder(0.39, 0.39, 0.9, body,  { segments: 8, y: -0.45 }));
   legL.add(facetedSlab(0.9, 0.38, 1.0, armor, { y: -0.98, z: 0.08 }));        // boot
   legL.add(facetedSlab(0.95, 0.16, 0.5, shade(armor, -0.12), { y: -1.1, z: 0.32 }));
-  legR.add(facetedCylinder(0.39, 0.39, 0.9, body,  { segments: 6, y: -0.45 }));
+  legR.add(facetedCylinder(0.39, 0.39, 0.9, body,  { segments: 8, y: -0.45 }));
   legR.add(facetedSlab(0.9, 0.38, 1.0, armor, { y: -0.98, z: 0.08 }));
   legR.add(facetedSlab(0.95, 0.16, 0.5, shade(armor, -0.12), { y: -1.1, z: 0.32 }));
 
@@ -1370,10 +1370,10 @@ export function buildFireElemental(color = 0xff5a1e) {
   const armL = joint(-0.85, 0.5, 0.1);
   const armR = joint( 0.85, 0.5, 0.1);
   torso.add(armL, armR);
-  armL.add(facetedCylinder(0.25, 0.25, 1.5, hot, { segments: 6, y: -0.75, emissive: 0xff3300, emissiveIntensity: 0.7 }));
+  armL.add(facetedCylinder(0.25, 0.25, 1.5, hot, { segments: 8, y: -0.75, emissive: 0xff3300, emissiveIntensity: 0.7 }));
   const tendrilL = facetedShard(0.7, 0xffcc44, { y: -1.6, emissive: 0xffaa22, emissiveIntensity: 1.1, cast: false });
   armL.add(tendrilL);
-  armR.add(facetedCylinder(0.25, 0.25, 1.5, hot, { segments: 6, y: -0.75, emissive: 0xff3300, emissiveIntensity: 0.7 }));
+  armR.add(facetedCylinder(0.25, 0.25, 1.5, hot, { segments: 8, y: -0.75, emissive: 0xff3300, emissiveIntensity: 0.7 }));
   const tendrilR = facetedShard(0.7, 0xffcc44, { y: -1.6, emissive: 0xffaa22, emissiveIntensity: 1.1, cast: false });
   armR.add(tendrilR);
 
