@@ -19,6 +19,12 @@ import {
   characterReady,
   buildCharacterInstance,
 } from "./character.js";
+import {
+  MOB_MODEL_ASSETS,
+  loadMobModelTemplate,
+  mobModelReady,
+  buildMobModelInstance,
+} from "./mobModel.js";
 import { archetypeForEvent, reactionForEvent } from "./animations.js";
 import { effectPos } from "./renderer-util.js";
 import { VFX_REGISTRY, getVfx } from "./vfx/duotone.js";
@@ -88,6 +94,15 @@ export class GameRenderer {
       loadCharacterTemplate(ch.id)
         .then(() => this._upgradePlayersToGLB())
         .catch((err) => console.warn(`Character GLB '${ch.id}' unavailable, using voxel fallback:`, err));
+    }
+
+    // Preload the 4 big-mob Meshy GLBs so mobs render as rigged models instead
+    // of the procedural fallback. Mobs are built once and cached at spawn, so
+    // any built before its template resolves gets upgraded in-place once ready.
+    for (const type of Object.keys(MOB_MODEL_ASSETS)) {
+      loadMobModelTemplate(type)
+        ?.then(() => this._upgradeMobsToGLB())
+        .catch((err) => console.warn(`Mob GLB '${type}' unavailable, using voxel fallback:`, err));
     }
 
     window.addEventListener("resize", () => this._onResize());
@@ -477,6 +492,28 @@ export class GameRenderer {
     }
   }
 
+  // Swap any procedural-fallback mob to its Meshy GLB body once the template
+  // has loaded (mirrors _upgradePlayersToGLB). Preserves world transform and
+  // the health-bar reference so per-frame HP scaling keeps working.
+  _upgradeMobsToGLB() {
+    for (const e of this.mobMeshes.values()) {
+      if (e.usingGLB) continue;
+      if (!e.target || !MOB_MODEL_ASSETS[e.target.type]) continue;
+      if (!mobModelReady(e.target.type)) continue;
+      const next = buildMobModelInstance(e.target.type, e.target.color || 0xaaaaaa);
+      if (!next) continue;
+      next.position.copy(e.group.position);
+      next.rotation.copy(e.group.rotation);
+      this.scene.remove(e.group);
+      e.group.userData.dispose?.();
+      this._disposeGroup(e.group);
+      this.scene.add(next);
+      e.group = next;
+      e.baseScale = next.scale.x;
+      e.usingGLB = true;
+    }
+  }
+
   _disposeGroup(group, materialsOnly = false) {
     group.traverse((o) => {
       if (!materialsOnly && o.geometry) o.geometry.dispose?.();
@@ -679,7 +716,7 @@ export class GameRenderer {
         this.scene.add(grp);
         // baseScale captures the builder's own uniform scale (varies per mob type)
         // so the entrance animation can lerp back to it after the window closes.
-        e = { group: grp, rx: mob.x, rz: mob.z, ry: mob.y ?? 0, ra: mob.a ?? 0, target: mob, spd: 0, baseScale: grp.scale.x };
+        e = { group: grp, rx: mob.x, rz: mob.z, ry: mob.y ?? 0, ra: mob.a ?? 0, target: mob, spd: 0, baseScale: grp.scale.x, usingGLB: !!grp.userData.mobModel };
         this.mobMeshes.set(mob.id, e);
       }
       e.target = mob;
@@ -826,6 +863,28 @@ export class GameRenderer {
     else if (e.group.userData.triggerCast) e.group.userData.triggerCast(resolved.archetype);
   }
 
+  // Fire a GLB-backed big mob's bespoke attack clip on a melee/ranged hit
+  // event (ev.by is the striking mob's id). No-ops for procedural mobs
+  // (userData.mobModel is only set by mobModel.js's buildMobModelInstance).
+  _triggerMobAttackModel(mobId) {
+    const e = this.mobMeshes.get(mobId);
+    const mobModel = e && e.group.userData.mobModel;
+    if (mobModel) mobModel.triggerAttack();
+  }
+
+  // Ability casts don't carry a mob id (src/sim.js's "mobAbility" event only
+  // has mobType/x/z), so find the nearest live mob of that type instead.
+  _triggerMobAttackModelNear(mobType, x, z) {
+    let best = null, bestD = Infinity;
+    for (const e of this.mobMeshes.values()) {
+      if (!e.target || e.target.type !== mobType) continue;
+      const d = Math.hypot(e.rx - x, e.rz - z);
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    const mobModel = best && best.group.userData.mobModel;
+    if (mobModel) mobModel.triggerAttack();
+  }
+
   // Drive a victim's hit-reaction flinch from a "hit" sim event. Separate from
   // _triggerCast because a hit reaction is keyed by ev.victim (who got hit),
   // not ev.id/ev.a (who cast the ability) — see reactionForEvent's doc comment.
@@ -847,6 +906,7 @@ export class GameRenderer {
           this._addEffect(this._burstAt(ev.x, ev.z, 0xffcc44, { count: 26, speed: 10 }));
           this.audio?.play("hit", this._panFor(ev.x));
           this._shake = Math.min(0.6, this._shake + 0.22);
+          this._triggerMobAttackModel(ev.by);
           break;
         case "boltFizzle":
           // Projectile dispersed against cover — burst at the impact point,
@@ -1359,6 +1419,7 @@ export class GameRenderer {
           const abilitySfx = { seismicStomp: "hit", vacuum: "gravity", fissureSlam: "meteorImpact", magmaEruption: "meteorImpact" }[ev.ability] || "meteorImpact";
           this.audio?.play(abilitySfx, this._panFor(ev.x));
           this._shake = Math.min(0.9, this._shake + 0.32);
+          this._triggerMobAttackModelNear(ev.mobType, ev.x, ev.z);
           break;
         }
         case "mobDeath":
@@ -1644,7 +1705,8 @@ export class GameRenderer {
         // Rise 3 world-units from below ground to normal floor level.
         e.group.position.y = e.ry - (1 - progress) * 3.0;
         e.group.scale.setScalar(Math.max(0.05, progress) * (e.baseScale || 1));
-        // No animateMob — mob is locked in its spawn pose during the cinematic.
+        // No animateMob/mobModel update — mob is locked in its spawn pose
+        // during the cinematic (procedural rig or GLB mixer alike).
       } else {
         // Restore full scale (needed in the first frame after entrance ends).
         e.group.scale.setScalar(e.baseScale || 1);
@@ -1656,6 +1718,10 @@ export class GameRenderer {
           dt,
           time:     t,
         });
+        const mobModel = e.group.userData.mobModel;
+        if (mobModel) {
+          mobModel.update({ dt, speed: e.spd, maxSpeed: 5.0, falling: !!e.target.f });
+        }
       }
     }
 
