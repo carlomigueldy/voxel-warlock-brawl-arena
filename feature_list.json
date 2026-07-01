@@ -3,6 +3,7 @@
   "features": [
     {
       "id": "ui-esc-pause-menu",
+      "title": "In-match ESC pause menu overlay",
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
@@ -12,6 +13,8 @@
         "ui",
         "gameplay"
       ],
+      "parent": null,
+      "dependencies": [],
       "summary": "In-match ESC pause menu overlay with Resume Game, Leave Match, SFX/Music toggles, and a How-to-Play controls reference. Local-only pause (neutralizes the local player's input while the host-authoritative match continues live for everyone).",
       "acceptance_criteria": [
         "Pressing ESC during an active match (not in lobby) opens a centered pause overlay; pressing ESC or Resume closes it.",
@@ -20,10 +23,14 @@
         "How to Play shows an accurate keybind reference built from the live spellbook and slot hotkeys.",
         "Leave Match disconnects (host or client) and returns cleanly to the main menu with no leaked render loop; re-host/re-join works afterward.",
         "An involuntary disconnect resets match state so the pause overlay cannot appear over the main menu."
+      ],
+      "source_docs": [
+        "README.md"
       ]
     },
     {
       "id": "feat-region-matchmaking",
+      "title": "Region-based online matchmaking, leaderboards, and accounts",
       "type": "epic",
       "phase": "v1",
       "status": "in_progress",
@@ -32,8 +39,10 @@
         "multiplayer",
         "leaderboard"
       ],
+      "dependencies": [
+        "#34"
+      ],
       "summary": "Region-based online matchmaking, persistent leaderboards, and account system backed by Supabase",
-      "dependencies": [],
       "acceptance_criteria": [
         "Players can host online rooms that appear in the room browser for their region",
         "Quick Match finds the best open room in the player's region",
@@ -41,6 +50,17 @@
         "ELO rating is computed server-side per submit-match edge function",
         "Guest/LAN play works fully without Supabase credentials",
         "Supabase-disabled notices appear on online/leaderboard/account screens when not configured"
+      ],
+      "subissues": [
+        "feat-region-matchmaking-backend",
+        "feat-region-matchmaking-data",
+        "feat-region-matchmaking-ui",
+        "feat-region-matchmaking-integration",
+        "feat-region-matchmaking-queue-rework"
+      ],
+      "source_docs": [
+        "README.md",
+        "docs/feature-gap-analysis.md"
       ],
       "sub_issues": [
         {
@@ -119,6 +139,1332 @@
             "Cancelling or leaving during the queue tears down the Realtime channel/presence with no orphaned timers or channels."
           ]
         }
+      ]
+    },
+    {
+      "id": "EPIC-V1-01",
+      "title": "Core combat identity & balance",
+      "type": "epic",
+      "phase": "v1",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "epic",
+        "v1"
+      ],
+      "issue": {
+        "number": 62,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/62"
+      },
+      "subissues": [
+        "FEAT-V1-01-01",
+        "FEAT-V1-01-02",
+        "FEAT-V1-01-03",
+        "FEAT-V1-01-04",
+        "FEAT-V1-01-05",
+        "FEAT-V1-01-06",
+        "FEAT-V1-01-07"
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "Ring-out is the primary win condition; raw HP death no longer bypasses knockback/arena position",
+        "Chained CC has a diminishing-returns/immunity window",
+        "Mob ability damage/knockback scale with player count like MOB_HP_MIN_FACTOR already does"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md"
+      ],
+      "summary": "Roll-up epic for Core combat identity & balance gaps identified in the feature gap analysis."
+    },
+    {
+      "id": "EPIC-V1-02",
+      "title": "Netcode resilience & matchmaking robustness",
+      "type": "epic",
+      "phase": "v1",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "epic",
+        "v1"
+      ],
+      "issue": {
+        "number": 56,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/56"
+      },
+      "subissues": [
+        "FEAT-V1-02-01",
+        "FEAT-V1-02-02",
+        "FEAT-V1-02-03",
+        "FEAT-V1-02-04"
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "ICE negotiation has a TURN relay fallback and surfaces ICE-failure state",
+        "A host disconnect triggers migration/re-election instead of ending the match",
+        "A dropped client can reconnect and resume the match"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md"
+      ],
+      "summary": "Roll-up epic for Netcode resilience & matchmaking robustness gaps identified in the feature gap analysis."
+    },
+    {
+      "id": "EPIC-V1-03",
+      "title": "Progression & retention meta",
+      "type": "epic",
+      "phase": "v1",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "epic",
+        "v1"
+      ],
+      "issue": {
+        "number": 57,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/57"
+      },
+      "subissues": [
+        "FEAT-V1-03-01",
+        "FEAT-V1-03-02",
+        "FEAT-V1-03-03",
+        "FEAT-V1-03-04",
+        "FEAT-V1-03-05",
+        "FEAT-V1-03-06",
+        "FEAT-V1-03-07",
+        "FEAT-V1-03-08"
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "Accounts accrue XP/levels with a persisted schema",
+        "A first-pass cosmetic/skin unlock system exists",
+        "Matchmaking supports ranked/casual split and leaderboard supports seasons plus self-rank lookup"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md"
+      ],
+      "summary": "Roll-up epic for Progression & retention meta gaps identified in the feature gap analysis."
+    },
+    {
+      "id": "EPIC-V1-04",
+      "title": "Game modes & PvE content",
+      "type": "epic",
+      "phase": "v1",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "epic",
+        "v1"
+      ],
+      "issue": {
+        "number": 58,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/58"
+      },
+      "subissues": [
+        "FEAT-V1-04-01",
+        "FEAT-V1-04-02",
+        "FEAT-V1-04-03",
+        "FEAT-V1-04-04"
+      ],
+      "dependencies": [
+        "EPIC-V1-03"
+      ],
+      "acceptance_criteria": [
+        "A team/co-op mode exists alongside FFA",
+        "A tournament/bracket structure exists",
+        "PvE has wave/elite/difficulty scaling",
+        "Practice mode teaches core mechanics via a scripted sequence"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md"
+      ],
+      "summary": "Roll-up epic for Game modes & PvE content gaps identified in the feature gap analysis."
+    },
+    {
+      "id": "EPIC-V1-05",
+      "title": "Mobile & accessibility parity",
+      "type": "epic",
+      "phase": "v1",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "epic",
+        "v1"
+      ],
+      "issue": {
+        "number": 59,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/59"
+      },
+      "subissues": [
+        "FEAT-V1-05-01",
+        "FEAT-V1-05-02",
+        "FEAT-V1-05-03",
+        "FEAT-V1-05-04"
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "Touch players can switch spells mid-match",
+        "In-game settings expose volume and graphics quality",
+        "Onboarding hotkey capture supports Escape/cancel and skips touch users",
+        "Gamepad has a rebinding UI and on-screen glyph prompts"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md"
+      ],
+      "summary": "Roll-up epic for Mobile & accessibility parity gaps identified in the feature gap analysis."
+    },
+    {
+      "id": "EPIC-V1-06",
+      "title": "Competitive integrity & anti-cheat",
+      "type": "epic",
+      "phase": "v1",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "epic",
+        "v1"
+      ],
+      "issue": {
+        "number": 60,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/60"
+      },
+      "subissues": [
+        "FEAT-V1-06-01",
+        "FEAT-V1-06-02"
+      ],
+      "dependencies": [
+        "EPIC-V1-03",
+        "#34"
+      ],
+      "acceptance_criteria": [
+        "Match results carry signature/replay-protection",
+        "Ranked/guest lobby identity is validated against a Supabase session"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md"
+      ],
+      "summary": "Roll-up epic for Competitive integrity & anti-cheat gaps identified in the feature gap analysis."
+    },
+    {
+      "id": "EPIC-V1-07",
+      "title": "Backlog & documentation reconciliation",
+      "type": "epic",
+      "phase": "v1",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "epic",
+        "v1"
+      ],
+      "issue": {
+        "number": 61,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/61"
+      },
+      "subissues": [
+        "FEAT-V1-07-01",
+        "FEAT-V1-07-02",
+        "FEAT-V1-07-03",
+        "FEAT-V1-07-04"
+      ],
+      "dependencies": [],
+      "acceptance_criteria": [
+        "feature_list.json tracks every real epic/sub-issue",
+        "Shipped specs and rune-labels plan are marked done/archived",
+        "README spell count is reconciled against config.js SPELLS",
+        "Issue #34 is linked as blocked_by on the region-matchmaking epic"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md"
+      ],
+      "summary": "Roll-up epic for Backlog & documentation reconciliation gaps identified in the feature gap analysis."
+    },
+    {
+      "id": "FEAT-V1-01-01",
+      "title": "Stop HP damage from bypassing ring-out as the win condition",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 63,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/63"
+      },
+      "parent": "EPIC-V1-01",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Raw HP reaching 0 no longer sets alive=false outright; death is gated by arena position/ring-out",
+        "Burst spell combos can no longer kill a full-HP player without a knockback/ring-out interaction"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "player.js:574-583"
+      ],
+      "summary": "Stop HP damage from bypassing ring-out as the win condition",
+      "gap_rank": 1
+    },
+    {
+      "id": "FEAT-V1-01-02",
+      "title": "Add diminishing returns / immunity window to chained crowd control",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 70,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/70"
+      },
+      "parent": "EPIC-V1-01",
+      "dependencies": [
+        "FEAT-V1-01-01"
+      ],
+      "acceptance_criteria": [
+        "A player hit by 2+ CC effects within a short window receives reduced duration or brief immunity"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "player.js:268"
+      ],
+      "summary": "Add diminishing returns / immunity window to chained crowd control",
+      "gap_rank": 8
+    },
+    {
+      "id": "FEAT-V1-01-03",
+      "title": "Scale mob ability damage/knockback by player count",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 71,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/71"
+      },
+      "parent": "EPIC-V1-01",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Mob abilityDmg and abilityKb scale down for lower player counts like MOB_HP_MIN_FACTOR"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "config.js:252-268"
+      ],
+      "summary": "Scale mob ability damage/knockback by player count",
+      "gap_rank": 9
+    },
+    {
+      "id": "FEAT-V1-01-04",
+      "title": "Add telegraphs to instant-cast hard-CC spells",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 84,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/84"
+      },
+      "parent": "EPIC-V1-01",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Disable/stun/target/pull/drain spells gain a castTime/telegraphR"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "config.js SPELLS"
+      ],
+      "summary": "Add telegraphs to instant-cast hard-CC spells",
+      "gap_rank": 22
+    },
+    {
+      "id": "FEAT-V1-01-05",
+      "title": "Add adaptive difficulty beyond the 3 fixed bot archetypes",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 85,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/85"
+      },
+      "parent": "EPIC-V1-01",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Bot reaction/aim/loadout adjusts based on live player performance"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "bot.js:34-103"
+      ],
+      "summary": "Add adaptive difficulty beyond the 3 fixed bot archetypes",
+      "gap_rank": 23
+    },
+    {
+      "id": "FEAT-V1-01-06",
+      "title": "Add a comeback/rubber-band mechanic to prevent snowballing",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 86,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/86"
+      },
+      "parent": "EPIC-V1-01",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Charge/shrink rate scales with score deficit"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "config.js:161-169"
+      ],
+      "summary": "Add a comeback/rubber-band mechanic to prevent snowballing",
+      "gap_rank": 24
+    },
+    {
+      "id": "FEAT-V1-01-07",
+      "title": "Diversify draft templates and bot loadout weighting",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 87,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/87"
+      },
+      "parent": "EPIC-V1-01",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Draft templates no longer share the same 4 spells across all 3 templates"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "config.js:544-551"
+      ],
+      "summary": "Diversify draft templates and bot loadout weighting",
+      "gap_rank": 25
+    },
+    {
+      "id": "FEAT-V1-02-01",
+      "title": "Add TURN relay fallback for symmetric-NAT/firewalled players",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "infra"
+      ],
+      "issue": {
+        "number": 64,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/64"
+      },
+      "parent": "EPIC-V1-02",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "ICE server config includes at least one TURN relay",
+        "ICE failure is surfaced instead of silently timing out"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "net.js:38-47"
+      ],
+      "summary": "Add TURN relay fallback for symmetric-NAT/firewalled players",
+      "gap_rank": 2
+    },
+    {
+      "id": "FEAT-V1-02-02",
+      "title": "Add host migration and client reconnect",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 66,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/66"
+      },
+      "parent": "EPIC-V1-02",
+      "dependencies": [
+        "FEAT-V1-02-01"
+      ],
+      "acceptance_criteria": [
+        "Host disconnect triggers re-election",
+        "Dropped client can reconnect within a grace window"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "main.js:470-474"
+      ],
+      "summary": "Add host migration and client reconnect",
+      "gap_rank": 4
+    },
+    {
+      "id": "FEAT-V1-02-03",
+      "title": "Add late-join / spectator support",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 72,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/72"
+      },
+      "parent": "EPIC-V1-02",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "A connection arriving after match start is routed to a spectator/observer path"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "net.js:88-113"
+      ],
+      "summary": "Add late-join / spectator support",
+      "gap_rank": 10
+    },
+    {
+      "id": "FEAT-V1-02-04",
+      "title": "Add a matchmaking cancel/give-up/bot-fill escape hatch",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 73,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/73"
+      },
+      "parent": "EPIC-V1-02",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "A queued player can cancel matchmaking",
+        "Sparse-region queues offer bot-fill after a timeout"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "matchmaking.js:267-276"
+      ],
+      "summary": "Add a matchmaking cancel/give-up/bot-fill escape hatch",
+      "gap_rank": 11
+    },
+    {
+      "id": "FEAT-V1-03-01",
+      "title": "Add account XP/levels with a persisted schema",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "progression",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "progression"
+      ],
+      "issue": {
+        "number": 68,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/68"
+      },
+      "parent": "EPIC-V1-03",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "A migration adds an xp/level table",
+        "Match completion grants XP"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "auth.js:33-52"
+      ],
+      "summary": "Add account XP/levels with a persisted schema",
+      "gap_rank": 6
+    },
+    {
+      "id": "FEAT-V1-03-02",
+      "title": "Ship a cosmetics/skin unlock system",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "progression",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "progression"
+      ],
+      "issue": {
+        "number": 69,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/69"
+      },
+      "parent": "EPIC-V1-03",
+      "dependencies": [
+        "FEAT-V1-03-01"
+      ],
+      "acceptance_criteria": [
+        "A skin/cosmetic table and unlock-grant path exist",
+        "At least one alternate skin per character can be unlocked"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "character.js"
+      ],
+      "summary": "Ship a cosmetics/skin unlock system",
+      "gap_rank": 7
+    },
+    {
+      "id": "FEAT-V1-03-03",
+      "title": "Add a ranked/casual matchmaking split",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "progression",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "progression"
+      ],
+      "issue": {
+        "number": 76,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/76"
+      },
+      "parent": "EPIC-V1-03",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Matchmaking queue accepts a ranked/casual mode selection"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "matchmaking.js"
+      ],
+      "summary": "Add a ranked/casual matchmaking split",
+      "gap_rank": 14
+    },
+    {
+      "id": "FEAT-V1-03-04",
+      "title": "Build a friends/party/invite system",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "progression",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "progression"
+      ],
+      "issue": {
+        "number": 77,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/77"
+      },
+      "parent": "EPIC-V1-03",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "A friends table persists relationships server-side",
+        "A player can invite a friend to queue together"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "social.js"
+      ],
+      "summary": "Build a friends/party/invite system",
+      "gap_rank": 15
+    },
+    {
+      "id": "FEAT-V1-03-05",
+      "title": "Add leaderboard seasons and self-rank lookup",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "progression",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "progression"
+      ],
+      "issue": {
+        "number": 79,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/79"
+      },
+      "parent": "EPIC-V1-03",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Leaderboard rows carry a season_id",
+        "A client query returns the user's own rank"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "leaderboard.js:59-75"
+      ],
+      "summary": "Add leaderboard seasons and self-rank lookup",
+      "gap_rank": 17
+    },
+    {
+      "id": "FEAT-V1-03-06",
+      "title": "Expose client-facing match history and post-match recap",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "progression",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "progression"
+      ],
+      "issue": {
+        "number": 80,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/80"
+      },
+      "parent": "EPIC-V1-03",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "A client-readable RLS-scoped query returns match history",
+        "A post-match recap screen shows the player's own stats"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "match_players table"
+      ],
+      "summary": "Expose client-facing match history and post-match recap",
+      "gap_rank": 18
+    },
+    {
+      "id": "FEAT-V1-03-07",
+      "title": "Stop discarding ELO when a guest/bot wins",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "progression",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "progression"
+      ],
+      "issue": {
+        "number": 83,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/83"
+      },
+      "parent": "EPIC-V1-03",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "ELO/stat submission still records authenticated losers' results when the winner is a guest or bot"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "leaderboard.js:18-23,30-31"
+      ],
+      "summary": "Stop discarding ELO when a guest/bot wins",
+      "gap_rank": 21
+    },
+    {
+      "id": "FEAT-V1-03-08",
+      "title": "Add daily/weekly quests and login rewards",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "progression",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "progression"
+      ],
+      "issue": {
+        "number": 90,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/90"
+      },
+      "parent": "EPIC-V1-03",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "A daily/weekly quest table and completion-tracking path exist"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "no quest/daily/login logic in src/"
+      ],
+      "summary": "Add daily/weekly quests and login rewards",
+      "gap_rank": 28
+    },
+    {
+      "id": "FEAT-V1-04-01",
+      "title": "Turn practice mode into a scripted tutorial",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "ui"
+      ],
+      "issue": {
+        "number": 75,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/75"
+      },
+      "parent": "EPIC-V1-04",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Practice mode presents a scripted sequence covering charge-scaling knockback, ring-out timing, and drafting"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "main.js:~123-264"
+      ],
+      "summary": "Turn practice mode into a scripted tutorial",
+      "gap_rank": 13
+    },
+    {
+      "id": "FEAT-V1-04-02",
+      "title": "Add a team/co-op mode alongside FFA",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 78,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/78"
+      },
+      "parent": "EPIC-V1-04",
+      "dependencies": [
+        "FEAT-V1-03-03"
+      ],
+      "acceptance_criteria": [
+        "Match config supports a team field and team-based scoring"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "config.js MAX_PLAYERS:6"
+      ],
+      "summary": "Add a team/co-op mode alongside FFA",
+      "gap_rank": 16
+    },
+    {
+      "id": "FEAT-V1-04-03",
+      "title": "Scale PvE with waves, elites, and difficulty progression",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 88,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/88"
+      },
+      "parent": "EPIC-V1-04",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "PvE encounters support wave progression with increasing difficulty"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "config.js MOB_TYPES"
+      ],
+      "summary": "Scale PvE with waves, elites, and difficulty progression",
+      "gap_rank": 26
+    },
+    {
+      "id": "FEAT-V1-04-04",
+      "title": "Add a tournament/bracket structure",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 89,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/89"
+      },
+      "parent": "EPIC-V1-04",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "A bracket/round-tracking module organizes matches into a tournament"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "matchmaking.js/net.js one-shot rooms"
+      ],
+      "summary": "Add a tournament/bracket structure",
+      "gap_rank": 27
+    },
+    {
+      "id": "FEAT-V1-05-01",
+      "title": "Let touch players switch spells mid-match",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "mobile",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "mobile"
+      ],
+      "issue": {
+        "number": 67,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/67"
+      },
+      "parent": "EPIC-V1-05",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Touch UI adds a spell-select control wired to setSelectedSpell"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "index.html:798-802"
+      ],
+      "summary": "Let touch players switch spells mid-match",
+      "gap_rank": 5
+    },
+    {
+      "id": "FEAT-V1-05-02",
+      "title": "Add in-game SFX/music/master volume and graphics quality settings",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "accessibility",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "accessibility"
+      ],
+      "issue": {
+        "number": 74,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/74"
+      },
+      "parent": "EPIC-V1-05",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Settings UI exposes independent SFX, music, and master volume sliders",
+        "A graphics quality toggle exists"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "audio.js:28-30"
+      ],
+      "summary": "Add in-game SFX/music/master volume and graphics quality settings",
+      "gap_rank": 12
+    },
+    {
+      "id": "FEAT-V1-05-03",
+      "title": "Fix onboarding hotkey capture: add Escape/cancel and skip for touch",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "accessibility",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "accessibility"
+      ],
+      "issue": {
+        "number": 91,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/91"
+      },
+      "parent": "EPIC-V1-05",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "Pressing Escape during hotkey capture cancels the step",
+        "The step is skipped when isTouch is true"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "onboarding.js:208-220"
+      ],
+      "summary": "Fix onboarding hotkey capture: add Escape/cancel and skip for touch",
+      "gap_rank": 29
+    },
+    {
+      "id": "FEAT-V1-05-04",
+      "title": "Add gamepad rebinding UI and on-screen glyph prompts",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "accessibility",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "accessibility"
+      ],
+      "issue": {
+        "number": 92,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/92"
+      },
+      "parent": "EPIC-V1-05",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "A rebind panel lets a player remap gamepad inputs",
+        "Menus show gamepad glyph prompts when active"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "gamepad.js"
+      ],
+      "summary": "Add gamepad rebinding UI and on-screen glyph prompts",
+      "gap_rank": 30
+    },
+    {
+      "id": "FEAT-V1-06-01",
+      "title": "Add match-result signing / anti-cheat validation",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "infra"
+      ],
+      "issue": {
+        "number": 81,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/81"
+      },
+      "parent": "EPIC-V1-06",
+      "dependencies": [
+        "FEAT-V1-06-02"
+      ],
+      "acceptance_criteria": [
+        "STATE/result payloads carry a signature the server verifies before accepting submit-match"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "net.js:160-165"
+      ],
+      "summary": "Add match-result signing / anti-cheat validation",
+      "gap_rank": 19
+    },
+    {
+      "id": "FEAT-V1-06-02",
+      "title": "Enforce authenticated identity on ranked/guest lobby joins",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 82,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/82"
+      },
+      "parent": "EPIC-V1-06",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "_acceptsMatchmakingJoin validates the joining player's Supabase session/token"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "net.js:232-238"
+      ],
+      "summary": "Enforce authenticated identity on ranked/guest lobby joins",
+      "gap_rank": 20
+    },
+    {
+      "id": "FEAT-V1-07-01",
+      "title": "Resync feature_list.json with every real epic and sub-issue",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "docs",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "docs"
+      ],
+      "issue": {
+        "number": 65,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/65"
+      },
+      "parent": "EPIC-V1-07",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "feature_list.json contains an entry for every merged epic/sub-issue, not just the current 2"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "feature_list.json (125 lines, 2 entries)"
+      ],
+      "summary": "Resync feature_list.json with every real epic and sub-issue",
+      "gap_rank": 3
+    },
+    {
+      "id": "FEAT-V1-07-02",
+      "title": "Link issue #34 as blocked_by on the region-matchmaking epic",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 93,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/93"
+      },
+      "parent": "EPIC-V1-07",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "The region-matchmaking epic's dependencies list #34 as a blocking dependency"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "feat-region-matchmaking epic"
+      ],
+      "summary": "Link issue #34 as blocked_by on the region-matchmaking epic",
+      "gap_rank": 31
+    },
+    {
+      "id": "FEAT-V1-07-03",
+      "title": "Reconcile README spell count against config.js SPELLS",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "docs",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "docs"
+      ],
+      "issue": {
+        "number": 94,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/94"
+      },
+      "parent": "EPIC-V1-07",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "README's spell count/list matches the actual SPELLS entries in src/config.js"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "README.md:78-101"
+      ],
+      "summary": "Reconcile README spell count against config.js SPELLS",
+      "gap_rank": "extra"
+    },
+    {
+      "id": "FEAT-V1-07-04",
+      "title": "Mark shipped specs done and archive stale plans",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "docs",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "docs"
+      ],
+      "issue": {
+        "number": 95,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/95"
+      },
+      "parent": "EPIC-V1-07",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "The 4 shipped specs in docs/superpowers/specs/ are marked done/archived",
+        "rune-labels plan is closed against its shipped commits"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md",
+        "docs/superpowers/specs/"
+      ],
+      "summary": "Mark shipped specs done and archive stale plans",
+      "gap_rank": "extra"
+    },
+    {
+      "id": "chore-optimize-voxel-glbs",
+      "title": "Optimize voxel character GLBs, remove old models, fix preview framing",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "enhancement"
+      ],
+      "issue": {
+        "number": 32,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/32"
+      },
+      "parent": null,
+      "dependencies": [],
+      "acceptance_criteria": [
+        "Voxel character GLBs are optimized (reduced size/poly overhead) with no visual regression",
+        "Old/unused models are removed from the asset pipeline",
+        "Character preview framing renders correctly for every character"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md"
+      ],
+      "summary": "Optimize voxel character GLBs, remove old models, fix preview framing"
+    },
+    {
+      "id": "chore-finish-supabase-rollout",
+      "title": "Finish Supabase rollout for matchmaking/accounts/leaderboards (owner actions)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "blocked",
+      "priority": "P0",
+      "labels": [],
+      "issue": {
+        "number": 34,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/34"
+      },
+      "parent": null,
+      "dependencies": [],
+      "acceptance_criteria": [
+        "Supabase project is provisioned and configured for the region-matchmaking epic",
+        "Owner-only rollout actions (env vars, deploy) are completed so ranked/leaderboard flows work end-to-end"
+      ],
+      "source_docs": [
+        "docs/feature-gap-analysis.md"
+      ],
+      "summary": "Owner-only Supabase rollout actions blocking the region-matchmaking epic's closure",
+      "blocks": [
+        "feat-region-matchmaking"
       ]
     }
   ]
