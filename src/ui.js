@@ -24,6 +24,10 @@ export class UI {
       playerList: $("player-list"), btnStart: $("btn-start"),
       botControls: $("bot-controls"), botCount: $("bot-count"), botSkill: $("bot-skill"),
       lobbyStatus: $("lobby-status"),
+      lobbyMusterCount: $("lobby-muster-count"),
+      mapHero: $("map-hero"),
+      lobbyHostConfig: $("lobby-host-config"),
+      lobbyClientConfig: $("lobby-client-config"),
       roundInfo: $("round-info"), timer: $("timer"),
       scoreboard: $("scoreboard"), chargeBar: $("charge-bar"),
       hpBar: $("hp-bar"), hpText: $("hp-text"),
@@ -155,7 +159,7 @@ export class UI {
       const state = btn.querySelector(".rune-toggle-state");
       if (state) state.textContent = on ? "ON" : "OFF";
     };
-    btn.addEventListener("click", () => { native.checked = !native.checked; sync(); });
+    btn.addEventListener("click", () => { native.checked = !native.checked; sync(); this.handlers.configChange?.(); });
     sync();
   }
 
@@ -170,14 +174,22 @@ export class UI {
       card.type = "button";
       card.className = "arena-card";
       card.setAttribute("role", "radio");
+      card.tabIndex = 0;
       card.dataset.value = world.id;
-      card.style.setProperty("--card-color", hex(world.top));
+      card.style.setProperty("--card-top", hex(world.top));
+      card.style.setProperty("--card-side", hex(world.side));
+      card.style.setProperty("--card-hazard", hex(hazard.color));
+      card.style.setProperty("--card-glow", hex(hazard.glow));
       card.innerHTML =
-        `<span class="arena-card-orb"></span>` +
+        `<span class="arena-card-art" data-hazard="${escapeHTML(hazard.detail?.kind || "")}">` +
+          `<span class="arena-card-platform"></span>` +
+          `<span class="arena-card-hazard-glow"></span>` +
+          `<span class="arena-card-motif" aria-hidden="true"></span>` +
+        `</span>` +
         `<span class="arena-card-name">${escapeHTML(world.name)}</span>` +
         `<span class="arena-card-hazard">${escapeHTML(hazard.name)}</span>` +
         `<span class="arena-card-check">✓</span>`;
-      card.addEventListener("click", () => this._selectArena(world.id));
+      card.addEventListener("click", () => { this._selectArena(world.id); this.handlers.configChange?.(); });
       wrap.appendChild(card);
     });
     this._selectArena(native.value || CFG.DEFAULT_ARENA_WORLD);
@@ -190,6 +202,7 @@ export class UI {
       c.classList.toggle("is-active", on);
       c.setAttribute("aria-checked", String(on));
     });
+    this.renderMapHero(id, this.el.mapHero);
   }
 
   _buildLandSizeSegmented() {
@@ -204,7 +217,7 @@ export class UI {
       opt.setAttribute("role", "radio");
       opt.dataset.value = size.id;
       opt.textContent = size.name;
-      opt.addEventListener("click", () => this._selectSegment(wrap, native, size.id));
+      opt.addEventListener("click", () => { this._selectSegment(wrap, native, size.id); this.handlers.configChange?.(); });
       wrap.appendChild(opt);
     });
     this._selectSegment(wrap, native, native.value || CFG.DEFAULT_ARENA_LAND_SIZE);
@@ -293,7 +306,7 @@ export class UI {
       text.textContent = label;
       const sync = () => lbl.classList.toggle("is-on", input.checked);
       sync();
-      input.addEventListener("change", () => { sync(); this._saveMapObjects(); });
+      input.addEventListener("change", () => { sync(); this._saveMapObjects(); this.handlers.configChange?.(); });
       lbl.appendChild(input);
       lbl.appendChild(track);
       lbl.appendChild(text);
@@ -1354,7 +1367,7 @@ export class UI {
 
   /**
    * Switch to one of the named sub-screens.
-   * Valid names: "online" | "private" | "characters" | "settings" | "leaderboards" | "account"
+   * Valid names: "online" | "private" | "characters" | "leaderboards" | "account" | "tutorial"
    */
   _showMenuScreen(name) {
     this._menuScreen = name;
@@ -1405,7 +1418,60 @@ export class UI {
     this.el.roomCode.textContent = code;
     this.el.btnStart.classList.toggle("hidden", !isHost);
     this.el.botControls?.classList.toggle("hidden", !isHost);
+    this.el.lobbyHostConfig?.classList.toggle("hidden", !isHost);
+    this.el.lobbyClientConfig?.classList.toggle("hidden", !!isHost);
     this._renderQR(this._inviteLink());
+    if (isHost) {
+      // Host has live controls; seed the hero preview from the current selection.
+      this.renderMapHero(this.el.arenaWorld?.value || CFG.DEFAULT_ARENA_WORLD, this.el.mapHero);
+    }
+  }
+
+  /**
+   * Build the enlarged stylized map preview from CFG.ARENA_WORLDS + getArenaHazard.
+   * Pure CSS/SVG — no image assets. Shared by the host (updates live on selection)
+   * and joined clients (updates whenever a MSG.LOBBY config arrives).
+   */
+  renderMapHero(worldId, container) {
+    if (!container) return;
+    const world = CFG.ARENA_WORLDS.find((w) => w.id === worldId) || CFG.ARENA_WORLDS.find((w) => w.id === CFG.DEFAULT_ARENA_WORLD);
+    const hazard = getArenaHazard(world.id);
+    container.style.setProperty("--hero-top", hex(world.top));
+    container.style.setProperty("--hero-side", hex(world.side));
+    container.style.setProperty("--hero-hazard", hex(hazard.color));
+    container.style.setProperty("--hero-glow", hex(hazard.glow));
+    // Scene-level hazard tint: a soft radial glow behind the battleground
+    // viewport (see #lobby .lobby-battleground::before in style.css).
+    this.el.lobby?.style.setProperty("--stage-hazard", hex(hazard.glow));
+    container.innerHTML =
+      `<span class="map-hero-hazard-glow"></span>` +
+      `<span class="map-hero-platform"></span>` +
+      `<span class="map-hero-motif" data-hazard="${escapeHTML(hazard.detail?.kind || "")}" aria-hidden="true"></span>` +
+      `<span class="map-hero-copy">` +
+        `<span class="map-hero-world">${escapeHTML(world.name)}</span>` +
+        `<span class="map-hero-hazard-name">${escapeHTML(hazard.name)}</span>` +
+      `</span>`;
+  }
+
+  /**
+   * Render the read-only summary of the host's match config for joined clients.
+   * Host: no-op — the host already has live controls driving the hero preview.
+   */
+  renderLobbyConfig(config, { isHost }) {
+    if (isHost || !config) return;
+    this.renderMapHero(config.arenaWorld, this.el.mapHero);
+    const panel = this.el.lobbyClientConfig;
+    if (!panel) return;
+    const landSize = CFG.ARENA_LAND_SIZES[config.landSize] || CFG.ARENA_LAND_SIZES[CFG.DEFAULT_ARENA_LAND_SIZE];
+    const objectCount = config.enabledObstacles
+      ? Object.values(config.enabledObstacles).filter(Boolean).length
+      : (CFG.OBSTACLE_TYPES?.length || 0);
+    const totalObjects = CFG.OBSTACLE_TYPES?.length || objectCount;
+    panel.innerHTML =
+      `<p class="lobby-rail-title lobby-setup-title">Match Setup</p>` +
+      `<p class="lobby-client-config-row"><span class="field-label">Land size</span><span>${escapeHTML(landSize.name)}</span></p>` +
+      `<p class="lobby-client-config-row"><span class="field-label">Mob spawns</span><span>${config.mobsEnabled !== false ? "On" : "Off"}</span></p>` +
+      `<p class="lobby-client-config-row"><span class="field-label">Map objects</span><span>${objectCount}/${totalObjects}</span></p>`;
   }
 
   showGame(practiceMode = false) {
@@ -1804,6 +1870,11 @@ export class UI {
       }
       this.el.playerList.appendChild(li);
     });
+    // Launch-bar muster count, derived from the roster just rendered above.
+    if (this.el.lobbyMusterCount) {
+      const n = players.length;
+      this.el.lobbyMusterCount.textContent = `${n} warlock${n === 1 ? "" : "s"} mustered`;
+    }
   }
 
   // ---- in-game HUD ----

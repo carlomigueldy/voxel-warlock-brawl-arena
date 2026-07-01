@@ -139,6 +139,40 @@ export class Simulation {
     this._matchSeed = 0;     // re-randomised in startMatch(); base for per-round seeds
   }
 
+  /**
+   * Host-only lobby control: mutate arena world / land size / enabled obstacles /
+   * mob spawns while the match hasn't started yet. No-op (with a console warning)
+   * outside PHASE.LOBBY — config is locked once the match leaves the lobby.
+   * Returns the normalized config that was applied (or the current one if no-op).
+   */
+  configure(options = {}) {
+    if (this.phase !== PHASE.LOBBY) {
+      console.warn("Simulation.configure() ignored: match is no longer in the lobby.");
+      return this._currentConfig();
+    }
+    if (options.arenaWorld !== undefined) this.world = getArenaWorld(options.arenaWorld);
+    if (options.landSize !== undefined) this.landSize = getArenaLandSize(options.landSize);
+    if (options.enabledObstacles !== undefined) {
+      const rawToggles = options.enabledObstacles || {};
+      this.enabledObstacles = {};
+      for (const { id } of CFG.OBSTACLE_TYPES) {
+        this.enabledObstacles[id] = rawToggles[id] !== false;
+      }
+    }
+    if (options.mobsEnabled !== undefined) this.mobsEnabled = options.mobsEnabled !== false;
+    this.arena = new LogicArena(this.world, this.landSize);
+    return this._currentConfig();
+  }
+
+  _currentConfig() {
+    return {
+      arenaWorld: this.world.id,
+      landSize: this.landSize.id,
+      enabledObstacles: this.enabledObstacles,
+      mobsEnabled: this.mobsEnabled,
+    };
+  }
+
   addPlayer(id, name, options = {}) {
     if (this.players.has(id)) return this.players.get(id);
     const idx = this.players.size;

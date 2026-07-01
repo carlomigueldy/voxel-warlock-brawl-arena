@@ -579,7 +579,7 @@ export const MSG = {
   INPUT: "input",        // {seq, move:[x,z], aim, casts:[{id,spell,tx,tz}]}
   // host -> client
   WELCOME: "welcome",    // {id, players, hostName, full?, matchmakingRejected?}
-  LOBBY: "lobby",        // {players}
+  LOBBY: "lobby",        // {players, hostId, config?: {arenaWorld, landSize, enabledObstacles, mobsEnabled}}
   START: "start",        // {round} — mapLayout travels in the first STATE packet, not here
   STATE: "state",        // {t, players[], bolts[], arenaR, phase, ...}
   // snapshot player field `st` = stun remaining (seconds, like `hz`) added in player.js
