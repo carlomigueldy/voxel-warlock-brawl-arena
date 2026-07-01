@@ -72,9 +72,10 @@ every routine/cron tick.
    **Opus**, so an unset model silently makes every subagent Opus — the failure
    that ran a single session past **$200**. Map each fleet role to its tier at
    spawn time per the **Model-tier policy** table below (Scout → Haiku/Explore,
-   Implementer → Sonnet, Reviewer → Opus, Backlog-sync → Sonnet/Haiku). Opus is
-   reserved for planning/review and design/drift gates — never the default for
-   implementation, recon, search, or mechanical edits.
+   Implementer → Sonnet, Reviewer → Opus for the merge gate / complex diffs, else
+   Sonnet, Backlog-sync → Sonnet/Haiku). Opus is reserved for planning, complex/
+   high-risk review, and design/drift gates — never the default for implementation,
+   recon, search, mechanical edits, or non-complex code/visual review.
 
 ---
 
@@ -114,8 +115,9 @@ Prompt arrives
   ├─ Trivial / mechanical (rename, lookup, single-file recon, format)?
   │     → Spawn Haiku or Explore subagent.
   ├─ Scoped implementation (one feature, bugfix, component, doc)?
-  │     → Spawn a Sonnet Implementer (it may spawn helpers); Opus only to
-  │       plan up front and review the diff.
+  │     → Spawn a Sonnet Implementer (it may spawn helpers); Opus plans up
+  │       front. Sonnet reviews the diff (code + visual fidelity), escalating
+  │       to Opus if the change is complex or high-risk.
   ├─ An epic with sub-issues, or "advance the backlog"?
   │     → Run the Epic Fleet Loop (.agents/harness/fleet-loop.md) as a workflow.
   └─ Ambiguous goal / new feature with unclear shape?
@@ -124,13 +126,17 @@ Prompt arrives
 
 ### Model-tier policy (use the cheapest tier that fits)
 
-| Tier                | Use it for                                                        |
-| ------------------- | ----------------------------------------------------------------- |
-| **Opus**            | Planning, architecture, code review, design/drift gates.          |
-| **Sonnet**          | Most implementation work, backlog sync, doc writing.              |
-| **Haiku / Explore** | Trivial/mechanical tasks, recon, scouting, search, file location. |
+| Tier                | Use it for                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| **Opus**            | Planning, architecture, complex/high-risk code review, the merge gate, design/drift gates. |
+| **Sonnet**          | Most implementation work, non-complex code review, visual-fidelity review, backlog sync, doc writing. |
+| **Haiku / Explore** | Trivial/mechanical tasks, recon, scouting, search, file location.                   |
 
-- Default implementation to **Sonnet**; reserve **Opus** for plan + review.
+- Default implementation to **Sonnet**; default scoped-diff and visual-fidelity
+  review to **Sonnet** too. The reviewer **escalates to Opus** when it judges the
+  diff complex or high-risk. Reserve **Opus** for planning up front. The
+  **autonomous-merge gate always requires Opus** (Hard rule 5 / fleet-loop §8) —
+  that bar never drops to Sonnet.
 - **Subagents may spawn their own helpers** (Sonnet/Haiku); keep the same tier
   discipline. Spawn independent subagents **in parallel** (one message, multiple
   tool calls); reserve barriers for when you need all results together.
@@ -140,9 +146,10 @@ Prompt arrives
 
 ### Fleet roles (Epic Fleet Loop)
 
-`Scout` (Haiku/Explore) → `Implementer` (Sonnet) → `Reviewer` (Opus) →
-`Backlog-sync` (Sonnet/Haiku). Full protocol, idempotency, locks, and the
-one-tick checklist live in `.agents/harness/fleet-loop.md`.
+`Scout` (Haiku/Explore) → `Implementer` (Sonnet) → `Reviewer` (Sonnet for
+non-complex code/visual review; Opus for the autonomous-merge gate and complex/
+high-risk diffs) → `Backlog-sync` (Sonnet/Haiku). Full protocol, idempotency,
+locks, and the one-tick checklist live in `.agents/harness/fleet-loop.md`.
 
 ---
 
