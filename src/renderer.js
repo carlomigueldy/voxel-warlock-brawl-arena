@@ -19,6 +19,12 @@ import {
   characterReady,
   buildCharacterInstance,
 } from "./character.js";
+import {
+  MOB_MODEL_ASSETS,
+  loadMobModelTemplate,
+  mobModelReady,
+  buildMobModelInstance,
+} from "./mobModel.js";
 import { archetypeForEvent } from "./animations.js";
 import { effectPos } from "./renderer-util.js";
 import { VFX_REGISTRY, getVfx } from "./vfx/duotone.js";
@@ -88,6 +94,15 @@ export class GameRenderer {
       loadCharacterTemplate(ch.id)
         .then(() => this._upgradePlayersToGLB())
         .catch((err) => console.warn(`Character GLB '${ch.id}' unavailable, using voxel fallback:`, err));
+    }
+
+    // Preload the 4 big-mob Meshy GLBs so mobs render as rigged models instead
+    // of the procedural fallback. Mobs are built once and cached at spawn, so
+    // any built before its template resolves gets upgraded in-place once ready.
+    for (const type of Object.keys(MOB_MODEL_ASSETS)) {
+      loadMobModelTemplate(type)
+        ?.then(() => this._upgradeMobsToGLB())
+        .catch((err) => console.warn(`Mob GLB '${type}' unavailable, using voxel fallback:`, err));
     }
 
     window.addEventListener("resize", () => this._onResize());
@@ -477,6 +492,28 @@ export class GameRenderer {
     }
   }
 
+  // Swap any procedural-fallback mob to its Meshy GLB body once the template
+  // has loaded (mirrors _upgradePlayersToGLB). Preserves world transform and
+  // the health-bar reference so per-frame HP scaling keeps working.
+  _upgradeMobsToGLB() {
+    for (const e of this.mobMeshes.values()) {
+      if (e.usingGLB) continue;
+      if (!e.target || !MOB_MODEL_ASSETS[e.target.type]) continue;
+      if (!mobModelReady(e.target.type)) continue;
+      const next = buildMobModelInstance(e.target.type, e.target.color || 0xaaaaaa);
+      if (!next) continue;
+      next.position.copy(e.group.position);
+      next.rotation.copy(e.group.rotation);
+      this.scene.remove(e.group);
+      e.group.userData.dispose?.();
+      this._disposeGroup(e.group);
+      this.scene.add(next);
+      e.group = next;
+      e.baseScale = next.scale.x;
+      e.usingGLB = true;
+    }
+  }
+
   _disposeGroup(group, materialsOnly = false) {
     group.traverse((o) => {
       if (!materialsOnly && o.geometry) o.geometry.dispose?.();
@@ -679,7 +716,7 @@ export class GameRenderer {
         this.scene.add(grp);
         // baseScale captures the builder's own uniform scale (varies per mob type)
         // so the entrance animation can lerp back to it after the window closes.
-        e = { group: grp, rx: mob.x, rz: mob.z, ry: mob.y ?? 0, ra: mob.a ?? 0, target: mob, spd: 0, baseScale: grp.scale.x };
+        e = { group: grp, rx: mob.x, rz: mob.z, ry: mob.y ?? 0, ra: mob.a ?? 0, target: mob, spd: 0, baseScale: grp.scale.x, usingGLB: !!grp.userData.mobModel };
         this.mobMeshes.set(mob.id, e);
       }
       e.target = mob;
