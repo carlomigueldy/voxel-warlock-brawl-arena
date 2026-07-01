@@ -13,7 +13,7 @@ export class UI {
   constructor() {
     this.el = {
       menu: $("menu"), lobby: $("lobby"), hud: $("hud"),
-      nameInput: $("name-input"), btnHost: $("btn-host"),
+      nameInput: $("name-input"), nameError: $("name-error"), btnHost: $("btn-host"),
       charCards: $("char-cards"), charPreview: $("char-preview"),
       charPreviewName: $("char-preview-name"),
       arenaWorld: $("arena-world"), landSize: $("land-size"),
@@ -1229,7 +1229,7 @@ export class UI {
     if (this.el.btnHost) {
       this.el.btnHost.onclick = () => {
         const name = this._name();
-        if (!name) return this.setMenuStatus("Enter a name first.");
+        if (!name) return this._flagNameError();
         this.handlers.hostPrivate?.(name, {
           mobsEnabled: this.mobsEnabled(),
           character: this.selectedCharacter,
@@ -1242,12 +1242,19 @@ export class UI {
     if (this.el.btnQuickMatch) {
       this.el.btnQuickMatch.onclick = () => {
         const name = this._name();
-        if (!name) return this.setMenuStatus("Enter a name first.");
+        if (!name) return this._flagNameError();
         this.handlers.quickMatch?.();
       };
     }
     if (this.el.btnCancelQueue) {
       this.el.btnCancelQueue.onclick = () => this.handlers.cancelQueue?.();
+    }
+
+    // Clear the name-required error as soon as the player starts typing a name.
+    if (this.el.nameInput) {
+      this.el.nameInput.addEventListener("input", () => {
+        if (this.el.nameInput.value.trim()) this._clearNameError();
+      });
     }
 
     // Private Join — fires joinByCode event.
@@ -1306,12 +1313,47 @@ export class UI {
   _tryJoin() {
     const name = this._name();
     const code = this.el.joinCode?.value.trim().toUpperCase() || "";
-    if (!name) return this.setMenuStatus("Enter a name first.");
+    if (!name) return this._flagNameError();
     if (code.length < 4) return this.setMenuStatus("Enter a valid room code.");
     this.handlers.joinByCode?.(name, code, this.selectedCharacter);
   }
 
   _name() { return this.el.nameInput?.value.trim().slice(0, 14) || ""; }
+
+  /**
+   * Surface a "name required" validation error ON the Warlock name field so it
+   * can't be missed: red field, shake, focus, inline message, and a scroll into
+   * view (the field can be off-screen on the stacked mobile menu). Returns
+   * undefined so callers can `return this._flagNameError()` to bail out.
+   */
+  _flagNameError(msg = "Name your warlock first.") {
+    const input = this.el.nameInput;
+    const err = this.el.nameError;
+    if (err) { err.textContent = msg; err.hidden = false; }
+    if (input) {
+      input.classList.add("input-error");
+      input.setAttribute("aria-invalid", "true");
+      input.scrollIntoView({ block: "center", behavior: "smooth" });
+      input.focus({ preventScroll: true });
+      if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+        input.style.setProperty("--shake-amp", "5px");
+        input.classList.remove("fx-shake");
+        void input.offsetWidth; // restart the animation
+        input.classList.add("fx-shake");
+        input.addEventListener("animationend", () => input.classList.remove("fx-shake"), { once: true });
+      }
+    }
+    // Keep the shared status line in sync for anyone reading it.
+    this.setMenuStatus(msg);
+  }
+
+  _clearNameError() {
+    if (this.el.nameError) this.el.nameError.hidden = true;
+    if (this.el.nameInput) {
+      this.el.nameInput.classList.remove("input-error", "fx-shake");
+      this.el.nameInput.removeAttribute("aria-invalid");
+    }
+  }
 
   mobsEnabled() { return this.el.mobsToggle?.checked !== false; }
 

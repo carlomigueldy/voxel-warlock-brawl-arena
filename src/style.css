@@ -179,6 +179,22 @@ html, body {
 }
 .rune-field input:focus ~ .rune-field-line { transform: scaleX(1); }
 
+/* ---- Field validation error (obvious, on the field itself) ---- */
+.rune-field input.input-error,
+.rune-field input.input-error:focus {
+  border-color: var(--ember);
+  box-shadow: 0 0 0 1px var(--ember), var(--glow-ember);
+  background: rgba(255, 90, 60, 0.08);
+}
+.rune-field input.input-error::placeholder { color: rgba(255, 138, 116, 0.75); }
+.field-error {
+  display: flex; align-items: center; gap: 6px;
+  margin: 8px 0 0; font-size: 12.5px; font-weight: 700; letter-spacing: 0.3px;
+  color: var(--ember);
+}
+.field-error[hidden] { display: none; }
+.field-error::before { content: "⚠"; font-size: 13px; line-height: 1; }
+
 /* ---------- Custom toggle ---------- */
 .rune-toggle {
   display: inline-flex; align-items: center; gap: 10px;
@@ -1235,17 +1251,26 @@ html, body {
   position: relative; z-index: 3;
   width: 360px; flex-shrink: 0;
   min-height: 100vh; min-height: 100dvh;
-  /* Cap to the viewport and let the nav scroll internally instead of being
-     clipped by #menu's overflow:hidden on short (non-fullscreen) windows. */
-  max-height: 100vh; max-height: 100dvh;
-  overflow-x: hidden; overflow-y: auto; touch-action: pan-y;
   padding: 44px 40px 36px;
   display: flex; flex-direction: column;
+  /* overflow stays visible so the oversized hero title can bleed past the
+     360px spine onto the stage (intended). Short-window scrolling is handled
+     by the max-height media query below, not here. */
   /* Subtle left-edge separator */
   border-right: 1px solid rgba(108, 76, 255, 0.08);
 }
-.menu-spine::-webkit-scrollbar { width: 4px; }
-.menu-spine::-webkit-scrollbar-thumb { background: rgba(108,76,255,0.5); border-radius: 2px; }
+/* Only when the window is genuinely short (content can't fit the spine's
+   full height) do we cap + scroll it, so nav/hint stay reachable instead of
+   being clipped by #menu's overflow:hidden. The title bleed is sacrificed
+   only in this rare tiny-viewport case. */
+@media (min-width: 801px) and (max-height: 560px) {
+  .menu-spine {
+    max-height: 100vh; max-height: 100dvh;
+    overflow-x: hidden; overflow-y: auto; touch-action: pan-y;
+  }
+  .menu-spine::-webkit-scrollbar { width: 4px; }
+  .menu-spine::-webkit-scrollbar-thumb { background: rgba(108,76,255,0.5); border-radius: 2px; }
+}
 
 /* Override brand alignment for left-flush layout. */
 .menu-cinematic .brand { margin-bottom: 0; text-align: left; }
