@@ -167,6 +167,13 @@ function startHosting(name, options = {}) {
     pushLobby();
   });
 
+  // Host-only lobby map/config controls (arena world, land size, map objects,
+  // mob spawns) — relocated from the old "Settings" menu tab into the lobby.
+  ui.on("configChange", () => {
+    sim.configure({ ...ui.getArenaSettings(), mobsEnabled: ui.mobsEnabled() });
+    pushLobby();
+  });
+
   ui.on("start", () => {
     applyBotSettings();
     beginMatch();
@@ -230,7 +237,13 @@ function startHosting(name, options = {}) {
 
   function pushLobby() {
     const players = metaToArray();
-    host.broadcast({ type: MSG.LOBBY, players, hostId: localId });
+    const config = {
+      arenaWorld: sim.world.id,
+      landSize: sim.landSize.id,
+      enabledObstacles: sim.enabledObstacles,
+      mobsEnabled: sim.mobsEnabled,
+    };
+    host.broadcast({ type: MSG.LOBBY, players, hostId: localId, config });
     ui.renderPlayerList(players, localId);
     ui.el.btnStart.classList.toggle("hidden", !!options.matchmaking);
     ui.el.btnStart.disabled = !!options.matchmaking || !sim.canStartMatch();
@@ -317,6 +330,8 @@ function startJoining(name, code, character, { userId, region, matchmaking } = {
         character: p.character || CFG.DEFAULT_CHARACTER, userId: p.userId || null,
       }));
       ui.renderPlayerList(msg.players, msg.hostId);
+      // Backward-tolerant: older hosts (or the very first LOBBY packet) may omit config.
+      if (msg.config) ui.renderLobbyConfig(msg.config, { isHost: false });
     },
     onStart: () => {
       ui.showGame();
