@@ -240,20 +240,27 @@ comment explaining the overlap.
 | ---------------- | --------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | **Scout**        | Haiku / Explore | Issue body + acceptance criteria; epic context; live state (§4).  | Locate target files; read current state; summarize gap; flag blockers / overlapping claims; output a scoped work brief with exact file globs.                           | Work brief: summary, gap analysis, file list, blockers.                   |
 | **Implementer**  | Sonnet          | Scout brief; worktree on fresh epic-branch base; relevant skills. | Make file-scoped changes confined to claimed globs. Load any task-relevant skill first (e.g. frontend-design SKILL for UI). Conventional commits. No AI attribution.    | Committed diff inside the worktree, confined to claimed globs.            |
-| **Reviewer**     | Opus            | Implementer diff; acceptance criteria; gate results (§7 gates).   | Correctness review; scope check (no out-of-scope edits); regression check; verify gates green; approve or request changes with file/line refs.                          | Approve verdict or explicit request-changes notes.                        |
+| **Reviewer**     | Sonnet → Opus   | Implementer diff; acceptance criteria; gate results (§7 gates).   | Correctness review; scope check (no out-of-scope edits); regression check; verify gates green; approve or request changes with file/line refs. Default **Sonnet** for non-complex diffs; **escalate to Opus** for complex/high-risk diffs. The autonomous-merge gate (§8) always requires the **Opus** verdict. | Approve verdict or explicit request-changes notes.                        |
 | **Backlog-sync** | Sonnet / Haiku  | Final issue + PR state after gates pass; current backlog mirror.  | Post progress comment (run-id, what changed, gates, evidence, next step). Set `fleet:review` after handoff. Draft `feature_list.json` delta — do NOT write it directly. | Issue comment; proposed `feature_list.json` patch handed to orchestrator. |
 
-**Model tier policy:** Opus reserved for planning/review; Sonnet for
-implementation; Haiku/Explore for trivial recon. Subagents may spawn their own
-Sonnet/Haiku helpers. Do not upgrade Scout to Sonnet/Opus or downgrade Reviewer
-below Opus. When the loop runs as a Workflow / ultracode, **each role's
+**Model tier policy:** Opus reserved for planning, complex/high-risk review, and
+the merge gate; Sonnet for implementation and non-complex code/visual review;
+Haiku/Explore for trivial recon. Subagents may spawn their own Sonnet/Haiku
+helpers. Do not upgrade Scout to Sonnet/Opus. The Reviewer defaults to Sonnet for
+non-complex diffs and **escalates to Opus** by its own judgment when a diff is
+complex or high-risk; the **autonomous-merge gate Reviewer (§8 condition 1) must
+always be Opus** — never downgrade that. When the loop runs as a Workflow /
+ultracode, **each role's
 `agent()` call sets its tier explicitly** (`opts.model` / `opts.effort`) — never
 inherit from the Opus orchestrator (CLAUDE.md **Hard rule 6** is the single
 source; unset model = all-Opus = the $200 trap).
 
-> For an epic with a design/visual dimension, add an Opus **Design-guard** role
-> and a visual-QA evidence step (see a project's concrete instance under
-> `.agents/workflows/` for the pattern). For non-UI epics this is omitted.
+> For an epic with a design/visual dimension, add a **Design-guard** /
+> visual-fidelity role and a visual-QA evidence step (see a project's concrete
+> instance under `.agents/workflows/` for the pattern). Default this role to
+> **Sonnet** for non-complex UI (copy, styling, isolated components), and
+> **escalate to Opus** by reviewer's judgment for complex or design-system-wide
+> visual work. For non-UI epics this is omitted.
 
 ### Validation gates (required before any handoff or PR)
 
