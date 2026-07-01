@@ -1046,12 +1046,12 @@ export class UI {
   }
 
   _bind() {
-    // LAN Host — fires hostLan event.
+    // Private Host — fires hostPrivate event.
     if (this.el.btnHost) {
       this.el.btnHost.onclick = () => {
         const name = this._name();
         if (!name) return this.setMenuStatus("Enter a name first.");
-        this.handlers.hostLan?.(name, {
+        this.handlers.hostPrivate?.(name, {
           mobsEnabled: this.mobsEnabled(),
           character: this.selectedCharacter,
           ...this.getArenaSettings(),
@@ -1071,7 +1071,7 @@ export class UI {
       this.el.btnCancelQueue.onclick = () => this.handlers.cancelQueue?.();
     }
 
-    // LAN Join — fires joinByCode event.
+    // Private Join — fires joinByCode event.
     if (this.el.btnJoin) {
       this.el.btnJoin.onclick = () => this._tryJoin();
     }
@@ -1135,8 +1135,8 @@ export class UI {
     if (code) {
       if (this.el.joinCode) this.el.joinCode.value = code.toUpperCase();
       this.setMenuStatus(`Room ${code.toUpperCase()} ready — enter your name and Join.`);
-      // Navigate to LAN screen so the join field is visible.
-      this._showMenuScreen("lan");
+      // Navigate to private screen so the join field is visible.
+      this._showMenuScreen("private");
     }
     const savedName = localStorage.getItem("vwb-name");
     if (savedName && this.el.nameInput) this.el.nameInput.value = savedName;
@@ -1167,7 +1167,7 @@ export class UI {
 
   /**
    * Switch to one of the named sub-screens.
-   * Valid names: "online" | "lan" | "characters" | "settings" | "leaderboards" | "account"
+   * Valid names: "online" | "private" | "characters" | "settings" | "leaderboards" | "account"
    */
   _showMenuScreen(name) {
     this._menuScreen = name;

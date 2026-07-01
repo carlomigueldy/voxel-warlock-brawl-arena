@@ -1092,7 +1092,7 @@ html, body {
 
 /* ============================================================
    REGION-BASED MATCHMAKING — NEW SCREENS
-   (Online, LAN, Leaderboards, Account)
+   (Online, Private, Leaderboards, Account)
    Design tokens only: --ember, --arcane, --panel, --panel-2,
    --text, --muted, --line, --line-strong, --font-display,
    --font-ui, --ease-spring.
@@ -1140,12 +1140,12 @@ html, body {
   font-size: 13px; color: var(--muted);
 }
 
-/* ---- LAN divider ---- */
-.lan-divider {
+/* ---- Private divider ---- */
+.private-divider {
   display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px;
   letter-spacing: 2px; text-transform: uppercase;
 }
-.lan-divider::before, .lan-divider::after {
+.private-divider::before, .private-divider::after {
   content: ""; flex: 1; height: 1px; background: var(--line);
 }
 
