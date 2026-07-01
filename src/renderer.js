@@ -826,6 +826,28 @@ export class GameRenderer {
     else if (e.group.userData.triggerCast) e.group.userData.triggerCast(resolved.archetype);
   }
 
+  // Fire a GLB-backed big mob's bespoke attack clip on a melee/ranged hit
+  // event (ev.by is the striking mob's id). No-ops for procedural mobs
+  // (userData.mobModel is only set by mobModel.js's buildMobModelInstance).
+  _triggerMobAttackModel(mobId) {
+    const e = this.mobMeshes.get(mobId);
+    const mobModel = e && e.group.userData.mobModel;
+    if (mobModel) mobModel.triggerAttack();
+  }
+
+  // Ability casts don't carry a mob id (src/sim.js's "mobAbility" event only
+  // has mobType/x/z), so find the nearest live mob of that type instead.
+  _triggerMobAttackModelNear(mobType, x, z) {
+    let best = null, bestD = Infinity;
+    for (const e of this.mobMeshes.values()) {
+      if (!e.target || e.target.type !== mobType) continue;
+      const d = Math.hypot(e.rx - x, e.rz - z);
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    const mobModel = best && best.group.userData.mobModel;
+    if (mobModel) mobModel.triggerAttack();
+  }
+
   _processEvents(events) {
     for (const ev of events) {
       this._triggerCast(ev);
@@ -834,6 +856,7 @@ export class GameRenderer {
           this._addEffect(this._burstAt(ev.x, ev.z, 0xffcc44, { count: 26, speed: 10 }));
           this.audio?.play("hit", this._panFor(ev.x));
           this._shake = Math.min(0.6, this._shake + 0.22);
+          this._triggerMobAttackModel(ev.by);
           break;
         case "boltFizzle":
           // Projectile dispersed against cover — burst at the impact point,
@@ -1346,6 +1369,7 @@ export class GameRenderer {
           const abilitySfx = { seismicStomp: "hit", vacuum: "gravity", fissureSlam: "meteorImpact", magmaEruption: "meteorImpact" }[ev.ability] || "meteorImpact";
           this.audio?.play(abilitySfx, this._panFor(ev.x));
           this._shake = Math.min(0.9, this._shake + 0.32);
+          this._triggerMobAttackModelNear(ev.mobType, ev.x, ev.z);
           break;
         }
         case "mobDeath":
@@ -1625,7 +1649,8 @@ export class GameRenderer {
         // Rise 3 world-units from below ground to normal floor level.
         e.group.position.y = e.ry - (1 - progress) * 3.0;
         e.group.scale.setScalar(Math.max(0.05, progress) * (e.baseScale || 1));
-        // No animateMob — mob is locked in its spawn pose during the cinematic.
+        // No animateMob/mobModel update — mob is locked in its spawn pose
+        // during the cinematic (procedural rig or GLB mixer alike).
       } else {
         // Restore full scale (needed in the first frame after entrance ends).
         e.group.scale.setScalar(e.baseScale || 1);
@@ -1637,6 +1662,10 @@ export class GameRenderer {
           dt,
           time:     t,
         });
+        const mobModel = e.group.userData.mobModel;
+        if (mobModel) {
+          mobModel.update({ dt, speed: e.spd, maxSpeed: 5.0, falling: !!e.target.f });
+        }
       }
     }
 

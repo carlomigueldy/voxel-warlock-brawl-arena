@@ -314,6 +314,7 @@ export const CFG = {
       meleeEvery:    2.5,
       maxHits:       18,
       bodyR:         1.6,
+      height:        3.4,           // GLB model target height (m); collision still uses bodyR
       color:         0x888880,
       abilityEvery:  10,
       ability:       "fissureSlam",  // Echo-Slam/Fissure: 2-stage AoE + stun; 1 s telegraph
@@ -341,6 +342,7 @@ export const CFG = {
       rangedRange:   18,
       maxHits:       14,
       bodyR:         1.2,
+      height:        2.6,           // GLB model target height (m); collision still uses bodyR
       color:         0x55ccff,
       abilityEvery:   8,
       ability:       "vacuum",       // Vacuum/Black-Hole: channel pull + slow + curse → fling
@@ -368,6 +370,7 @@ export const CFG = {
       meleeEvery:    1.8,
       maxHits:       16,
       bodyR:         1.1,
+      height:        2.4,           // GLB model target height (m); collision still uses bodyR
       color:         0xcc8844,
       abilityEvery:   9,
       ability:       "seismicStomp", // Slardar/Sven nova: fast radial stun-nova
@@ -393,6 +396,7 @@ export const CFG = {
       rangedRange:   16,
       maxHits:       12,
       bodyR:         1.0,
+      height:        2.5,           // GLB model target height (m); collision still uses bodyR
       color:         0xff4422,
       abilityEvery:  12,
       ability:       "magmaEruption", // multi-stage delayed AoE + burn DoT

@@ -5,9 +5,10 @@ import { CFG, getArenaWorld, getArenaHazard, isOnArenaWorld } from "./config.js"
 import { CastAnimator } from "./animations.js";
 import {
   facetedRock, facetedCrystal, facetedOrb, facetedCone, facetedCylinder,
-  facetedShard, facetedSlab, facetedAura, facetedPuff,
+  facetedShard, facetedSlab, facetedAura, facetedPuff, makeMobHealthBar,
 } from "./lowpoly.js";
 import { VFX_REGISTRY } from "./vfx/duotone.js";
+import { MOB_MODEL_ASSETS, mobModelReady, loadMobModelTemplate, buildMobModelInstance } from "./mobModel.js";
 
 function box(w, h, d, color, x = 0, y = 0, z = 0, flat = true) {
   const geo = new THREE.BoxGeometry(w, h, d);
@@ -1178,20 +1179,7 @@ export function buildItemDrop(kind = "orb", color = 0xffffff, opts = {}) {
 // Heights:  Stone Giant ≈ 5.8 wu (2.6× warlock);  vortex/dwarf/elemental ≈ 3–4 wu;
 //           minion ≈ 0.7× warlock (group scale 0.7, warlock-proportion geometry).
 
-function _makeHealthBar(color, yPos = 3.5) {
-  const g = new THREE.Group();
-  g.position.y = yPos;
-  const bg = new THREE.Mesh(
-    new THREE.BoxGeometry(2.0, 0.18, 0.1),
-    new THREE.MeshBasicMaterial({ color: 0x111111 })
-  );
-  const bar = new THREE.Mesh(
-    new THREE.BoxGeometry(2.0, 0.18, 0.14),
-    new THREE.MeshBasicMaterial({ color })
-  );
-  g.add(bg, bar);
-  return { group: g, bar };
-}
+const _makeHealthBar = makeMobHealthBar;
 
 // Stone Giant — grey stone colossus, oversized fists, glowing red eye slits.
 // Faceted polyhedron head/fists + hex-prism limbs for a hewn-stone silhouette.
@@ -1682,13 +1670,19 @@ export function animateMob(group, state) {
 // resources on despawn/prune instead of leaking them on churn.
 export function buildMobByType(type, color) {
   let g;
-  switch (type) {
-    case "stoneGiant":     g = buildStoneGiant(color); break;
-    case "stormingVortex": g = buildStormingVortex(color); break;
-    case "giantDwarf":     g = buildGiantDwarf(color); break;
-    case "fireElemental":  g = buildFireElemental(color); break;
-    case "minion":         g = buildMinion(color); break;
-    default:               g = buildMinion(color); break;
+  if (MOB_MODEL_ASSETS[type]) {
+    if (!mobModelReady(type)) loadMobModelTemplate(type);
+    if (mobModelReady(type)) g = buildMobModelInstance(type, color);
+  }
+  if (!g) {
+    switch (type) {
+      case "stoneGiant":     g = buildStoneGiant(color); break;
+      case "stormingVortex": g = buildStormingVortex(color); break;
+      case "giantDwarf":     g = buildGiantDwarf(color); break;
+      case "fireElemental":  g = buildFireElemental(color); break;
+      case "minion":         g = buildMinion(color); break;
+      default:               g = buildMinion(color); break;
+    }
   }
   if (!g.userData.dispose) {
     g.userData.dispose = () => {

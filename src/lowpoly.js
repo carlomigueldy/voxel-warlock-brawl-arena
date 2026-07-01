@@ -178,3 +178,21 @@ export function facetedPuff(radius, color, opts = {}) {
   if (opts.sx || opts.sy || opts.sz) _stretch(m, opts.sx ?? 1, opts.sy ?? 1, opts.sz ?? 1);
   return m;
 }
+
+// Foreground mob health bar: dark background bar + colored fill bar. Renderer
+// sets `bar.scale.x = hp/max` every frame. Shared by voxel.js's procedural mob
+// builders and mobModel.js's GLB-backed mob instances.
+export function makeMobHealthBar(color, yPos = 3.5) {
+  const g = new THREE.Group();
+  g.position.y = yPos;
+  const bg = new THREE.Mesh(
+    new THREE.BoxGeometry(2.0, 0.18, 0.1),
+    new THREE.MeshBasicMaterial({ color: 0x111111 })
+  );
+  const bar = new THREE.Mesh(
+    new THREE.BoxGeometry(2.0, 0.18, 0.14),
+    new THREE.MeshBasicMaterial({ color })
+  );
+  g.add(bg, bar);
+  return { group: g, bar };
+}

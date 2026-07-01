@@ -716,11 +716,24 @@ function builderBody(src, name) {
   return sourceWithoutComments(src.slice(open, i));
 }
 
-test("mob builders stay procedural (no GLB/Meshy asset loading)", () => {
+test("voxel.js itself stays free of GLTFLoader/GLB literals (mob GLB loading is isolated to mobModel.js)", () => {
   const code = sourceWithoutComments(voxel);
   assert.doesNotMatch(code, /GLTFLoader/);
   assert.doesNotMatch(code, /assets\/meshy\//);
   assert.doesNotMatch(code, /\.glb\b/i);
+});
+
+test("minion builder stays procedural (no GLB/Meshy asset loading)", () => {
+  const b = builderBody(voxel, "buildMinion");
+  assert.doesNotMatch(b, /GLTFLoader|\.glb\b/i);
+});
+
+test("mobModel.js is the sole owner of GLB loading for the 4 big mobs", () => {
+  const mobModel = fs.readFileSync("src/mobModel.js", "utf8");
+  assert.match(mobModel, /GLTFLoader/);
+  assert.match(mobModel, /assets\/mobs\//);
+  const renderer = fs.readFileSync("src/renderer.js", "utf8");
+  assert.doesNotMatch(renderer, /GLTFLoader/);
 });
 
 test("stone giant gains stratified plates, shoulder boulders, knuckles and spine crystals", () => {
