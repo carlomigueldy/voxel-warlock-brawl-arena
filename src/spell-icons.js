@@ -88,3 +88,38 @@ const FALLBACK_ICON = `<svg viewBox="0 0 24 24" fill="none">
 export function spellIconSvg(id) {
   return SPELL_ICONS[id] || FALLBACK_ICON;
 }
+
+// Item shape -> glyph icons for the item bar (mirrors ITEMS[].shape in
+// config.js: orb, blade, boots, crown, rune, tome). Same viewBox/style
+// contract as SPELL_ICONS so they drop into .ability-swatch unchanged.
+const ITEM_ICONS = {
+  orb: `<svg viewBox="0 0 24 24" fill="none">
+  <circle cx="12" cy="12" r="8" fill="currentColor"/>
+  <ellipse cx="9" cy="8.5" rx="2.3" ry="1.5" fill="#fff" opacity="0.35"/>
+</svg>`,
+  blade: `<svg viewBox="0 0 24 24" fill="none">
+  <polygon points="12,1.5 15,14 12,21.5 9,14" fill="currentColor"/>
+  <rect x="10" y="15.2" width="4" height="3.4" rx="0.6" fill="currentColor" opacity="0.65"/>
+  <line x1="12" y1="4" x2="12" y2="13" stroke="#fff" stroke-width="0.9" opacity="0.35"/>
+</svg>`,
+  boots: `<svg viewBox="0 0 24 24" fill="none">
+  <path d="M8 2.5 L8 12.5 L4.5 16.5 L4.5 19.5 L20 19.5 L20 16 L13 13.8 L13 2.5 Z" fill="currentColor"/>
+  <line x1="8" y1="7" x2="13" y2="7" stroke="#000" stroke-width="0.9" opacity="0.25"/>
+</svg>`,
+  crown: `<svg viewBox="0 0 24 24" fill="none">
+  <polygon points="3,17.5 5,7 9.5,12.2 12,4.5 14.5,12.2 19,7 21,17.5" fill="currentColor"/>
+  <rect x="3" y="17.5" width="18" height="3" rx="0.8" fill="currentColor"/>
+</svg>`,
+  rune: `<svg viewBox="0 0 24 24" fill="none">
+  <polygon points="12,2 21,7 21,17 12,22 3,17 3,7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="12" cy="12" r="2.6" fill="currentColor"/>
+</svg>`,
+  tome: `<svg viewBox="0 0 24 24" fill="none">
+  <path d="M4 4.5 C7.8 3 11 3.5 12 5 C13 3.5 16.2 3 20 4.5 L20 19 C16.2 17.5 13 18 12 19.5 C11 18 7.8 17.5 4 19 Z" fill="currentColor"/>
+  <line x1="12" y1="5" x2="12" y2="19.5" stroke="#000" stroke-width="0.9" opacity="0.25"/>
+</svg>`,
+};
+
+export function itemIconSvg(shape) {
+  return ITEM_ICONS[shape] || FALLBACK_ICON;
+}

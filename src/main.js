@@ -24,6 +24,7 @@ const audio = new AudioEngine();
 renderer.setAudio(audio);
 ui.setAudio(audio);
 ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
+ui.setItemSlotHotkeys(input.itemSlotHotkeys);
 
 // Dev FPS/stats overlay — OFF by default; enable with ?stats=1 or F3.
 perf.init();
@@ -625,6 +626,9 @@ ui.on("leaveMatch", leaveMatch);
 ui.on("selectSpell", (id) => input.setSelectedSpell(id));
 ui.on("spellSlotHotkey", (index, key) => {
   if (input.setSpellSlotHotkey(index, key)) ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
+});
+ui.on("itemSlotHotkey", (index, key) => {
+  if (input.setItemSlotHotkey(index, key)) ui.setItemSlotHotkeys(input.itemSlotHotkeys);
 });
 
 // ---- Loading gate: preload assets, then wait for a user gesture to enter. ----
