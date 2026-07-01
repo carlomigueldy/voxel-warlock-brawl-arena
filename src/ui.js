@@ -4,6 +4,7 @@ import { CFG, SPELLS, SPELL_ORDER, SPELL_TEMPLATES, ITEMS, getArenaHazard } from
 import { spellIconSvg, itemIconSvg } from "./spell-icons.js";
 import * as social from "./social.js";
 import { isValidPttKey } from "./input.js";
+import { menuCue } from "./audio.js";
 
 const $ = (id) => document.getElementById(id);
 const escapeHTML = (value) => String(value).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -1424,6 +1425,7 @@ export class UI {
     try {
       await navigator.clipboard.writeText(text);
       btn.textContent = "Copied!";
+      menuCue("copyConfirm");
     } catch {
       btn.textContent = "Copy failed";
     }
