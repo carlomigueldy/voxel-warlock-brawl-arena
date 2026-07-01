@@ -1077,12 +1077,13 @@ export class UI {
     return frag;
   }
 
-  /** Mirrors _buildTooltipContent for item slots: name + rarity, desc, and (active items) cast/cooldown/key. */
+  /** Mirrors _buildTooltipContent for item slots: name + PASSIVE/ACTIVE tag, desc, and (active items) cast/cooldown/key. */
   _buildItemTooltipContent(key) {
     const it = ITEMS[key];
     if (!it) return null;
     const color = "#" + ((it.color || 0x8888ff) >>> 0).toString(16).padStart(6, "0").slice(-6);
     const rarity = String(it.rarity || "").replace(/^./, (c) => c.toUpperCase());
+    const isActive = it.kind === "active" && it.grantsSpell;
 
     const frag = document.createDocumentFragment();
 
@@ -1090,10 +1091,13 @@ export class UI {
     titleEl.className = "spell-tooltip-title";
     titleEl.style.color = color;
     titleEl.textContent = it.name;
-    const rarityEl = document.createElement("span");
-    rarityEl.className = "spell-tooltip-key";
-    rarityEl.textContent = rarity;
-    titleEl.appendChild(rarityEl);
+    // Passive vs active tag sits where the spell tooltip shows its hotkey, so
+    // hovering a passive item spells out "PASSIVE" rather than leaving players
+    // to infer it from the muted slot badge alone.
+    const tagEl = document.createElement("span");
+    tagEl.className = isActive ? "spell-tooltip-key" : "spell-tooltip-key item-tooltip-passive";
+    tagEl.textContent = isActive ? "ACTIVE" : "PASSIVE";
+    titleEl.appendChild(tagEl);
     frag.appendChild(titleEl);
 
     const descEl = document.createElement("div");
@@ -1101,15 +1105,18 @@ export class UI {
     descEl.textContent = it.desc || "";
     frag.appendChild(descEl);
 
-    if (it.kind === "active" && it.grantsSpell) {
+    const statsEl = document.createElement("div");
+    statsEl.className = "spell-tooltip-stats";
+    if (isActive) {
       const spell = SPELLS[it.grantsSpell];
       const idx = this._itemSlotIndexForKey(key);
       const hotkey = (idx >= 0 && this._itemEls?.[idx]?.hotkey) || CFG.DEFAULT_ITEM_SLOT_HOTKEYS[idx] || "?";
-      const statsEl = document.createElement("div");
-      statsEl.className = "spell-tooltip-stats";
-      statsEl.textContent = `Cast: ${spell?.name || it.grantsSpell} · Cooldown: ${spell?.cd ?? "?"}s · Key: ${hotkey}`;
-      frag.appendChild(statsEl);
+      statsEl.textContent = `${rarity} · Cast: ${spell?.name || it.grantsSpell} · Cooldown: ${spell?.cd ?? "?"}s · Key: ${hotkey}`;
+    } else {
+      // Passive items have no key — make the always-on nature explicit.
+      statsEl.textContent = `${rarity} · Passive bonus — always active while equipped`;
     }
+    frag.appendChild(statsEl);
 
     return frag;
   }

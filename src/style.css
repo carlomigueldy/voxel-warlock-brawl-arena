@@ -695,6 +695,11 @@ html, body {
   flex-shrink: 0;
   white-space: nowrap;
 }
+/* Passive item tag reads muted (no accent) to contrast the castable ACTIVE tag. */
+.spell-tooltip-key.item-tooltip-passive {
+  background: rgba(154, 147, 199, 0.14);
+  letter-spacing: 0.5px;
+}
 .spell-tooltip-desc {
   color: var(--text);
   line-height: 1.45;
