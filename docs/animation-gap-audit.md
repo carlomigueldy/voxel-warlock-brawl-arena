@@ -1,0 +1,43 @@
+# Player Character Animation Gap Audit
+
+Current state: every class shares one Meshy-rigged idle/walk/run clip set plus a single procedural 5-archetype cast-overlay system (`attack`/`slam`/`dash`/`buff`/`channel` in `animations.js`/`character.js`). There is no death, jump, hit-reaction, or stun animation anywhere, and several combat-critical sim flags (`status.stunned`, knockback velocity, hazard grace timer, `alive`) are already computed and serialized but never consumed by the animation layer — pure plumbing gaps, not new-asset problems, in most cases.
+
+## Priority 1 — Highest impact, lowest cost (all pure procedural/plumbing, reuse existing overlay system, no new Meshy clips)
+
+**Hit-reaction / flinch on damage** — No animation plays when a player is hit; only camera shake (`renderer.js`) sells impact. `applyHit`/`applyDamage` (player.js:550,574) already push a `"hit"` event with knockback direction, but `animations.js` has no `"hit"` archetype and no per-character consumer exists. Add a ~0.2–0.3s flinch/recoil archetype gated on the hit event, leaning opposite the knockback vector already computed. *Flagged by: Combat & Ability Feel, Feedback & Juice.*
+
+**Stun visual (`status.stunned`)** — Flag is set on hard landings (player.js:464), gates `canCast()`/movement, and is serialized (`st`, snapshot():618), but nothing in `animations.js`/`character.js` reads it — locomotion just falls back to idle/walk. Wire `stunned`/`st` into `locomotionState()` or a dedicated sway/stagger overlay. This is the cheapest fix in the whole audit — pure plumbing, zero new assets, and it's a core punish-window mechanic that's currently invisible to opponents. *Flagged by: all four lenses.*
+
+**Knockback tumble/launch state** — `locomotionState()` only branches on `falling`/speed, so a player flung by a hit still plays the `run` clip while sliding, reading as intentional sprinting. `knockSpeed` is already computed in player.js (line 344) but not exposed to `animations.js`. Add a knockback/tumble threshold branch reusing the fall-adjacent pose. *Flagged by: Combat & Ability Feel.*
+
+**Turn-in-place smoothing** — `renderer.js` (lines 1471, 1615) hard-assigns `e.group.rotation.y` every frame with no interpolation, causing an instant snap-to-face pop whenever a player re-aims (which is constant, since casting requires aiming). Fix is a one-line exponential smoothing change reusing the existing `blend = 1 - Math.exp(-k*dt)` pattern already used for locomotion weights. Zero risk, zero new assets. *Flagged by: Locomotion & Traversal.*
+
+## Priority 2 — High impact, moderate cost
+
+**Death animation** — Confirmed absent from `manifest.json` (rig pipeline only produced idle/walk/run per class); `alive` flips to `false` on HP-zero (player.js:583) and lava death (player.js:328) with zero visual consequence — an instant vanish/freeze. Two-tier path: (a) cheap immediate fix — procedural "collapse" overlay (ragdoll-lean, ~1s, non-looping, freeze mixer at end); (b) higher fidelity — real Meshy death/collapse clip per class (~3 credits × 4 classes = 12 credits) reusing already-rigged skeletons, swapped in later without changing trigger wiring. Death is the single most-seen "game over" beat per round in a 1v1-4p brawler, making this the highest-impact still-missing state. *Flagged by: all four lenses.*
+
+**Fall loop (ledge/hazard falling)** — Airborne/plummeting state (`info.falling`) collapses to idle (`character.js` state.update, lines 190-192) — a player falling toward lava visually looks like they're standing calmly in midair. Extend the procedural overlay system with a non-cast "falling" pose (arms up, backward lean, tumble twist) gated on `info.falling`; whole-body root-transform effect, no new Meshy asset needed. *Flagged by: Locomotion & Traversal, Combat & Ability Feel (overlaps with knockback tumble — implement together, one function touch).*
+
+**Hazard/ring-out teeter cue** — `_hazardTime` grace-window counter (player.js:490-495, exposed as `hz` in snapshot()) has no corresponding visual — character keeps normal locomotion while standing in a hazard zone before the sudden `falling` snap. Extend `locomotionState()` to accept `inHazard`/`hazardTime` (already computed as `inHazard`, player.js:345) and return a teeter/backpedal variant. Same pattern as the fall/stun fixes above — batchable with them. *Flagged by: Combat & Ability Feel.*
+
+**Cast wind-up duration mismatch** — `CastAnimator`'s fixed `ARCHETYPE_DURATION` table (e.g. `channel: 0.9s`) doesn't scale to the real `activeCast.castTime`/`channel` duration from `SPELLS` config, so longer real casts (e.g. 2s wind-ups) finish their pose early and revert to locomotion mid-channel while the HUD bar is still filling — breaking punish-read on interruptible casts. Fix: accept an optional explicit duration override in `CastAnimator.trigger()` sourced from `activeCast.castTime`. Pure data-plumbing. *Flagged by: Combat & Ability Feel.*
+
+**Hit-stop (time-freeze on big impacts)** — Camera shake exists but has no accompanying micro-freeze; every impact (tickle damage or meteor) gets identical shake-only treatment with no time-domain punctuation. Add a shared `hitStopUntil` timestamp bumped alongside `_shake` on big-impact events, clamping `dt` fed into `mixer.update`/`CastAnimator.update` for a couple frames. Renderer-side only, no new assets. *Flagged by: Feedback & Juice.*
+
+**Damage flash / blocked-hit material pulse** — No color/emissive flash on hit despite the shield-block boolean already being returned from `applyHit`; currently a shielded no-op hit and a real hit look identical. Add an emissive/color-lerp pulse on cloned materials keyed off a `justHit`/`blocked` flag threaded from the existing `"hit"` event. *Flagged by: Feedback & Juice.*
+
+## Priority 3 — Lower priority / needs design decision or bigger asset spend
+
+**Class-differentiated cast archetypes** — All 4 classes share identical `attack`/`slam`/`dash`/`buff`/`channel` poses regardless of caster; a storm player's lightning telegraph is visually indistinguishable from an ember player's fireball, hurting competitive reads. Fix path exists within the current overlay system (key pose data per `classId + archetype` instead of archetype alone) but is a larger authoring/tuning effort than the Priority 1/2 plumbing fixes. *Flagged by: Class & Readability.*
+
+**Per-class idle/taunt variety** — All 4 classes use the same single Meshy `clip0` idle with no per-class sway and no taunt state at all. Needs new Meshy `animate` clips (~3 credits/clip × 4 classes = 12 credits for idle variant, +12 for taunt) since procedural idle breathing alone won't deliver real personality differentiation. *Flagged by: Class & Readability, Feedback & Juice (idle variety sub-point).*
+
+**Victory/defeat pose at round end** — No round-end animation state exists; HUD shows score but characters are silent on win/loss. Procedural fallback (arms-raised pose / slumped variant of death pose) is cheap, but a genuine Meshy victory clip per class (~12 credits) reads far better for this one-time per-round payoff beat. *Flagged by: Feedback & Juice.*
+
+**Respawn "materialize" transition** — `spawn()` (player.js:279-314) resets instantly with no transitional effect, reading as a bug. Purely procedural fix: short scale/opacity tween reusing the existing glyph-pulse code path. Low priority since it's cosmetic polish on a rare-per-life event. *Flagged by: Feedback & Juice.*
+
+**Jump mechanic + clips** — No jump input exists anywhere in the codebase; this is a design/mechanics gap, not an animation gap — requires a gameplay decision (should this brawler have a jump at all?) before any clip/overlay work is justified. *Flagged by: Locomotion & Traversal.*
+
+**Sprint distinction / idle-variety breathing layer** — Lowest priority: walk→run blending is already reasonably good, and there's no gameplay sprint toggle to hook a distinct sprint pose to; idle-variety breathing is a nice-to-have additive layer, not a readability blocker. *Flagged by: Locomotion & Traversal.*
+
+**Orc Shaman (storm) proportion outlier** — Storm class uses non-chibi humanoid proportions (required for Meshy auto-rig pose estimation) while the other 3 classes are chibi, an unaddressed silhouette/scale-parity risk. Not an animation fix — flag for the character/renderer scaling pass to verify bounding-box parity or intentionally lean into the size difference. *Flagged by: Class & Readability.*

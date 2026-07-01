@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { CFG } from "./config.js";
-import { CastAnimator } from "./animations.js";
+import { CastAnimator, locomotionState, ReactionAnimator } from "./animations.js";
 
 // Each selectable character is a rigged warlock model rendered with its original
 // shading (smoothed normals and baked maps intact). A glowing hero glyph marks
@@ -32,6 +32,30 @@ export const CHARACTER_ASSETS = {
     run: url("../assets/characters/moss-necromancer-running.glb"),
   },
 };
+
+// Meshy generated 7 additional single-clip GLBs per class (death/hit/stun/
+// knockback/victory/taunt/idle2). Meshy re-themed the per-class asset slugs
+// when regenerating these (see assets/characters/manifest.json), so the extra
+// clips live under the new slug names below rather than the legacy base/walk/
+// run slugs above. This is purely additive — base/walk/run loading above is
+// untouched.
+const EXTRA_CLIP_NAMES = ["death", "hit", "stun", "knockback", "victory", "taunt", "idle2"];
+const EXTRA_CLIP_SLUGS = {
+  ember: "undead-warlock",
+  frost: "archmage",
+  storm: "orc-shaman",
+  moss: "bloodelf-mage",
+};
+function extraClipAssets(characterId) {
+  const slug = EXTRA_CLIP_SLUGS[characterId];
+  if (!slug) return {};
+  const out = {};
+  for (const name of EXTRA_CLIP_NAMES) {
+    out[name] = url(`../assets/characters/${slug}-${name}.glb`);
+  }
+  return out;
+}
+
 export const DEFAULT_CHARACTER = "ember";
 const TARGET_HEIGHT = CFG.PLAYER_HEIGHT;
 
@@ -58,11 +82,23 @@ export function loadCharacterTemplate(characterId = DEFAULT_CHARACTER) {
   const loader = new GLTFLoader();
   const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
 
-  const promise = Promise.all([load(assets.base), load(assets.walk), load(assets.run)])
-    .then(([base, walk, run]) => {
+  const extraAssets = extraClipAssets(id);
+  const extraNames = Object.keys(extraAssets);
+
+  const promise = Promise.all([
+    load(assets.base),
+    load(assets.walk),
+    load(assets.run),
+    ...extraNames.map((name) => load(extraAssets[name])),
+  ])
+    .then(([base, walk, run, ...extraGltfs]) => {
       const idleClip = findClip(base, "clip0") || (base.animations || [])[0] || null;
       const walkClip = findClip(walk, "walk");
       const runClip = findClip(run, "run");
+      const extraClips = {};
+      extraNames.forEach((name, i) => {
+        extraClips[name] = findClip(extraGltfs[i], name);
+      });
       const scene = base.scene;
       scene.updateWorldMatrix(true, true);
       // The rig's armature node carries a tiny (0.01) scale, so measuring the
@@ -89,7 +125,11 @@ export function loadCharacterTemplate(characterId = DEFAULT_CHARACTER) {
           o.frustumCulled = false;
         }
       });
-      const template = { id, scene, clips: { idle: idleClip, walk: walkClip, run: runClip } };
+      const template = {
+        id,
+        scene,
+        clips: { idle: idleClip, walk: walkClip, run: runClip, ...extraClips },
+      };
       _templates.set(id, template);
       _template = template;
       return template;
@@ -148,6 +188,13 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
   actions.idle = make(template.clips.idle);
   actions.walk = make(template.clips.walk);
   actions.run = make(template.clips.run);
+  // Additive one-shot/looping reaction clips (death/hit/stun/knockback/
+  // victory/taunt/idle2). Registered as actions here but left at weight 0 and
+  // not auto-played; trigger logic lives in animations.js / player.js.
+  for (const name of EXTRA_CLIP_NAMES) {
+    const clip = template.clips[name];
+    if (clip) actions[name] = make(clip);
+  }
 
   const current = actions.idle || actions.walk || actions.run;
   if (current) current.setEffectiveWeight(1);
@@ -164,7 +211,8 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
     actions,
     current,
     cast: new CastAnimator(),
-    w: { idle: current === actions.idle ? 1 : 0, walk: 0, run: 0 },
+    reaction: new ReactionAnimator(),
+    w: { idle: current === actions.idle ? 1 : 0, walk: 0, run: 0, death: 0, stun: 0, knockback: 0 },
     glyph,
     glyphBaseOpacity: 0.4,
   };
@@ -172,6 +220,10 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
   // Fire a cast animation archetype (attack/slam/dash/buff/channel). Triggered
   // by the renderer when the simulation reports this warlock cast something.
   state.triggerCast = (archetype) => state.cast.trigger(archetype);
+
+  // Fire a hit-reaction overlay (currently just "hit"). Triggered by the
+  // renderer when a "hit" sim event names this player as the victim.
+  state.triggerReaction = (reaction) => state.reaction.trigger(reaction);
 
   // Free the per-instance glyph GPU resources when the player mesh is torn down
   // (renderer.removePlayer calls this). Material.dispose() does NOT free its map.
@@ -201,15 +253,45 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
       tRun = k;
     }
 
+    // death/stun/knockback fully override the idle/walk/run gait blend above
+    // (per locomotionState's priority order); they only play if the matching
+    // clip was actually loaded for this character (actions.death etc.).
+    const loco = locomotionState({
+      speed: info.speed || 0,
+      maxSpeed,
+      falling: !!info.falling,
+      alive: info.alive !== false,
+      stunned: !!info.stunned,
+      knockSpeed: info.knockSpeed || 0,
+    });
+    const tDeath = loco === "death" && actions.death ? 1 : 0;
+    const tStun = loco === "stun" && actions.stun ? 1 : 0;
+    const tKnockback = loco === "knockback" && actions.knockback ? 1 : 0;
+    if (tDeath || tStun || tKnockback) { tIdle = 0; tWalk = 0; tRun = 0; }
+
     const blend = 1 - Math.exp(-10 * dt);
     const w = state.w;
     w.idle += (tIdle - w.idle) * blend;
     w.walk += (tWalk - w.walk) * blend;
     w.run += (tRun - w.run) * blend;
+    w.death += (tDeath - w.death) * blend;
+    w.stun += (tStun - w.stun) * blend;
+    w.knockback += (tKnockback - w.knockback) * blend;
 
-    if (actions.idle) actions.idle.setEffectiveWeight(w.idle);
-    if (actions.walk) actions.walk.setEffectiveWeight(w.walk);
-    if (actions.run) actions.run.setEffectiveWeight(w.run);
+    // Hit-reaction is a short overlay rather than a mutually-exclusive state:
+    // it plays on top of whatever locomotion/override state is active, so the
+    // other weights are scaled down (not zeroed) while it holds.
+    state.reaction.update(dt);
+    const rw = state.reaction.weight;
+    const keep = 1 - rw;
+
+    if (actions.idle) actions.idle.setEffectiveWeight(w.idle * keep);
+    if (actions.walk) actions.walk.setEffectiveWeight(w.walk * keep);
+    if (actions.run) actions.run.setEffectiveWeight(w.run * keep);
+    if (actions.death) actions.death.setEffectiveWeight(w.death * keep);
+    if (actions.stun) actions.stun.setEffectiveWeight(w.stun * keep);
+    if (actions.knockback) actions.knockback.setEffectiveWeight(w.knockback * keep);
+    if (actions.hit) actions.hit.setEffectiveWeight(rw);
 
     const rate = 1 + (info.charge || 0) * 0.25;
     if (actions.walk) actions.walk.setEffectiveTimeScale(rate);
