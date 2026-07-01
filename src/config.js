@@ -178,6 +178,12 @@ export const CFG = {
     { id: "oce",      label: "Oceania"         },
   ],
   DEFAULT_REGION: "sea",
+  MATCHMAKING: {
+    MATCH_SIZE: 2,
+    REGION_DWELL_MS: 7000,
+    OFFER_TIMEOUT_MS: 10000,
+    CHANNEL_PREFIX: "matchmaking",
+  },
 
   // --- Kill attribution ---
   // A kill is credited to the last attacker within this many seconds of the death.
@@ -529,10 +535,10 @@ export const ITEMS = {
 // Message types exchanged over PeerJS data channels.
 export const MSG = {
   // client -> host
-  JOIN: "join",          // {name, character, userId, region}  userId: string|null; region: string
+  JOIN: "join",          // {name, character, userId, region, matchId?, queueId?}
   INPUT: "input",        // {seq, move:[x,z], aim, casts:[{id,spell,tx,tz}]}
   // host -> client
-  WELCOME: "welcome",    // {id, players, hostName}
+  WELCOME: "welcome",    // {id, players, hostName, full?, matchmakingRejected?}
   LOBBY: "lobby",        // {players}
   START: "start",        // {round} — mapLayout travels in the first STATE packet, not here
   STATE: "state",        // {t, players[], bolts[], arenaR, phase, ...}

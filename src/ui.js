@@ -41,9 +41,9 @@ export class UI {
       botSkillUi: $("bot-skill-ui"),
       mapObjectsUi: $("map-objects-ui"),
       // Online / matchmaking elements.
-      btnHostOnline: $("btn-host-online"),
       btnQuickMatch: $("btn-quick-match"),
-      roomsList: $("rooms-list"),
+      btnCancelQueue: $("btn-cancel-queue"),
+      onlineQueueStatus: $("online-queue-status"),
       regionSelect: $("region-select"),
       onlineNotice: $("online-disabled-notice"),
       // Leaderboard elements.
@@ -87,6 +87,7 @@ export class UI {
     this.selectedCharacter = this._initialCharacter();
     this._menuScreen = "online";
     this._onlineEnabled = false;
+    this._onlineQueueStatus = "";
     this._lbMetric = "wins";
     this._lbScope = "global";
     this._populateArenaControls();
@@ -532,60 +533,37 @@ export class UI {
     });
     // Online buttons: disabled when not enabled.
     if (this.el.btnQuickMatch)  this.el.btnQuickMatch.disabled  = !enabled;
-    if (this.el.btnHostOnline)  this.el.btnHostOnline.disabled  = !enabled;
+    if (this.el.btnCancelQueue) this.el.btnCancelQueue.disabled = true;
     if (this.el.regionSelect)   this.el.regionSelect.disabled   = !enabled;
     // Auth form: hidden when not enabled.
     if (this.el.authForm)      this.el.authForm.classList.toggle("hidden", !enabled);
     if (this.el.identityBadge) this.el.identityBadge.classList.toggle("hidden", true);
+    this.setOnlineQueueState({
+      searching: false,
+      status: enabled ? "Search your home region first. We widen the queue automatically." : "Online queue unavailable without Supabase.",
+      canCancel: false,
+    });
+  }
+
+  setOnlineQueueState({ searching = false, status, canCancel = false } = {}) {
+    if (typeof status === "string") {
+      this._onlineQueueStatus = status;
+    }
+    if (this.el.onlineQueueStatus) {
+      this.el.onlineQueueStatus.textContent = this._onlineQueueStatus;
+    }
+    if (this.el.btnQuickMatch) {
+      this.el.btnQuickMatch.classList.toggle("hidden", searching);
+      this.el.btnQuickMatch.disabled = !this._onlineEnabled || searching;
+    }
+    if (this.el.btnCancelQueue) {
+      const showCancel = searching && canCancel;
+      this.el.btnCancelQueue.classList.toggle("hidden", !showCancel);
+      this.el.btnCancelQueue.disabled = !showCancel;
+    }
   }
 
   // ---- Render helpers -------------------------------------------------------
-
-  /** Render the live rooms list in the Online sub-screen. */
-  renderRooms(list) {
-    const el = this.el.roomsList;
-    if (!el) return;
-    el.replaceChildren();
-
-    if (!list || list.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "rooms-empty";
-      empty.textContent = "No open rooms. Be the first to host!";
-      el.appendChild(empty);
-      return;
-    }
-
-    list.forEach((room) => {
-      const row = document.createElement("div");
-      row.className = "room-row";
-      row.setAttribute("role", "listitem");
-
-      const host = document.createElement("span");
-      host.className = "room-host";
-      host.textContent = escapeHTML(room.hostName || "Unknown");
-
-      const map = document.createElement("span");
-      map.className = "room-map";
-      map.textContent = escapeHTML(room.map || "—");
-
-      const players = document.createElement("span");
-      players.className = "room-players";
-      players.textContent = `${room.playerCount ?? "?"}/${room.maxPlayers ?? "?"}`;
-
-      const joinBtn = document.createElement("button");
-      joinBtn.type = "button";
-      joinBtn.className = "btn btn-ghost room-join-btn";
-      joinBtn.textContent = "Join";
-      joinBtn.addEventListener("click", () => {
-        const name = this._name();
-        if (!name) { this.setMenuStatus("Enter a name first."); return; }
-        this.handlers.joinRoom?.(room.code);
-      });
-
-      row.append(host, map, players, joinBtn);
-      el.appendChild(row);
-    });
-  }
 
   /** Render leaderboard rows. rows is the array from fetchLeaderboard(). */
   renderLeaderboard(rows, { metric, scope } = {}) {
@@ -688,7 +666,7 @@ export class UI {
     }
   }
 
-  /** Public name accessor — used by main.js for quickMatch / joinRoom flows. */
+  /** Public name accessor — used by main.js for quick-match and room-code flows. */
   getName() { return this._name(); }
 
   // ---- Floating ember particle bed ----------------------------------------
@@ -1081,19 +1059,6 @@ export class UI {
       };
     }
 
-    // Online Host — fires hostOnline event.
-    if (this.el.btnHostOnline) {
-      this.el.btnHostOnline.onclick = () => {
-        const name = this._name();
-        if (!name) return this.setMenuStatus("Enter a name first.");
-        this.handlers.hostOnline?.(name, {
-          mobsEnabled: this.mobsEnabled(),
-          character: this.selectedCharacter,
-          ...this.getArenaSettings(),
-        });
-      };
-    }
-
     // Quick Match — fires quickMatch event.
     if (this.el.btnQuickMatch) {
       this.el.btnQuickMatch.onclick = () => {
@@ -1101,6 +1066,9 @@ export class UI {
         if (!name) return this.setMenuStatus("Enter a name first.");
         this.handlers.quickMatch?.();
       };
+    }
+    if (this.el.btnCancelQueue) {
+      this.el.btnCancelQueue.onclick = () => this.handlers.cancelQueue?.();
     }
 
     // LAN Join — fires joinByCode event.

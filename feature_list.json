@@ -93,6 +93,31 @@
             "src/leaderboard.js"
           ],
           "status": "done"
+        },
+        {
+          "id": "feat-region-matchmaking-queue-rework",
+          "type": "sub-issue",
+          "area": "multiplayer",
+          "scope": "Replace the hosted open-rooms browser (open_rooms table, publishRoom/heartbeat/listRooms/subscribeRooms, manual host + room list) with a presence-based hidden 1v1 matchmaker: RegionQueue over Supabase Realtime region channels, deterministic selectPair/electHiddenHost, broadcast match-offer to the guest, net.js matchId/queueId join validation, home-region-first auto-widen with visible status, clean cancel on leave.",
+          "files": [
+            "src/matchmaking.js",
+            "src/net.js",
+            "src/main.js",
+            "src/ui.js",
+            "src/config.js",
+            "index.html",
+            "src/style.css",
+            "test/matchmaking.test.mjs",
+            "test/source.test.mjs"
+          ],
+          "status": "review",
+          "acceptance_criteria": [
+            "Quick Match queues players into their home region and pairs them into a hidden 1v1 via Supabase Realtime presence.",
+            "The elected hidden host broadcasts a room code offer; the guest joins over PeerJS and the match auto-starts when both humans connect.",
+            "net.js rejects joins whose matchId/queueId do not match the elected pair, while LAN hosts still accept normal joins.",
+            "With no match found, the queue auto-widens across regions on a dwell timer and the UI shows the widening/searching status.",
+            "Cancelling or leaving during the queue tears down the Realtime channel/presence with no orphaned timers or channels."
+          ]
         }
       ]
     }
