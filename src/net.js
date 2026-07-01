@@ -12,6 +12,29 @@ function sanitizeName(name) {
   return String(name ?? "warlock").trim().slice(0, 14) || "warlock";
 }
 
+export function sanitizeChat(text) {
+  const stripped = String(text ?? "")
+    .replace(/[\x00-\x1F\x7F]/g, "") // strip control chars
+    .replace(/\s+/g, " ")                  // collapse whitespace
+    .trim();
+  return stripped.slice(0, CFG.SOCIAL.CHAT_MAX_LEN);
+}
+
+export function makeChatRateLimiter({ max = CFG.SOCIAL.CHAT_RATE_MAX, windowMs = CFG.SOCIAL.CHAT_RATE_WINDOW_MS } = {}) {
+  const hits = new Map(); // fromId -> number[] (timestamps)
+  return function allow(fromId) {
+    const now = Date.now();
+    const arr = (hits.get(fromId) || []).filter((t) => now - t < windowMs);
+    if (arr.length >= max) {
+      hits.set(fromId, arr);
+      return false;
+    }
+    arr.push(now);
+    hits.set(fromId, arr);
+    return true;
+  };
+}
+
 const PEER_OPTS = {
   // Public PeerJS cloud broker for signaling. (Media/data still flow P2P.)
   config: {
@@ -25,7 +48,7 @@ const PEER_OPTS = {
 
 // ---------------- HOST ----------------
 export class Host {
-  constructor({ name, matchmaking = null, onLobby, onPlayerJoin, onPlayerLeave, onReady, onError }) {
+  constructor({ name, matchmaking = null, onLobby, onPlayerJoin, onPlayerLeave, onReady, onError, onChat, onTyping, onAfk, onSpeak }) {
     this.name = name;
     this.code = makeRoomCode();
     this.peerId = codeToPeerId(this.code);
@@ -34,8 +57,9 @@ export class Host {
     // The host's own entry must be set by the caller via playerMeta.set(host.localId, {...}).
     this.playerMeta = new Map();
     this.matchmaking = matchmaking;
-    this.callbacks = { onLobby, onPlayerJoin, onPlayerLeave, onReady, onError };
+    this.callbacks = { onLobby, onPlayerJoin, onPlayerLeave, onReady, onError, onChat, onTyping, onAfk, onSpeak };
     this.localId = this.peerId; // host plays too
+    this._chatLimiter = makeChatRateLimiter();
     this._initPeer();
   }
 
@@ -114,11 +138,24 @@ export class Host {
       case MSG.DRAFT:
         this.callbacks.onDraft?.(conn.peer, msg);
         break;
+      case MSG.CHAT: {
+        const text = sanitizeChat(msg.text);
+        if (!text || !this._chatLimiter(conn.peer)) break;
+        this.callbacks.onChat?.(conn.peer, { text, kind: "text" });
+        break;
+      }
+      case MSG.TYPING: this.callbacks.onTyping?.(conn.peer, !!msg.typing);   break;
+      case MSG.AFK:    this.callbacks.onAfk?.(conn.peer, !!msg.afk);         break;
+      case MSG.SPEAK:  this.callbacks.onSpeak?.(conn.peer, !!msg.speaking);  break;
     }
   }
 
   onInput(fn) { this.callbacks.onInput = fn; }
   onDraft(fn) { this.callbacks.onDraft = fn; }
+  onChat(fn) { this.callbacks.onChat = fn; }
+  onTyping(fn) { this.callbacks.onTyping = fn; }
+  onAfk(fn) { this.callbacks.onAfk = fn; }
+  onSpeak(fn) { this.callbacks.onSpeak = fn; }
 
   // Send a message to every connected client.
   broadcast(obj) {
@@ -130,6 +167,22 @@ export class Host {
   sendTo(peerId, obj) {
     const c = this.conns.get(peerId);
     if (c && c.open) c.send(obj);
+  }
+
+  // Host is a player too; sanitize + rate-limit the host's own chat line and
+  // return the ready-to-broadcast relay object, or null if it was dropped.
+  localChat(text) {
+    const clean = sanitizeChat(text);
+    if (!clean || !this._chatLimiter(this.localId)) return null;
+    return { type: MSG.CHAT, fromId: this.localId, text: clean, kind: "text", t: Date.now() };
+  }
+
+  // Broadcast the current real-peer roster (bots are never in this.conns, so
+  // they are excluded automatically). Returns the peer list for local voice use.
+  emitRoster() {
+    const peers = [this.localId, ...this.conns.keys()];
+    this.broadcast({ type: MSG.ROSTER, peers });
+    return peers;
   }
 
   _acceptsMatchmakingJoin(msg) {
@@ -150,7 +203,7 @@ export class Host {
 
 // ---------------- CLIENT ----------------
 export class Client {
-  constructor({ name, code, character, userId, region, matchmaking = null, onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose }) {
+  constructor({ name, code, character, userId, region, matchmaking = null, onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose, onChat, onRoster }) {
     this.name = name;
     this.character = character || null;
     this.userId = userId || null;
@@ -158,7 +211,7 @@ export class Client {
     this.matchmaking = matchmaking;
     this.code = code.toUpperCase();
     this.hostId = codeToPeerId(this.code);
-    this.callbacks = { onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose };
+    this.callbacks = { onWelcome, onLobby, onState, onStart, onRoundEnd, onMatchEnd, onError, onClose, onChat, onRoster };
     this.localId = null;
     this._terminalError = false;
     this._initPeer();
@@ -215,6 +268,8 @@ export class Client {
       case MSG.STATE: this.callbacks.onState?.(msg); break;
       case MSG.ROUND_END: this.callbacks.onRoundEnd?.(msg); break;
       case MSG.MATCH_END: this.callbacks.onMatchEnd?.(msg); break;
+      case MSG.CHAT:   this.callbacks.onChat?.(msg);   break; // {fromId,text,kind,t}
+      case MSG.ROSTER: this.callbacks.onRoster?.(msg); break; // {peers}
     }
   }
 
@@ -229,6 +284,11 @@ export class Client {
       this.conn.send({ type: MSG.DRAFT, ...msg });
     }
   }
+
+  sendChat(text)   { if (this.conn?.open) this.conn.send({ type: MSG.CHAT,   text, kind: "text" }); }
+  sendTyping(v)    { if (this.conn?.open) this.conn.send({ type: MSG.TYPING, typing: !!v }); }
+  sendAfk(v)       { if (this.conn?.open) this.conn.send({ type: MSG.AFK,    afk: !!v }); }
+  sendSpeak(v)     { if (this.conn?.open) this.conn.send({ type: MSG.SPEAK,  speaking: !!v }); }
 
   destroy() {
     try { this.peer?.destroy(); } catch {}

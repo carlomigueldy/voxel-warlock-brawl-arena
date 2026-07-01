@@ -1884,3 +1884,169 @@ kbd {
   .draft-timer.draft-timer-urgent { animation: none !important; }
   .draft-spell-card, .draft-tpl-btn, .draft-slot-pip { transition: none !important; }
 }
+
+/* ============================================================
+   SOCIAL — chat log/input, redesigned roster, PTT, conduct +
+   settings dialogs. Reuses existing tokens/fonts/easing only.
+   ============================================================ */
+
+/* ---- Chat log + input (bottom-left, glass panel to match #hud-top) ---- */
+.chat-panel {
+  position: absolute;
+  left: 16px; bottom: 96px;
+  width: min(340px, 34vw);
+  display: flex; flex-direction: column; gap: 6px;
+  z-index: 6;
+  pointer-events: none;
+}
+.chat-log {
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 4px;
+  max-height: 220px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 18%);
+  mask-image: linear-gradient(to bottom, transparent, black 18%);
+}
+.chat-line {
+  background: rgba(13, 11, 26, 0.7);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 13px; line-height: 1.35;
+  backdrop-filter: blur(6px);
+  animation: playerIn 0.25s var(--ease-spring) both;
+  transition: opacity 0.4s ease;
+  word-break: break-word;
+}
+.chat-line.self { border-color: var(--line-strong); }
+.chat-line--dim { opacity: 0.55; }
+.chat-line-name { font-weight: 700; margin-right: 6px; }
+.chat-line-text { color: var(--text); }
+.chat-input-wrap.hidden { display: none; }
+.chat-input-wrap { pointer-events: auto; }
+.chat-input {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  padding: 9px 12px;
+}
+.chat-input:focus { outline: none; border-color: var(--arcane); box-shadow: var(--glow-arcane); }
+.chat-input:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+
+/* ---- Chat toggle button (touch/mobile — no hardware Enter key) ---- */
+.chat-toggle-btn {
+  align-self: flex-start;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: rgba(13, 11, 26, 0.7);
+  backdrop-filter: blur(6px);
+  font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.chat-toggle-btn:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+.chat-toggle-btn.hidden { display: none; }
+
+/* ---- Push-to-talk indicator (optional HUD chip; toggled by future wiring) ---- */
+.ptt-indicator {
+  position: fixed;
+  bottom: 16px; left: 16px;
+  z-index: 6;
+  background: rgba(124, 255, 90, 0.16);
+  border: 1px solid var(--rune);
+  color: var(--rune);
+  font-family: var(--font-display);
+  font-size: 10px; letter-spacing: 2px;
+  padding: 6px 10px; border-radius: 6px;
+  pointer-events: none;
+}
+.ptt-indicator.hidden { display: none; }
+
+/* ---- Redesigned in-match roster (rebuilt in #scoreboard, patch-rendered) ---- */
+#scoreboard .roster-row {
+  display: grid;
+  grid-template-columns: 12px 1fr auto auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+#scoreboard .roster-row.dead { opacity: .4; text-decoration: line-through; }
+#scoreboard .roster-row.dead .roster-status,
+#scoreboard .roster-row.dead .pkd { text-decoration: none; }
+.roster-chip {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+}
+.roster-name {
+  font-size: 13px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 108px;
+}
+.roster-status { display: flex; gap: 3px; align-items: center; min-width: 52px; }
+.rs-glyph { font-size: 11px; line-height: 1; opacity: 0.16; transition: opacity 0.2s ease; }
+.rs-glyph.active { opacity: 1; }
+.rs-speak.active { color: var(--rune); animation: rsSpeakPulse 0.9s ease-in-out infinite; }
+.rs-type.active { color: var(--cyan); animation: rsTypingDots 1s steps(1) infinite; }
+.rs-afk.active { color: var(--gold); }
+.rs-muted.active { color: var(--ember); }
+#scoreboard .roster-row .pkd { color: var(--muted); font-size: 11px; text-align: right; }
+#scoreboard .roster-row .pscore { color: var(--ember); font-weight: 700; text-align: right; }
+.roster-mute-btn {
+  width: 20px; height: 20px;
+  border-radius: 6px; border: 1px solid var(--line);
+  background: transparent; color: var(--muted);
+  font-size: 11px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.roster-mute-btn:hover { border-color: var(--line-strong); color: var(--text); }
+.roster-mute-btn.is-muted { color: var(--ember); border-color: rgba(255, 90, 60, 0.55); background: rgba(255, 90, 60, 0.12); }
+.roster-mute-btn:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+
+@keyframes rsSpeakPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.2); }
+}
+@keyframes rsTypingDots {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+/* ---- Conduct disclaimer + social settings dialogs (reuse .pause-overlay/.panel) ---- */
+.conduct-panel, .social-panel { max-width: 520px; text-align: left; }
+.conduct-title, .social-title {
+  font-family: var(--font-display);
+  font-size: clamp(15px, 2.6vw, 20px);
+  color: var(--arcane);
+  text-shadow: 0 0 18px rgba(108, 76, 255, 0.5);
+  margin-bottom: 16px;
+  text-align: center;
+}
+.conduct-body { font-size: 14px; line-height: 1.6; color: var(--text); margin-bottom: 20px; }
+.conduct-body p { margin-bottom: 10px; }
+.conduct-body ul { margin: 10px 0 12px 20px; display: flex; flex-direction: column; gap: 8px; }
+.conduct-body strong { color: var(--gold); }
+#conduct-enter { width: 100%; }
+#social-settings-body { display: flex; flex-direction: column; gap: 16px; margin-bottom: 18px; text-align: left; }
+.social-range { width: 100%; accent-color: var(--arcane); }
+.social-ptt-btn { min-width: 88px; }
+#social-close { width: 100%; }
+
+/* ---- Responsive: shrink chat panel width on narrow viewports ---- */
+@media (max-width: 760px) {
+  /* Raised clear of the virtual joystick (bottom:40px, 120px tall -> top ~160px)
+     so the log/input never sits on top of the movement stick. */
+  .chat-panel { width: min(280px, 60vw); bottom: 176px; }
+  .roster-name { max-width: 68px; }
+}
+
+/* ---- Reduced motion: static glyphs, no pulsing/typing animation ---- */
+@media (prefers-reduced-motion: reduce) {
+  .rs-speak.active, .rs-type.active { animation: none !important; opacity: 1 !important; }
+  .chat-line { animation: none !important; }
+  .conduct-panel, .social-panel { animation: none !important; }
+}

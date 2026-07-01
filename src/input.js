@@ -3,6 +3,7 @@
 import { CFG, SPELLS, SPELL_ORDER, ITEMS, ITEM_SLOT_HOTKEY_STORAGE_KEY } from "./config.js";
 
 export const SPELL_SLOT_HOTKEY_STORAGE_KEY = "vwb-spell-slot-hotkeys";
+export const PTT_KEY_STORAGE_KEY = "vwb-ptt-key";
 
 export function keyToCode(key) {
   const k = String(key || "").trim().toUpperCase();
@@ -25,6 +26,47 @@ function loadSpellSlotHotkeys() {
   } catch {
     return normalizeSpellSlotHotkeys([]);
   }
+}
+
+// Push-to-talk key is stored as a raw KeyboardEvent.code (e.g. "Backquote"),
+// not a single letter like the spell hotkeys, since the default binding is a
+// non-spell key. A valid code is a non-empty alphanumeric identifier that
+// isn't one of the reserved codes chat/menus/dialogs rely on (binding PTT to
+// Escape/Enter/Tab/Space would silently break those), and isn't already a
+// spell's cast key (binding PTT over e.g. KeyQ would silently make that
+// spell uncastable, since the PTT branch in keydown returns before the cast
+// logic runs).
+const RESERVED_PTT_CODES = new Set(["Escape", "Enter", "Tab", "Space", "NumpadEnter"]);
+const SPELL_HOTKEY_CODES = new Set(Object.keys(buildKeyMap()));
+function isValidKeyCode(code) {
+  return typeof code === "string" && /^[A-Za-z][A-Za-z0-9]*$/.test(code)
+    && !RESERVED_PTT_CODES.has(code) && !SPELL_HOTKEY_CODES.has(code);
+}
+
+// Exported so the rebind-capture UI (ui.js) can reject reserved codes (and
+// give feedback) before ever persisting/displaying them, instead of only
+// failing silently deeper in setPttKey().
+export function isValidPttKey(code) {
+  return isValidKeyCode(code);
+}
+
+export function loadPttKey() {
+  try {
+    const stored = localStorage.getItem(PTT_KEY_STORAGE_KEY);
+    return isValidKeyCode(stored) ? stored : CFG.SOCIAL.PTT_DEFAULT_KEY;
+  } catch {
+    return CFG.SOCIAL.PTT_DEFAULT_KEY;
+  }
+}
+
+export function setPttKey(code) {
+  if (!isValidKeyCode(code)) return false;
+  try {
+    localStorage.setItem(PTT_KEY_STORAGE_KEY, code);
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 export function normalizeItemSlotHotkeys(value) {
@@ -76,14 +118,32 @@ export class InputController {
     this.selectedSpell = "fireball"; // touch ability selection
     this.paused = false;         // when true (pause menu open) input is neutralized
 
+    // ---- Social: chat gate, push-to-talk, auto-AFK idle detection ----
+    this.chatting = false;        // chat box open -> gameplay keys + movement neutralized (mirrors this.paused)
+    this.ptt = false;             // push-to-talk held
+    this.onPtt = null;            // (on:bool)=>{} set by main.js
+    this.onAfkChange = null;      // (idle:bool)=>{} set by main.js
+    this._afkIdle = false;
+    this._lastActivityAt = performance.now();
+    this.pttKey = loadPttKey();   // localStorage vwb-ptt-key, default CFG.SOCIAL.PTT_DEFAULT_KEY
+
     this._bind();
   }
 
   _bind() {
     addEventListener("keydown", (e) => {
       this.keys[e.code] = true;
-      // While the pause menu is open, swallow gameplay keys (no casts).
-      if (this.paused) return;
+      // Push-to-talk is checked first and never fires while the chat box is
+      // open (typing "`" etc. must not transmit voice).
+      if (e.code === this.pttKey && !e.repeat && !this.chatting) {
+        this.ptt = true;
+        this.onPtt?.(true);
+        this._activity();
+        return;
+      }
+      // While the pause menu or chat box is open, swallow gameplay keys (no casts).
+      if (this.paused || this.chatting) return;
+      this._activity();
       if (e.code === "Space" && !e.repeat) this.queueCast(this.selectedSpell);
       // Ability hotkeys queue a cast at the current aim/target point.
       const spell = this.spellForCode(e.code);
@@ -91,13 +151,19 @@ export class InputController {
     });
     addEventListener("keyup", (e) => {
       this.keys[e.code] = false;
+      if (e.code === this.pttKey && this.ptt) {
+        this.ptt = false;
+        this.onPtt?.(false);
+      }
     });
     addEventListener("mousemove", (e) => {
       this.mouseX = e.clientX;
       this.mouseY = e.clientY;
+      this._activity();
     });
     addEventListener("mousedown", (e) => {
-      if (this.paused) return;  // ignore clicks while paused
+      if (this.paused || this.chatting) return;  // ignore clicks while paused/chatting
+      this._activity();
       // LMB and RMB both cast the selected spell; LMB is the primary trigger.
       if (e.button === 0) this.queueCast(this.selectedSpell);
       if (e.button === 2) this.queueCast(this.selectedSpell);
@@ -106,6 +172,21 @@ export class InputController {
 
     this._bindTouch();
   }
+
+  // Records real player activity; clears auto-AFK idle state and notifies main.js.
+  _activity() {
+    this._lastActivityAt = performance.now();
+    if (this._afkIdle) {
+      this._afkIdle = false;
+      this.onAfkChange?.(false);
+    }
+  }
+
+  // Public alias for main.js: call right after unpausing/closing chat so a
+  // stale _lastActivityAt (frozen while paused/chatting, since sample() and
+  // the keydown/mousedown gates never touch it) doesn't immediately re-trip
+  // auto-AFK before the player does anything new.
+  resetActivity() { this._activity(); }
 
   setSelectedSpell(id) { if (SPELLS[id]) this.selectedSpell = id; }
 
@@ -212,13 +293,21 @@ export class InputController {
   // Build the current input snapshot to send/apply.
   sample() {
     const aimNow = this.renderer.screenToAim(this.mouseX, this.mouseY);
-    // Paused: emit a neutral input so the warlock idles and no queued cast
-    // fires, but keep the stream alive (seq still advances).
-    if (this.paused) {
+    // Paused or chatting: emit a neutral input so the warlock idles and no
+    // queued cast fires, but keep the stream alive (seq still advances).
+    if (this.paused || this.chatting) {
       this._castWindow = [];
       this.pendingCasts = [];
       return { move: [0, 0], aim: aimNow, seq: ++this.seq, casts: [] };
     }
+
+    // Auto-AFK: flip to idle after CFG.SOCIAL.AFK_IDLE_MS with no real input.
+    // _activity() (fired by keydown/mousemove/mousedown) clears it again.
+    if (!this._afkIdle && performance.now() - this._lastActivityAt > CFG.SOCIAL.AFK_IDLE_MS) {
+      this._afkIdle = true;
+      this.onAfkChange?.(true);
+    }
+
     let mx = 0, mz = 0;
     if (this.keys["KeyW"] || this.keys["ArrowUp"]) mz -= 1;
     if (this.keys["KeyS"] || this.keys["ArrowDown"]) mz += 1;

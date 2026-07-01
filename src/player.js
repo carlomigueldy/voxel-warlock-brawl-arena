@@ -33,6 +33,11 @@ export class Player {
     this.lastAttackerId = null;
     this.lastAttackerAt = 0;
 
+    // Non-authoritative social state (set by host relay; not part of the sim).
+    this.typingUntil = 0;   // ms epoch; ty flag true while Date.now() < typingUntil
+    this.afk = false;
+    this.speaking = false;
+
     // Per-spell cooldown timers (id -> seconds remaining).
     this.cooldowns = {};
     this.spells = new Set(["fireball"]);
@@ -621,6 +626,10 @@ export class Player {
       // step-3 status flags
       iv: this.status.invisible > 0 ? 1 : 0,
       hs: this.status.haste > 0 ? 1 : 0,
+      // social flags (non-authoritative; 1/0 to keep the packet small)
+      ty:  this.typingUntil > Date.now() ? 1 : 0,
+      afk: this.afk ? 1 : 0,
+      spk: this.speaking ? 1 : 0,
       // step-3 cast/channel progress bar (null when idle)
       ca: this.activeCast ? {
         p: +Math.min(1, this.activeCast.channeling
