@@ -383,20 +383,198 @@ html, body {
 .author-credit a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 3px; text-decoration: underline; }
 .label { color: var(--muted); text-transform: uppercase; font-size: 12px; letter-spacing: 2px; margin-bottom: 8px; font-weight: 700; }
 
-/* ---------- Lobby ---------- */
-.lobby-panel { max-width: 1140px; max-height: 90vh; overflow-y: auto; }
-.lobby-grid { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 24px; text-align: left; margin-top: 14px; align-items: start; }
+/* ============================================================
+   Lobby — fullscreen "Staging Grounds" ready-room scene
+   (replaces the old floating .panel.lobby-panel / .lobby-grid modal)
+   ============================================================ */
 
-/* ---------- Lobby map staging (host-only controls + shared hero preview) ---------- */
-.lobby-map { display: flex; flex-direction: column; min-width: 0; }
-.map-hero {
-  position: relative; height: 150px; border-radius: 16px; overflow: hidden;
+/* #lobby stops using the shared bounded .panel box: it fills the viewport
+   and everything below is scoped so it can never leak into other overlays. */
+#lobby {
+  padding: 0; align-items: stretch; justify-content: stretch;
+  overflow-y: auto; touch-action: pan-y;
+}
+#lobby .lobby-scene {
+  position: relative; z-index: 1;
+  width: 100%; min-height: 100%;
+  display: flex; flex-direction: column; gap: 18px;
+  padding: clamp(16px, 3vw, 36px) clamp(20px, 4vw, 56px) clamp(18px, 3vw, 30px);
+  text-align: left;
+}
+/* Bug 1 fix: full-height column so the launch bar is always a normal bottom
+   row that stage content can never overlap. The rail (auto) and launch bar
+   (auto) keep their intrinsic size; the stage is the only flexible member
+   and scrolls internally instead of spilling out of its flex box. */
+#lobby .lobby-hud-rail,
+#lobby .lobby-launch-bar { flex: 0 0 auto; }
+
+@keyframes lobbyZoneIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Top HUD rail ---------- */
+#lobby .lobby-hud-rail {
+  display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+  padding-bottom: 16px; border-bottom: 1px solid var(--line);
+  animation: lobbyZoneIn 0.5s var(--ease-spring) both 0.02s;
+}
+#lobby .lobby-hud-brand { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+#lobby .lobby-wordmark {
+  font-family: var(--font-display); font-size: clamp(15px, 2.2vw, 20px);
+  color: var(--text); letter-spacing: 3px; text-shadow: 0 2px 0 rgba(0,0,0,0.5);
+}
+#lobby .lobby-hud-room { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+#lobby .lobby-room-banner { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+#lobby .lobby-room-banner-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+#lobby .lobby-hud-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#lobby .lobby-hud-hint { flex-basis: 100%; margin: 2px 0 0; }
+
+#lobby .btn-sm { padding: 9px 14px; font-size: 12px; letter-spacing: 0.5px; }
+
+#lobby .lobby-qr-pop { position: relative; }
+#lobby .lobby-qr-pop > summary {
+  list-style: none; cursor: pointer; -webkit-user-select: none; user-select: none;
+  font-family: var(--font-ui); font-weight: 700; font-size: 12px; letter-spacing: 0.5px;
+  padding: 9px 14px; border-radius: 12px; color: var(--text);
+  background: var(--panel-2); border: 1px solid var(--line-strong);
+  transition: background 0.18s, box-shadow 0.18s, color 0.18s, border-color 0.18s;
+}
+#lobby .lobby-qr-pop > summary::-webkit-details-marker { display: none; }
+#lobby .lobby-qr-pop > summary::marker { content: ""; }
+#lobby .lobby-qr-pop > summary:hover { background: rgba(108, 76, 255, 0.18); box-shadow: var(--glow-arcane); }
+#lobby .lobby-qr-pop > summary:focus-visible { outline: 2px solid var(--arcane); outline-offset: 3px; }
+#lobby .lobby-qr-pop[open] > summary { color: var(--gold); border-color: var(--gold); }
+#lobby .lobby-qr-pop .qr { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; animation: fadeDown 0.22s ease both; }
+
+/* ---------- Center stage: WARLOCKS rail · BATTLEGROUND VIEWPORT · MATCH SETUP rail ---------- */
+#lobby .lobby-stage {
+  flex: 1 1 auto; min-height: 0;
+  /* Bug 1 fix: the stage is the only flexible zone in the column; once its
+     content can no longer fit the space left by the (now flex-shrink:0)
+     rail + launch bar, it scrolls internally instead of visually spilling
+     out of its grid box and overlapping the launch bar below it. */
+  overflow-y: auto; overflow-x: hidden;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.6fr) minmax(200px, 0.85fr);
+  grid-template-rows: auto 1fr;
+  /* Bug 2 fix: "setup" now spans both rows so the MATCH SETUP rail reads as
+     one cohesive panel next to the warlocks rail — no separate floating
+     "title" area sitting apart from its own fields. */
+  grid-template-areas:
+    "warlocks battleground setup"
+    "warlocks filmstrip    setup";
+  gap: 18px 24px;
+  padding: 22px 0;
+  animation: lobbyZoneIn 0.5s var(--ease-spring) both 0.16s;
+}
+
+/* Quiet HUD-framed rails — the battleground viewport stays the one bold element. */
+#lobby .lobby-rail-warlocks,
+#lobby .lobby-setup-fields,
+#lobby .lobby-client-config {
+  background: linear-gradient(180deg, rgba(24, 20, 51, 0.35), rgba(15, 11, 33, 0.3));
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 16px;
+}
+#lobby .lobby-rail-warlocks { grid-area: warlocks; display: flex; flex-direction: column; min-width: 0; }
+/* Bug 3 fix: the warlocks rail is narrow (~180-200px), too tight for the
+   default "auto 1fr" side-by-side bot-count/bot-skill layout to give the
+   3-option EXPERT/BRILLIANT/SMART segmented control enough room — it was
+   clipping. Stack the two bot fields vertically here so each gets the
+   rail's full width. */
+#lobby .lobby-rail-warlocks .bot-controls { grid-template-columns: 1fr; gap: 12px; }
+#lobby .lobby-rail-warlocks .bot-field { min-width: 0; }
+#lobby .lobby-rail-warlocks .seg-option { padding-left: 2px; padding-right: 2px; }
+#lobby .lobby-setup-fields { grid-area: setup; display: flex; flex-direction: column; gap: 16px; }
+#lobby .lobby-client-config { grid-area: setup; display: flex; flex-direction: column; gap: 8px; }
+
+#lobby .lobby-rail-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; letter-spacing: 3px; text-transform: uppercase; font-weight: 700; color: var(--muted);
+  margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line);
+}
+#lobby .lobby-rail-title::before { content: "▸"; color: var(--arcane); font-size: 10px; }
+/* Bug 2 fix: the heading now lives inside the setup rail's own panel (see
+   index.html / ui.js), directly above its fields — no more standalone
+   "title" grid area. */
+#lobby .lobby-setup-title { margin-bottom: 12px; }
+
+/* Host-only config: flattened so its two field groups land in separate stage
+   columns (filmstrip under the viewport, everything else in the setup rail)
+   while remaining one DOM node for showLobby's host/client toggle. */
+#lobby .lobby-host-config { display: contents; }
+#lobby .lobby-host-config .field { margin: 0; }
+#lobby .lobby-filmstrip-field { grid-area: filmstrip; min-width: 0; max-width: 100%; }
+#lobby .lobby-filmstrip-field .field-label { display: block; margin-bottom: 8px; }
+
+#lobby .lobby-client-config-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 12px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line);
+  font-size: 13px; color: var(--text);
+}
+#lobby .lobby-client-config-row .field-label { margin: 0; }
+
+/* ---------- Battleground viewport (signature element) ---------- */
+/* Bug 4 fix: min-width:0 lets this grid item shrink below its content's
+   intrinsic width instead of forcing the grid track (and viewport) wider
+   than the screen on narrow/mobile layouts; max-width:100% is the belt to
+   min-width:0's suspenders. */
+#lobby .lobby-battleground { grid-area: battleground; position: relative; min-width: 0; max-width: 100%; z-index: 1; }
+#lobby .lobby-battleground::before {
+  content: ""; position: absolute; inset: -14% -10%; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 42%, var(--stage-hazard, rgba(108, 76, 255, 0.4)) 0%, transparent 68%);
+  opacity: 0.6; filter: blur(10px);
+  transition: opacity 0.4s ease;
+}
+#lobby .lobby-filmstrip-field { grid-area: filmstrip; position: relative; z-index: 1; }
+
+#lobby .battleground-viewport {
+  --corner-color: var(--line-strong); --corner-len: 22px; --corner-thick: 2px;
+  position: relative; padding: 8px; border-radius: 6px;
+  min-width: 0; max-width: 100%;
   border: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, rgba(10, 8, 20, 0.35), rgba(8, 6, 16, 0.7));
+  box-shadow: var(--bezel), 0 24px 60px -24px rgba(0, 0, 0, 0.75), 0 0 70px -16px var(--stage-hazard, rgba(108, 76, 255, 0.4));
+  transition: box-shadow 0.4s ease;
+}
+#lobby .battleground-viewport::before {
+  /* HUD corner brackets — pure CSS, no extra DOM (map-hero's innerHTML is fully
+     owned/replaced by ui.js on every render, so brackets live on the wrapper). */
+  content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    linear-gradient(var(--corner-color), var(--corner-color)), linear-gradient(var(--corner-color), var(--corner-color)),
+    linear-gradient(var(--corner-color), var(--corner-color)), linear-gradient(var(--corner-color), var(--corner-color)),
+    linear-gradient(var(--corner-color), var(--corner-color)), linear-gradient(var(--corner-color), var(--corner-color)),
+    linear-gradient(var(--corner-color), var(--corner-color)), linear-gradient(var(--corner-color), var(--corner-color));
+  background-size:
+    var(--corner-thick) var(--corner-len), var(--corner-len) var(--corner-thick),
+    var(--corner-thick) var(--corner-len), var(--corner-len) var(--corner-thick),
+    var(--corner-thick) var(--corner-len), var(--corner-len) var(--corner-thick),
+    var(--corner-thick) var(--corner-len), var(--corner-len) var(--corner-thick);
+  background-position:
+    0 0, 0 0,
+    100% 0, 100% 0,
+    0 100%, 0 100%,
+    100% 100%, 100% 100%;
+}
+#lobby .battleground-viewport::after {
+  /* faint scanline sheen — killed by the global prefers-reduced-motion rule below */
+  content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0px, rgba(255, 255, 255, 0.05) 1px, transparent 2px, transparent 4px);
+  mix-blend-mode: overlay;
+  animation: scanlineDrift 6s linear infinite;
+}
+@keyframes scanlineDrift { from { background-position-y: 0; } to { background-position-y: 40px; } }
+
+.map-hero {
+  position: relative; overflow: hidden; border-radius: 3px;
+  min-height: clamp(220px, 34vh, 420px);
   background: radial-gradient(ellipse at 50% 130%, var(--hero-hazard, var(--arcane)) 0%, transparent 60%),
               linear-gradient(160deg, var(--hero-side, #2a2040), #0a0714 82%);
-  box-shadow: var(--bezel), 0 12px 30px -14px rgba(0,0,0,0.6);
-  margin-bottom: 16px;
 }
+/* Content re-fades in every time renderMapHero() replaces #map-hero's children
+   (initial render + every arena swap) — a lightweight crossfade with no JS. */
+.map-hero > * { animation: heroContentIn 0.4s ease both; }
+@keyframes heroContentIn { from { opacity: 0; } to { opacity: 1; } }
 .map-hero-hazard-glow {
   position: absolute; inset: 0;
   background: radial-gradient(ellipse at 50% 115%, var(--hero-glow, var(--arcane)) 0%, transparent 58%);
@@ -415,33 +593,61 @@ html, body {
 .map-hero-motif[data-hazard="dust"] { background-image: linear-gradient(75deg, transparent 46%, var(--hero-hazard) 47%, transparent 48%); background-size: 18px 18px; }
 .map-hero-motif[data-hazard="shards"] { background-image: linear-gradient(120deg, transparent 45%, var(--hero-hazard) 48%, transparent 51%); background-size: 15px 24px; }
 .map-hero-copy {
-  position: absolute; left: 16px; bottom: 12px; display: flex; flex-direction: column; gap: 2px;
+  position: absolute; left: 16px; bottom: 12px; display: flex; flex-direction: column; gap: 3px; z-index: 4;
 }
-.map-hero-world { font-family: var(--font-display); font-size: 16px; color: var(--text); text-shadow: 0 2px 8px rgba(0,0,0,0.7); }
+.map-hero-world { font-family: var(--font-display); font-size: clamp(15px, 2.4vw, 22px); color: var(--text); text-shadow: 0 2px 8px rgba(0,0,0,0.7); }
 .map-hero-hazard-name { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--hero-hazard, var(--muted)); text-shadow: 0 2px 6px rgba(0,0,0,0.7); }
 
-.lobby-host-config { display: flex; flex-direction: column; gap: 16px; }
-.lobby-host-config .field { margin: 0; }
-
-.lobby-client-config { display: flex; flex-direction: column; gap: 8px; }
-.lobby-client-config-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 8px 12px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line);
-  font-size: 13px; color: var(--text);
+/* Arena filmstrip — the #arena-world-ui cards laid out horizontally under the viewport. */
+#lobby .arena-cards {
+  display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+  /* Bug 4 fix: without min-width:0 a flex/grid item's minimum size defaults
+     to its content's intrinsic (max-content) width — for 5 cards that's
+     wider than a mobile viewport, which blows out the single-column grid
+     track (and everything else riding in it) past the screen edge. */
+  min-width: 0;
 }
-.lobby-client-config-row .field-label { margin: 0; }
+#lobby .arena-cards::-webkit-scrollbar { height: 6px; }
+#lobby .arena-cards::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+#lobby .arena-card { flex: 0 0 150px; scroll-snap-align: start; }
+
+/* Bug 5 fix: subtle right-edge fade as a scroll affordance so the filmstrip
+   doesn't read as "the last card is just cut off" — it clearly hints more
+   content scrolls into view. Purely decorative, so it's suppressed under
+   reduced motion isn't required (it's static, not animated). */
+#lobby .lobby-filmstrip-field::after {
+  content: "";
+  position: absolute; top: 30px; right: 0; bottom: 6px; width: 40px;
+  background: linear-gradient(90deg, transparent, rgba(10, 8, 20, 0.85) 75%);
+  pointer-events: none; z-index: 2;
+}
+
 .room-code {
   font-family: var(--font-display);
-  font-size: clamp(22px, 5vw, 34px); letter-spacing: 6px; color: var(--gold);
-  background: var(--slot); border: 1px solid var(--line-strong); border-radius: 12px;
-  padding: 16px 10px; text-align: center;
-  text-shadow: 0 0 18px rgba(255, 210, 60, 0.5);
-  box-shadow: var(--bezel);
+  font-size: clamp(16px, 2.4vw, 22px); letter-spacing: 6px; color: var(--gold);
+  background: var(--slot); border: 1px solid var(--line-strong); border-radius: 8px;
+  padding: 10px 16px; text-align: center;
+  text-shadow: 0 0 14px rgba(255, 210, 60, 0.5);
+  box-shadow: var(--bezel), 0 0 20px -6px rgba(255, 210, 60, 0.35);
 }
-.share-row { display: flex; gap: 10px; margin: 14px 0; }
-.share-row .btn { flex: 1; font-size: 13px; padding: 11px 8px; }
 .qr { background: #fff; padding: 10px; border-radius: 12px; width: fit-content; margin: 4px auto 0; box-shadow: 0 0 24px -6px rgba(108,76,255,0.6); }
 .qr canvas, .qr img { display: block; }
+
+/* ---------- Bottom launch bar ---------- */
+#lobby .lobby-launch-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding-top: 18px; border-top: 1px solid var(--line);
+  animation: lobbyZoneIn 0.5s var(--ease-spring) both 0.3s;
+}
+#lobby .lobby-muster { display: flex; flex-direction: column; gap: 4px; }
+#lobby .lobby-muster-count {
+  font-family: var(--font-display); font-size: clamp(11px, 1.6vw, 14px);
+  letter-spacing: 1.5px; color: var(--gold); text-transform: uppercase;
+}
+#lobby .lobby-launch-bar .status { margin-top: 0; min-height: 16px; font-size: 13px; }
+#lobby .lobby-launch-bar .btn-forge { font-size: 18px; padding: 16px 40px; }
 
 .player-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .player-list li {
@@ -758,18 +964,47 @@ html, body {
 }
 #audio-controls button.off { color: var(--muted); border-color: var(--line); }
 
-/* ---------- Responsive (lobby / HUD panels) ---------- */
+/* ---------- Responsive (menu / HUD panels) ---------- */
 @media (max-width: 760px) {
   .panel { padding: 24px 20px; }
   .menu-body { grid-template-columns: 1fr; gap: 18px; }
-  .lobby-grid { grid-template-columns: 1fr; }
   .bot-controls { grid-template-columns: 1fr; gap: 12px; }
-  .arena-cards { grid-template-columns: 1fr 1fr; }
   .char-stage { height: 220px; }
   .char-cards { grid-template-columns: repeat(2, 1fr); }
   .ability-slot { width: 50px; height: 50px; }
   .ability-name { display: none; }
   .spell-tooltip { max-width: 180px; font-size: 11px; }
+}
+
+/* ---------- Responsive (fullscreen lobby scene) ---------- */
+@media (max-width: 1080px) {
+  #lobby .lobby-stage {
+    grid-template-columns: minmax(160px, 0.7fr) minmax(0, 1.6fr) minmax(180px, 0.75fr);
+    gap: 16px 18px;
+  }
+}
+@media (max-width: 760px) {
+  #lobby .lobby-scene { padding: 16px 14px 20px; gap: 16px; }
+  #lobby .lobby-hud-rail { flex-direction: column; align-items: flex-start; gap: 12px; }
+  #lobby .lobby-hud-room { width: 100%; }
+  #lobby .lobby-stage {
+    /* minmax(0, 1fr), not 1fr: a bare 1fr's implied minimum is auto
+       (max-content), so the wide 5-card filmstrip row would blow the single
+       column out past the viewport width (bug 4). */
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas:
+      "battleground"
+      "filmstrip"
+      "warlocks"
+      "setup";
+    gap: 16px;
+    padding: 16px 0;
+  }
+  #lobby .map-hero { min-height: clamp(180px, 46vw, 260px); }
+  #lobby .arena-card { flex: 0 0 130px; }
+  #lobby .lobby-launch-bar { flex-direction: column; align-items: stretch; gap: 12px; }
+  #lobby .lobby-launch-bar .btn-forge { width: 100%; }
 }
 
 /* ---------- Reduced motion ---------- */

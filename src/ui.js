@@ -22,6 +22,7 @@ export class UI {
       playerList: $("player-list"), btnStart: $("btn-start"),
       botControls: $("bot-controls"), botCount: $("bot-count"), botSkill: $("bot-skill"),
       lobbyStatus: $("lobby-status"),
+      lobbyMusterCount: $("lobby-muster-count"),
       mapHero: $("map-hero"),
       lobbyHostConfig: $("lobby-host-config"),
       lobbyClientConfig: $("lobby-client-config"),
@@ -1251,6 +1252,9 @@ export class UI {
     container.style.setProperty("--hero-side", hex(world.side));
     container.style.setProperty("--hero-hazard", hex(hazard.color));
     container.style.setProperty("--hero-glow", hex(hazard.glow));
+    // Scene-level hazard tint: a soft radial glow behind the battleground
+    // viewport (see #lobby .lobby-battleground::before in style.css).
+    this.el.lobby?.style.setProperty("--stage-hazard", hex(hazard.glow));
     container.innerHTML =
       `<span class="map-hero-hazard-glow"></span>` +
       `<span class="map-hero-platform"></span>` +
@@ -1276,6 +1280,7 @@ export class UI {
       : (CFG.OBSTACLE_TYPES?.length || 0);
     const totalObjects = CFG.OBSTACLE_TYPES?.length || objectCount;
     panel.innerHTML =
+      `<p class="lobby-rail-title lobby-setup-title">Match Setup</p>` +
       `<p class="lobby-client-config-row"><span class="field-label">Land size</span><span>${escapeHTML(landSize.name)}</span></p>` +
       `<p class="lobby-client-config-row"><span class="field-label">Mob spawns</span><span>${config.mobsEnabled !== false ? "On" : "Off"}</span></p>` +
       `<p class="lobby-client-config-row"><span class="field-label">Map objects</span><span>${objectCount}/${totalObjects}</span></p>`;
@@ -1589,6 +1594,11 @@ export class UI {
       }
       this.el.playerList.appendChild(li);
     });
+    // Launch-bar muster count, derived from the roster just rendered above.
+    if (this.el.lobbyMusterCount) {
+      const n = players.length;
+      this.el.lobbyMusterCount.textContent = `${n} warlock${n === 1 ? "" : "s"} mustered`;
+    }
   }
 
   // ---- in-game HUD ----
