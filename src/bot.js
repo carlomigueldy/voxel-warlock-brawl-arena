@@ -26,8 +26,11 @@ export function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
 }
 
 // ── Archetype profiles ─────────────────────────────────────────────────────
-// Replaces the old BOT_SETTINGS flat object. The fire-cadence hierarchy
-// expert > brilliant > smart is guaranteed by fireEvery values.
+// Replaces the old BOT_SETTINGS flat object. Bots no longer run a separate
+// hardcoded fireball timer — fireball is just another weighted candidate in
+// abilityWeights, scored by selectAbility() like every other equipped spell.
+// The cast-cadence hierarchy expert > brilliant > smart is guaranteed by
+// abilityEvery (lower = faster) — the single per-tier cast-gate timer.
 export const BOT_PROFILES = {
   /**
    * Brawler — aggressive close-range pressure, telegraphed, approachable.
@@ -36,9 +39,7 @@ export const BOT_PROFILES = {
   smart: {
     preferredRange: 8,
     retreatRange: 3,
-    fireRange: 14,
-    fireEvery: 0.75,
-    abilityEvery: 4.5,
+    abilityEvery: 1.0,
     leadFactor: 0.10,      // barely predicts target movement
     aimError: 0.22,        // wide sine-like wobble
     reactionMs: 550,       // slow to perceive threats
@@ -49,6 +50,10 @@ export const BOT_PROFILES = {
     abilityWeights: {
       thrust: 0.5, shield: 0.3, meteor: 0, lightning: 0.3,
       gravity: 0, homing: 0.8, bouncer: 0.5, boomerang: 0.4, fireSpray: 0.6,
+      // Kept below homing's effective score (0.7 base * 0.8 = 0.56) so smart
+      // bots don't spam fireball exclusively — homing wins the roll whenever
+      // it's off cooldown, giving this tier real kit variety (see F1 review).
+      fireball: 0.5,
     },
   },
 
@@ -59,9 +64,7 @@ export const BOT_PROFILES = {
   brilliant: {
     preferredRange: 11,
     retreatRange: 5,
-    fireRange: 18,
-    fireEvery: 0.48,
-    abilityEvery: 3.0,
+    abilityEvery: 0.65,
     leadFactor: 0.55,
     aimError: 0.10,
     reactionMs: 300,
@@ -72,6 +75,7 @@ export const BOT_PROFILES = {
     abilityWeights: {
       thrust: 0.4, shield: 0.7, meteor: 0.5, lightning: 0.8,
       gravity: 0.6, homing: 0.6, bouncer: 0.8, boomerang: 0.7, fireSpray: 0.5,
+      fireball: 0.8,
     },
   },
 
@@ -82,9 +86,7 @@ export const BOT_PROFILES = {
   expert: {
     preferredRange: 9,
     retreatRange: 5,
-    fireRange: 28,
-    fireEvery: 0.28,
-    abilityEvery: 1.7,
+    abilityEvery: 0.35,
     leadFactor: 0.90,      // near-correct leading; bounded jitter keeps it human
     aimError: 0.025,
     reactionMs: 175,
@@ -95,6 +97,7 @@ export const BOT_PROFILES = {
     abilityWeights: {
       thrust: 0.6, shield: 0.9, meteor: 0.9, lightning: 0.95,
       gravity: 0.85, homing: 0.7, bouncer: 0.7, boomerang: 0.8, fireSpray: 0.4,
+      fireball: 0.75,
     },
   },
 };
@@ -266,6 +269,7 @@ function selectAbility(sim, bot, target, dist, profile) {
 
   // ── General zoning / combat ────────────────────────────────────────────
   if (dist <= reach("lightning")) tryAdd("lightning", 1.0);
+  if (dist <= reach("fireball")) tryAdd("fireball", 0.85);
   if (dist <= reach("meteor")) tryAdd("meteor", 0.9);
   if (dist <= reach("gravity")) tryAdd("gravity", 0.8);
   if (dist <= reach("homing")) tryAdd("homing", 0.7);
@@ -274,7 +278,11 @@ function selectAbility(sim, bot, target, dist, profile) {
   if (dist <= reach("fireSpray")) tryAdd("fireSpray", 0.55);
   if (dist <= reach("drain")) tryAdd("drain", 0.5);
   if (dist <= reach("disable")) tryAdd("disable", 0.55);
-  tryAdd("shield", 0.35); // fallback defensive option
+  // Defensive shield fallback — low-priority, and only worth considering when
+  // the target is close enough to plausibly threaten the bot soon (own high
+  // charge is already covered above). Without this gate bots would shield
+  // uselessly while the enemy is clear across the arena.
+  if (dist <= BOT_DEFAULT_CAST_RANGE) tryAdd("shield", 0.35);
 
   if (!candidates.length) return null;
   candidates.sort((a, b) => b.score - a.score);
@@ -301,8 +309,13 @@ function selectAbility(sim, bot, target, dist, profile) {
 // ── botSpellLoadout ────────────────────────────────────────────────────────
 // Derive a spell loadout for a bot from its abilityWeights profile.
 // Takes the top (slotCount - 1) spells by weight (weight > 0, must exist in
-// SPELLS), then prepends fireball (setLoadout will also guarantee it, but
-// being explicit here keeps the intent readable).
+// SPELLS, excluding fireball). fireball itself now competes as a normal
+// weighted candidate inside selectAbility() (see abilityWeights above), but
+// its equip slot is left to Player.setLoadout(), which already guarantees
+// fireball occupies a slot on every player — so it is deliberately excluded
+// from this ranked pool rather than special-cased/prepended here (prepending
+// it here too would double-count it and risks silently dropping the lowest-
+// ranked chosen spell once setLoadout dedupes/caps at SPELL_SLOT_COUNT).
 // Always guarantees at least one escape spell (thrust or teleport) so the
 // edge-danger branch in selectAbility can fire; if neither appears in the
 // top-N by weight, the last chosen slot is replaced with thrust.
@@ -311,17 +324,17 @@ function selectAbility(sim, bot, target, dist, profile) {
 export function botSpellLoadout(profile, slotCount = CFG.SPELL_SLOT_COUNT) {
   const w = profile.abilityWeights || {};
   const chosen = Object.entries(w)
-    .filter(([id, v]) => v > 0 && SPELLS[id])
+    .filter(([id, v]) => v > 0 && id !== "fireball" && SPELLS[id])
     .sort(([, a], [, b]) => b - a)
     .map(([id]) => id)
-    .slice(0, slotCount - 1); // leave one slot for fireball
+    .slice(0, slotCount - 1); // leave one slot for fireball (guaranteed by setLoadout)
   // Guarantee an escape spell so selectAbility's edge-danger branch can always fire.
   const ESCAPE = ["thrust", "teleport"];
   if (chosen.length > 0 && !ESCAPE.some((id) => chosen.includes(id))) {
     const escapeId = ESCAPE.find((id) => SPELLS[id]) || "thrust";
     chosen[chosen.length - 1] = escapeId; // swap out the lowest-ranked chosen spell
   }
-  return ["fireball", ...chosen];
+  return chosen;
 }
 
 // ── BotBrain ───────────────────────────────────────────────────────────────
@@ -399,15 +412,10 @@ export class BotBrain {
     // ── Movement ──────────────────────────────────────────────────────────
     const [moveX, moveZ] = positioning(sim, bot, target, profile, dodge);
 
-    // ── Fireball cast (routes through the standard cast pipeline) ─────────
     const casts = [];
-    if (dist <= profile.fireRange && bot.canCast("fireball") &&
-        (bot._nextBotFireAt ?? 0) <= sim.playTime) {
-      casts.push({ id: ++bot._botCastId, spell: "fireball", tx: target.x, tz: target.z });
-      bot._nextBotFireAt = sim.playTime + profile.fireEvery;
-    }
 
-    // ── Ability selection ──────────────────────────────────────────────────
+    // ── Ability selection (fireball now competes here as a normal weighted
+    //    candidate — see abilityWeights.fireball on each BOT_PROFILES tier) ──
     if ((bot._nextBotAbilityAt ?? 0) <= sim.playTime) {
       let chosen = null;
 
@@ -435,8 +443,8 @@ export class BotBrain {
           this.comboSpell = "lightning";
           // Re-open the ability gate inside the combo window (0.6 s < comboWindow 1.5 s)
           // so the follow-up cast is actually reachable for every profile tier.
-          // Without this override, _nextBotAbilityAt = +abilityEvery (≥ 1.7 s) which
-          // always exceeds comboWindow, making the follow-up unreachable dead code.
+          // Without this override a slow tier's abilityEvery (up to 1.0 s for smart)
+          // could exceed comboWindow, making the follow-up unreachable dead code.
           bot._nextBotAbilityAt = sim.playTime + 0.6;
         }
       }

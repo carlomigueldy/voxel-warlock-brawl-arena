@@ -4,9 +4,9 @@ import { CFG, getArenaHazard } from "../src/config.js";
 import { effectPos } from "../src/renderer-util.js";
 
 let passed = 0;
+const tests = [];
 function test(name, fn) {
-  try { fn(); console.log("  ok  -", name); passed++; }
-  catch (e) { console.error("  FAIL-", name, "\n", e.message); process.exitCode = 1; }
+  tests.push({ name, fn });
 }
 
 console.log("Source integration checks:");
@@ -173,7 +173,7 @@ test("character ids match the loadable GLB roster", () => {
 
 test("selected character is networked from client to host on join", () => {
   const net = fs.readFileSync("src/net.js", "utf8");
-  assert.match(net, /type: MSG\.JOIN, name: this\.name, character: this\.character/);
+  assert.match(net, /type: MSG\.JOIN[\s\S]*name: this\.name[\s\S]*character: this\.character/);
   assert.match(net, /conn\._character/);
 });
 
@@ -319,8 +319,9 @@ test("renderer builds projectiles and runes procedurally (no Meshy GLB loading)"
 });
 
 test("renderer builds bolts and runes via the procedural voxel builders", () => {
-  assert.match(renderer, /buildBolt\(b\.c, b\.k \|\| "fireball"\)/);
+  assert.match(renderer, /acquireBolt\(b\.c, b\.k \|\| "fireball"\)/);
   assert.match(renderer, /buildRune\(r\.c \|\| 0xffffff\)/);
+  assert.match(fs.readFileSync("src/pool.js", "utf8"), /buildBolt\(color, kind\)/);
 });
 
 test("loader preloads only character GLBs (no Meshy fetch priming)", () => {
@@ -506,10 +507,303 @@ test("clientLoop survives a throwing frame (try/catch wraps body, rAF stays outs
   assert.match(main, /function clientLoop[\s\S]*?try \{[\s\S]*?catch[\s\S]*?requestAnimationFrame\(clientLoop\)/);
 });
 
+test("quick match flow no longer imports hosted open_rooms helpers", () => {
+  assert.doesNotMatch(main, /quickMatch as qmatch/);
+  assert.doesNotMatch(main, /publishRoom/);
+  assert.doesNotMatch(main, /heartbeat/);
+  assert.doesNotMatch(main, /listRooms/);
+  assert.doesNotMatch(main, /subscribeRooms/);
+  assert.doesNotMatch(main, /closeRoom/);
+});
+
+test("online screen uses queue status instead of hosted room browser or host-online controls", () => {
+  assert.match(html, /id="online-queue-status"/);
+  assert.match(html, /id="btn-cancel-queue"/);
+  assert.doesNotMatch(html, /id="btn-host-online"/);
+  assert.doesNotMatch(html, /id="rooms-list"/);
+  assert.doesNotMatch(ui, /renderRooms\(/);
+});
+
+test("client join payload includes matchmaking metadata when supplied", async () => {
+  const originalPeer = globalThis.Peer;
+  class FakeConn {
+    constructor(peer) {
+      this.peer = peer;
+      this.handlers = {};
+      this.sent = [];
+      this.open = true;
+    }
+    on(event, cb) { this.handlers[event] = cb; }
+    send(msg) { this.sent.push(msg); }
+    close() { this.open = false; this.handlers.close?.(); }
+  }
+  class FakePeer {
+    constructor(idOrOpts) {
+      this.id = typeof idOrOpts === "string" ? idOrOpts : "client-peer";
+      this.handlers = {};
+      queueMicrotask(() => this.handlers.open?.(this.id));
+    }
+    on(event, cb) { this.handlers[event] = cb; }
+    connect(hostId) {
+      this.hostId = hostId;
+      this.conn = new FakeConn(hostId);
+      queueMicrotask(() => this.conn.handlers.open?.());
+      return this.conn;
+    }
+    destroy() {}
+  }
+  globalThis.Peer = FakePeer;
+  try {
+    const { Client } = await import(`../src/net.js?client-meta=${Date.now()}-${Math.random()}`);
+    const client = new Client({
+      name: "Mage",
+      code: "ABCDEF",
+      character: "ember",
+      userId: "user-1",
+      region: "sea",
+      matchmaking: { matchId: "match-1", queueId: "queue-1" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(client.conn.sent.length > 0, "client should send a join payload");
+    assert.strictEqual(client.conn.sent[0].matchId, "match-1");
+    assert.strictEqual(client.conn.sent[0].queueId, "queue-1");
+  } finally {
+    globalThis.Peer = originalPeer;
+  }
+});
+
+test("hidden host rejects mismatched matchmaking joins while LAN hosts still accept normal joins", async () => {
+  const originalPeer = globalThis.Peer;
+  class FakePeer {
+    constructor(idOrOpts) {
+      this.id = typeof idOrOpts === "string" ? idOrOpts : "host-peer";
+      this.handlers = {};
+      queueMicrotask(() => this.handlers.open?.(this.id));
+    }
+    on(event, cb) { this.handlers[event] = cb; }
+    destroy() {}
+  }
+  class FakeConn {
+    constructor(peer = "remote-peer") {
+      this.peer = peer;
+      this.handlers = {};
+      this.sent = [];
+      this.open = true;
+    }
+    on(event, cb) { this.handlers[event] = cb; }
+    send(msg) { this.sent.push(msg); }
+    close() { this.open = false; this.handlers.close?.(); }
+  }
+  globalThis.Peer = FakePeer;
+  try {
+    const { Host } = await import(`../src/net.js?host-meta=${Date.now()}-${Math.random()}`);
+    const rejected = [];
+    const hiddenHost = new Host({
+      name: "Host",
+      matchmaking: { matchId: "match-1", allowedQueueIds: ["queue-guest"] },
+      onPlayerJoin: (...args) => rejected.push(args),
+    });
+    const mismatchConn = new FakeConn("peer-a");
+    hiddenHost._onConn(mismatchConn);
+    mismatchConn.handlers.open?.();
+    hiddenHost._onData(mismatchConn, {
+      type: "join",
+      name: "Guest",
+      character: "ember",
+      matchId: "wrong-match",
+      queueId: "wrong-queue",
+    });
+    assert.strictEqual(rejected.length, 0, "hidden host must reject mismatched joins");
+    assert.ok(mismatchConn.sent.some((msg) => msg.matchmakingRejected), "client-visible rejection payload expected");
+
+    const accepted = [];
+    const lanHost = new Host({
+      name: "LAN Host",
+      onPlayerJoin: (...args) => accepted.push(args),
+    });
+    const okConn = new FakeConn("peer-b");
+    lanHost._onConn(okConn);
+    okConn.handlers.open?.();
+    lanHost._onData(okConn, {
+      type: "join",
+      name: "Guest",
+      character: "ember",
+    });
+    assert.strictEqual(accepted.length, 1, "LAN/private host should still accept normal joins");
+    assert.ok(okConn.sent.some((msg) => msg.type === "welcome"), "accepted join should still receive WELCOME");
+  } finally {
+    globalThis.Peer = originalPeer;
+  }
+});
+
+test("client terminal join errors are not overwritten by the follow-up close event", async () => {
+  const originalPeer = globalThis.Peer;
+  class FakeConn {
+    constructor(peer) {
+      this.peer = peer;
+      this.handlers = {};
+      this.sent = [];
+      this.open = true;
+    }
+    on(event, cb) { this.handlers[event] = cb; }
+    send(msg) { this.sent.push(msg); }
+    close() { this.open = false; this.handlers.close?.(); }
+  }
+  class FakePeer {
+    constructor(idOrOpts) {
+      this.id = typeof idOrOpts === "string" ? idOrOpts : "client-peer";
+      this.handlers = {};
+      queueMicrotask(() => this.handlers.open?.(this.id));
+    }
+    on(event, cb) { this.handlers[event] = cb; }
+    connect(hostId) {
+      this.conn = new FakeConn(hostId);
+      queueMicrotask(() => this.conn.handlers.open?.());
+      return this.conn;
+    }
+    destroy() {}
+  }
+  globalThis.Peer = FakePeer;
+  try {
+    const events = [];
+    const { Client } = await import(`../src/net.js?terminal-error=${Date.now()}-${Math.random()}`);
+    const client = new Client({
+      name: "Mage",
+      code: "ABCDEF",
+      character: "ember",
+      onError: (err) => events.push(err.type),
+      onClose: () => events.push("close"),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    client._onData({ type: "welcome", matchmakingRejected: true });
+    client.conn.close();
+
+    assert.deepStrictEqual(events, ["matchmaking-rejected"],
+      "rejection status should not be overwritten by the close that follows it");
+  } finally {
+    globalThis.Peer = originalPeer;
+  }
+});
+
+test("matchmaking host errors cancel the active queue and return to queue status", () => {
+  assert.match(main, /onHostError:/);
+  assert.match(main, /cancelRegionQueue\(\{ clearStatus: false \}\)/);
+});
+
 // --- Bug-2 regression: unstyled item bar ---
 
 test("item bar has a positioned CSS rule with pointer-events auto", () => {
   assert.match(css, /#item-bar\s*\{[\s\S]*?position:\s*fixed[\s\S]*?pointer-events:\s*auto/);
 });
 
+const voxel = fs.readFileSync("src/voxel.js", "utf8");
+
+function sourceWithoutComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+function builderBody(src, name) {
+  const start = src.indexOf(`export function ${name}(`);
+  assert.ok(start >= 0, `builder ${name} must exist`);
+  const open = src.indexOf("{", start);
+  let depth = 0, i = open;
+  for (; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") { depth--; if (depth === 0) { i++; break; } }
+  }
+  return sourceWithoutComments(src.slice(open, i));
+}
+
+test("mob builders stay procedural (no GLB/Meshy asset loading)", () => {
+  const code = sourceWithoutComments(voxel);
+  assert.doesNotMatch(code, /GLTFLoader/);
+  assert.doesNotMatch(code, /assets\/meshy\//);
+  assert.doesNotMatch(code, /\.glb\b/i);
+});
+
+test("stone giant gains stratified plates, shoulder boulders, knuckles and spine crystals", () => {
+  const b = builderBody(voxel, "buildStoneGiant");
+  assert.match(b, /accents/, "stone giant must expose an accents group");
+  assert.ok((b.match(/facetedSlab/g) || []).length >= 4,
+    "stone giant needs layered stratified plates (>=4 slabs)");
+  assert.match(b, /shoulder/i, "stone giant needs shoulder boulders");
+  assert.match(b, /knuckle/i, "stone giant needs fist knuckles");
+  assert.match(b, /facetedCrystal/, "stone giant needs spine/back crystals");
+  assert.ok((b.match(/facetedRock/g) || []).length >= 5,
+    "stone giant needs more faceted rock detail (head + fists + shoulders)");
+});
+
+test("storming vortex gains more shards, extra ring and arc crystals", () => {
+  const b = builderBody(voxel, "buildStormingVortex");
+  assert.match(b, /i < 12/, "inner shard ring must have >=12 shards");
+  assert.match(b, /i < 6/, "outer shard ring must have >=6 shards");
+  assert.match(b, /arcCrystals|arcs/, "vortex needs an arc-crystal accent group");
+  assert.match(b, /facetedCrystal/, "vortex arc crystals use facetedCrystal");
+});
+
+test("giant dwarf gains helmet horns, pauldrons, beard braids and boots/gauntlets", () => {
+  const b = builderBody(voxel, "buildGiantDwarf");
+  assert.match(b, /horn/i, "dwarf needs helmet horns");
+  assert.match(b, /pauldron/i, "dwarf needs shoulder pauldrons");
+  assert.match(b, /braid/i, "dwarf needs beard braids");
+  assert.match(b, /gauntlet/i, "dwarf needs gauntlet detail");
+  assert.ok((b.match(/facetedCone/g) || []).length >= 3,
+    "dwarf needs helmet top + two horns (>=3 cones)");
+});
+
+test("fire elemental gains layered flame crown, core shell, more motes and tendrils", () => {
+  const b = builderBody(voxel, "buildFireElemental");
+  assert.match(b, /crown/i, "elemental needs a layered flame crown");
+  assert.match(b, /tendril/i, "elemental needs flame tendrils");
+  assert.match(b, /i < 8/, "elemental must orbit >=8 motes");
+  assert.ok((b.match(/facetedCone/g) || []).length >= 2,
+    "flame crown needs a ring of cones plus a central tongue");
+});
+
+test("minion gains robe panels, a staff/lantern and a better hat/face", () => {
+  const b = builderBody(voxel, "buildMinion");
+  assert.match(b, /robe|panel/i, "minion needs robe panels");
+  assert.match(b, /staff|lantern/i, "minion needs a staff or lantern prop");
+  assert.match(b, /facetedOrb|glowBox|emissive/, "minion staff/lantern needs a glow accent");
+});
+
+test("animateMob drives newly named secondary accent groups without gameplay change", () => {
+  const b = builderBody(voxel, "animateMob");
+  assert.match(b, /accents|arcCrystals|arcs/,
+    "animateMob must animate the new accent/arc groups");
+});
+
+// Fidelity: "increase the poly count of each" means the structural limbs on the
+// big, count-bounded mobs must be higher-resolution than the default 6-sided
+// hex-prism — raising per-primitive tessellation, not only part count. Octagonal
+// (>=8-gon) prisms still read as deliberately faceted while shedding the blocky
+// "lazy" silhouette on colossal mobs with cinematic entrances.
+function countHiResCylinders(body) {
+  return (body.match(/facetedCylinder\([^;]*segments:\s*(8|10|12)\b/g) || []).length;
+}
+
+test("stone giant limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
+  const b = builderBody(voxel, "buildStoneGiant");
+  assert.ok(countHiResCylinders(b) >= 4,
+    "stone giant arms + legs must use >=8-segment faceted cylinders");
+});
+
+test("giant dwarf limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
+  const b = builderBody(voxel, "buildGiantDwarf");
+  assert.ok(countHiResCylinders(b) >= 4,
+    "giant dwarf arms + legs must use >=8-segment faceted cylinders");
+});
+
+test("fire elemental limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
+  const b = builderBody(voxel, "buildFireElemental");
+  assert.ok(countHiResCylinders(b) >= 2,
+    "fire elemental tendril arms must use >=8-segment faceted cylinders");
+});
+
+for (const { name, fn } of tests) {
+  try { await fn(); console.log("  ok  -", name); passed++; }
+  catch (e) { console.error("  FAIL-", name, "\n", e.message); process.exitCode = 1; }
+}
 console.log(`\n${passed} source checks passed.`);

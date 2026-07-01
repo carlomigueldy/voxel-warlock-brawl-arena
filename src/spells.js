@@ -530,12 +530,14 @@ export function castSpell(sim, caster, cast) {
       anchorX: caster.x, anchorZ: caster.z,
     };
     caster.startCooldown(cast.spell);
+    if (sim.practiceNoCooldown) caster.cooldowns[cast.spell] = 0;
     emit(sim, { type: "castStart", id: caster.id, spell: cast.spell, x: caster.x, z: caster.z, castTime, channel });
     return true;
   }
   // Instant spell: fire immediately.
   HANDLERS[cast.spell](sim, caster, cast);
   caster.startCooldown(cast.spell);
+  if (sim.practiceNoCooldown) caster.cooldowns[cast.spell] = 0;
   if (spell.sfx) emit(sim, { type: "sfx", sfx: spell.sfx, x: caster.x, z: caster.z });
   return true;
 }

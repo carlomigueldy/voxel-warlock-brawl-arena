@@ -236,6 +236,8 @@ export class Mob {
       max:   this.maxHits,
       color: CFG.MOB_TYPES[this.type].color,
       f:     this.falling ? 1 : 0,
+      // Practice-mode dummy target: passive (never attacks) — see sim.spawnDummyMob().
+      dummy: this.passive ? 1 : 0,
       ent:   +this.entering.toFixed(2),
       // Active channel summary for client telegraph rendering under packet loss.
       // null when idle; compact object when a telegraphed ability is winding up.

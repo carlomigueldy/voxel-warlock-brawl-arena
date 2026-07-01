@@ -110,6 +110,15 @@ export class Simulation {
     // Step 6: opt-in flag — false by default so existing tests stay green.
     // Pass draftEnabled: true to insert the SPELL_SELECTION phase before round 1.
     this.draftEnabled = options.draftEnabled === true;
+    // Practice/demo mode: arena never shrinks, the round never ends from
+    // deaths/being alone, and non-bot players spawned while this is set are
+    // made invulnerable (see addPlayer / beginRound). Off by default so
+    // multiplayer matches are completely unaffected.
+    this.practiceMode = options.practiceMode === true;
+    // Practice-only "no cooldowns" toggle — cooldowns only (not charges/resources).
+    // Gated behind practiceMode everywhere it's read/set; off by default so
+    // multiplayer matches are completely unaffected.
+    this.practiceNoCooldown = false;
     // Big-mob roster for the current round (shuffled order; each type spawns once).
     this._mobRoster = [];
     this._mobRosterIdx = 0;
@@ -130,6 +139,40 @@ export class Simulation {
     this._matchSeed = 0;     // re-randomised in startMatch(); base for per-round seeds
   }
 
+  /**
+   * Host-only lobby control: mutate arena world / land size / enabled obstacles /
+   * mob spawns while the match hasn't started yet. No-op (with a console warning)
+   * outside PHASE.LOBBY — config is locked once the match leaves the lobby.
+   * Returns the normalized config that was applied (or the current one if no-op).
+   */
+  configure(options = {}) {
+    if (this.phase !== PHASE.LOBBY) {
+      console.warn("Simulation.configure() ignored: match is no longer in the lobby.");
+      return this._currentConfig();
+    }
+    if (options.arenaWorld !== undefined) this.world = getArenaWorld(options.arenaWorld);
+    if (options.landSize !== undefined) this.landSize = getArenaLandSize(options.landSize);
+    if (options.enabledObstacles !== undefined) {
+      const rawToggles = options.enabledObstacles || {};
+      this.enabledObstacles = {};
+      for (const { id } of CFG.OBSTACLE_TYPES) {
+        this.enabledObstacles[id] = rawToggles[id] !== false;
+      }
+    }
+    if (options.mobsEnabled !== undefined) this.mobsEnabled = options.mobsEnabled !== false;
+    this.arena = new LogicArena(this.world, this.landSize);
+    return this._currentConfig();
+  }
+
+  _currentConfig() {
+    return {
+      arenaWorld: this.world.id,
+      landSize: this.landSize.id,
+      enabledObstacles: this.enabledObstacles,
+      mobsEnabled: this.mobsEnabled,
+    };
+  }
+
   addPlayer(id, name, options = {}) {
     if (this.players.has(id)) return this.players.get(id);
     const idx = this.players.size;
@@ -147,6 +190,10 @@ export class Simulation {
       p.alive = false;
       p.spectating = true;
     }
+    // Practice mode: the human player never dies (no HP damage, no hazard fall).
+    // Dummy bots spawned via spawnDummyMob() are passive so this is the only
+    // player in the sim — bots/mobs are never invulnerable.
+    if (this.practiceMode && !p.isBot) p.invulnerable = true;
     this.players.set(id, p);
     return p;
   }
@@ -228,6 +275,7 @@ export class Simulation {
   }
 
   canStartMatch() {
+    if (this.practiceMode) return this.phase === PHASE.LOBBY && this.players.size >= 1;
     return this.phase === PHASE.LOBBY && this.players.size >= 2;
   }
 
@@ -457,6 +505,9 @@ export class Simulation {
 
   resolveRoundIfNeeded() {
     if (this.phase !== PHASE.PLAYING && this.phase !== PHASE.COUNTDOWN) return;
+    // Practice mode: the round never ends from being alone or from deaths —
+    // the player is invulnerable and there's no win/lose condition to chase.
+    if (this.practiceMode) return;
     const active = this.activePlayers();
     if (active.length < 2) {
       this.returnToLobby();
@@ -510,7 +561,8 @@ export class Simulation {
     this.playTime += dt;
 
     // Shrink the arena after a delay to force confrontation.
-    if (this.playTime > CFG.ROUND.SHRINK_START_DELAY) {
+    // Practice mode: the arena stays at its full starting radius.
+    if (!this.practiceMode && this.playTime > CFG.ROUND.SHRINK_START_DELAY) {
       this.arena.radius = Math.max(
         CFG.ARENA_MIN_RADIUS,
         this.arena.radius - CFG.ROUND.SHRINK_RATE * dt
@@ -661,6 +713,10 @@ export class Simulation {
     this.resolveItemPickups();
 
     if (this.mobsEnabled) this.stepMobs(dt);
+    // Practice mode disables the auto-spawn roster (mobsEnabled: false) but
+    // manually spawned dummies (spawnDummyMob) still need physics/lifecycle
+    // ticks — stepDummies() is the passive-only subset of stepMobs' AI loop.
+    else if (this.practiceMode) this.stepDummies(dt);
 
     // Record the latest attacker for each victim from all hit events emitted this
     // frame — covers bolt hits, lightning, thrust, gravity implosion, and any
@@ -739,6 +795,75 @@ export class Simulation {
     this.events.push({ type: "mobSpawn", id, mobType: "minion", x, z, parentId: owner.id, color: CFG.MOB_TYPES.minion.color });
   }
 
+  // Practice mode: spawn a passive dummy target of the given MOB_TYPES key at
+  // an explicit position (falls back to a free spot near the player when x/z
+  // are omitted). Dummies take spell damage and show HP/hit feedback exactly
+  // like real mobs, but never attack — see the `mob.passive` guard in stepMobs().
+  spawnDummyMob(type, x, z) {
+    if (!CFG.MOB_TYPES[type]) return null;
+    let pos = { x, z };
+    if (!Number.isFinite(x) || !Number.isFinite(z)) pos = this._mobSpawnPos() || { x: 0, z: 6 };
+    const id = "mob:" + this._mobId++;
+    const mob = spawnMob(id, type, pos.x, pos.z);
+    mob.passive = true;
+    mob.entering = 0;     // spawn ready to hit immediately, no cinematic entrance
+    mob.spawnInvuln = 0;
+    this.mobs.push(mob);
+    this.events.push({
+      type: "mobIncoming",
+      id: mob.id,
+      mobType: type,
+      x: pos.x,
+      z: pos.z,
+      color: CFG.MOB_TYPES[type].color,
+      entrance: "none",
+      duration: 0,
+    });
+    return mob;
+  }
+
+  // Practice mode: despawn every dummy target currently on the field.
+  clearDummies() {
+    this.mobs = this.mobs.filter((m) => !m.passive);
+  }
+
+  // Practice mode: swap a player's spell loadout on the fly (e.g. from the
+  // "Change Abilities" panel while a round is in progress). No-op outside
+  // practice mode. setLoadout() rebuilds spellSlots/spells and zeroes
+  // cooldowns for the new set; it does not touch HP/position/status.
+  changeLoadout(id, spellIds) {
+    if (!this.practiceMode) return;
+    const p = this.players.get(id);
+    if (!p) return;
+    p.setLoadout(spellIds);
+  }
+
+  // Practice mode: toggle the "no cooldowns" cheat. Cooldowns only — charges
+  // and other resources are untouched. Clears the local player's current
+  // cooldowns immediately on enable so it takes effect right away.
+  setPracticeNoCooldown(v) {
+    if (!this.practiceMode) return;
+    this.practiceNoCooldown = !!v;
+    if (this.practiceNoCooldown) {
+      for (const p of this.players.values()) {
+        if (!p.isBot) p.cooldowns = {};
+      }
+    }
+  }
+
+  // Physics/lifecycle-only tick for practice-mode dummies, used instead of the
+  // full stepMobs() AI loop when mobsEnabled is false (no auto-spawn roster,
+  // no targeting) — mirrors the `mob.passive` branch inside stepMobs().
+  stepDummies(dt) {
+    if (this.phase !== PHASE.PLAYING) return;
+    for (const mob of this.mobs) {
+      if (!mob.alive) continue;
+      stepMobPhysics(mob, dt, this.arena);
+      if (mob.falling && mob.y <= CFG.LAVA_Y) this.killMob(mob, "lava");
+    }
+    this.mobs = this.mobs.filter((m) => m.alive);
+  }
+
   stepMobs(dt) {
     if (this.phase !== PHASE.PLAYING) return;
 
@@ -788,6 +913,15 @@ export class Simulation {
       if (mob.ttl != null) {
         mob.ttl -= dt;
         if (mob.ttl <= 0) { this.killMob(mob, "expire"); continue; }
+      }
+
+      // Passive dummy targets (practice mode): skip AI/targeting entirely so
+      // they never attack the player — just stand still, take damage, and
+      // can still fall to lava if pushed off. No entrance/channel logic runs.
+      if (mob.passive) {
+        stepMobPhysics(mob, dt, this.arena);
+        if (mob.falling && mob.y <= CFG.LAVA_Y) this.killMob(mob, "lava");
+        continue;
       }
 
       // Capture pre-think entering value so we can detect when the cinematic
