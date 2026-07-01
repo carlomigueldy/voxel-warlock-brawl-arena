@@ -607,6 +607,17 @@
       <button id="btn-sfx">SFX: On</button>
       <button id="btn-music">Music: On</button>
     </div>
+    <!-- ===== Social: chat log + input (bottom-left) ===== -->
+    <div id="chat-panel" class="chat-panel">
+      <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <div id="chat-input-wrap" class="chat-input-wrap hidden">
+        <input id="chat-input" class="chat-input" type="text" maxlength="140"
+               autocomplete="off" aria-label="Chat message" placeholder="Say something…">
+      </div>
+      <!-- Touch/mobile has no Enter key to open chat with. -->
+      <button id="chat-toggle-btn" class="chat-toggle-btn hidden" type="button" aria-label="Open chat">💬</button>
+    </div>
+    <div id="ptt-indicator" class="ptt-indicator hidden">MIC</div>
   </div>
 
   <!-- ===== ESC pause menu (in-match overlay) ===== -->
@@ -621,8 +632,36 @@
         </div>
         <button id="pause-help" class="btn-ghost">How to Play</button>
         <div id="pause-controls" class="pause-controls hidden"></div>
+        <button id="pause-social" class="btn-ghost">Voice &amp; Chat</button>
         <button id="pause-leave" class="btn-ghost pause-leave">Leave Match</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== Social: one-time Code-of-Conduct disclaimer ===== -->
+  <div id="conduct-modal" class="pause-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="conduct-title">
+    <div class="panel conduct-panel">
+      <h2 id="conduct-title" class="conduct-title">The Warlock's Code</h2>
+      <div class="conduct-body">
+        <p>Every warlock stepped into this arena to play. Keep it that way.</p>
+        <ul>
+          <li><strong>Respect everyone.</strong> No racism, hate speech, slurs, or harassment — ever. There's no version of this that's a joke.</li>
+          <li><strong>Taunt, don't trash-talk.</strong> Playful jabs, cocky banter, and a little smack talk are part of the fun. Cruelty, personal attacks, and toxic pile-ons are not.</li>
+          <li><strong>Put the aggression in your spells, not your words.</strong> Play hard, aim to win, keep it clean.</li>
+          <li><strong>Win with grace, lose with grit.</strong> Be the opponent you'd actually want to queue into — both directions.</li>
+        </ul>
+        <p>Voice and chat are a shared arena. You can <strong>mute anyone, anytime</strong> — it's instant, private, and they're never told. Break the Code and the arena isn't for you.</p>
+      </div>
+      <button id="conduct-enter" class="btn btn-forge" type="button">Enter the Arena</button>
+    </div>
+  </div>
+
+  <!-- ===== Social: settings panel (mic, PTT rebind, volume, mute list) ===== -->
+  <div id="social-settings" class="pause-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="social-title">
+    <div class="panel social-panel">
+      <h2 id="social-title" class="social-title">Voice &amp; Chat</h2>
+      <div id="social-settings-body"></div>
+      <button id="social-close" class="btn btn-ghost" type="button">Done</button>
     </div>
   </div>
 
