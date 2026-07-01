@@ -25,7 +25,7 @@ import {
   mobModelReady,
   buildMobModelInstance,
 } from "./mobModel.js";
-import { archetypeForEvent } from "./animations.js";
+import { archetypeForEvent, reactionForEvent } from "./animations.js";
 import { effectPos } from "./renderer-util.js";
 import { VFX_REGISTRY, getVfx } from "./vfx/duotone.js";
 import { buildChainBeam } from "./vfx/beams.js";
@@ -885,9 +885,22 @@ export class GameRenderer {
     if (mobModel) mobModel.triggerAttack();
   }
 
+  // Drive a victim's hit-reaction flinch from a "hit" sim event. Separate from
+  // _triggerCast because a hit reaction is keyed by ev.victim (who got hit),
+  // not ev.id/ev.a (who cast the ability) — see reactionForEvent's doc comment.
+  _triggerReaction(ev) {
+    const resolved = reactionForEvent(ev);
+    if (!resolved) return;
+    const e = this.playerMeshes.get(resolved.id);
+    if (!e) return;
+    const char = e.group.userData.character;
+    if (char && char.triggerReaction) char.triggerReaction(resolved.reaction);
+  }
+
   _processEvents(events) {
     for (const ev of events) {
       this._triggerCast(ev);
+      this._triggerReaction(ev);
       switch (ev.type) {
         case "hit":
           this._addEffect(this._burstAt(ev.x, ev.z, 0xffcc44, { count: 26, speed: 10 }));
@@ -1592,6 +1605,12 @@ export class GameRenderer {
           time: t,
           dt,
           channel: e.target.ca ? 1 : 0,
+          alive: e.target.al !== false,
+          stunned: (e.target.st || 0) > 0,
+          // Remote players only expose interpolated position, not real velocity,
+          // so approximate "being flung" as speed exceeding the normal movement
+          // cap — normal locomotion is clamped to maxSpeed, a knockback isn't.
+          knockSpeed: Math.max(0, e.spd - CFG.MOVE_SPEED),
         });
       } else {
         animateWarlock(e.group, {

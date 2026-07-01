@@ -19,12 +19,28 @@
         "textToImage": "019f1628-c28b-7ff5-91ba-5e6eb96740ab",
         "imageTo3d": "019f162b-0125-70cd-993a-7fa44acfef67",
         "remesh": "019f1631-7bfd-7650-8124-88c90f2b1662",
-        "rig": "019f1633-0883-7bad-bc0b-6395172e5378"
+        "rig": "019f1633-0883-7bad-bc0b-6395172e5378",
+        "animations": {
+          "death": "019f1e3f-8c45-76b5-b687-618f50ce54b1",
+          "hit": "019f1e3f-9844-7699-a2d4-60eba03fc32a",
+          "stun": "019f1e3f-a2e1-76be-98fa-6c3932076f33",
+          "knockback": "019f1e3f-ac24-76bf-9f58-944a52bc3bbb",
+          "victory": "019f1e40-08ca-7e16-bb1a-b24385579747",
+          "taunt": "019f1e40-18fc-7630-b37b-982c27974d8f",
+          "idle2": "019f1e40-2e28-76b6-a0a6-1f7b5c1eada3"
+        }
       },
       "files": [
         "undead-warlock-rigged.glb",
         "undead-warlock-walking.glb",
-        "undead-warlock-running.glb"
+        "undead-warlock-running.glb",
+        "undead-warlock-death.glb",
+        "undead-warlock-hit.glb",
+        "undead-warlock-stun.glb",
+        "undead-warlock-knockback.glb",
+        "undead-warlock-victory.glb",
+        "undead-warlock-taunt.glb",
+        "undead-warlock-idle2.glb"
       ]
     },
     {
@@ -36,12 +52,28 @@
         "textToImage": "019f162b-1299-70ce-9100-0addbaed1fb5",
         "imageTo3d": "019f162d-c7cf-70e7-bd6e-cb69e6de788f",
         "remesh": "019f1631-8493-7651-a601-70c53278adaf",
-        "rig": "019f1633-3051-7666-a1db-eaa63aef6674"
+        "rig": "019f1633-3051-7666-a1db-eaa63aef6674",
+        "animations": {
+          "death": "019f1e40-3e12-7e37-b748-1aefb5696b78",
+          "hit": "019f1e40-4aba-76cb-832a-0f510d4b8e83",
+          "stun": "019f1e40-54c3-7e45-90d1-20dd427c0b2c",
+          "knockback": "019f1e40-61b9-76ce-bd9c-670c0a5f496b",
+          "victory": "019f1e40-6ef5-7647-8853-54fadc285324",
+          "taunt": "019f1e40-79c2-7e50-bdc7-c504a5d1d56d",
+          "idle2": "019f1e40-83c9-7700-92e0-87af963589e2"
+        }
       },
       "files": [
         "archmage-rigged.glb",
         "archmage-walking.glb",
-        "archmage-running.glb"
+        "archmage-running.glb",
+        "archmage-death.glb",
+        "archmage-hit.glb",
+        "archmage-stun.glb",
+        "archmage-knockback.glb",
+        "archmage-victory.glb",
+        "archmage-taunt.glb",
+        "archmage-idle2.glb"
       ]
     },
     {
@@ -53,12 +85,28 @@
         "textToImage": "019f1650-e05b-734a-92c8-031eb6ad9386",
         "imageTo3d": "019f1651-e50a-736a-a203-9f682d14fc0f",
         "remesh": "019f1653-f714-73b9-b0ad-4ffa6d199402",
-        "rig": "019f1654-93c0-73da-9e87-db12a1a273c3"
+        "rig": "019f1654-93c0-73da-9e87-db12a1a273c3",
+        "animations": {
+          "death": "019f1e40-919f-76da-99dd-9e4b42696c1a",
+          "hit": "019f1e40-9fad-7e5e-a97c-98d7f5ac8644",
+          "stun": "019f1e40-ab50-764d-a393-0b6308c1afb9",
+          "knockback": "019f1e40-b8ae-7704-b7b2-0692f953014b",
+          "victory": "019f1e40-c24f-7e87-b489-ab5f436ddb6d",
+          "taunt": "019f1e40-cb5f-7e88-83b6-a48b84b13441",
+          "idle2": "019f1e40-d772-7e91-9f5d-2c9818c4f56a"
+        }
       },
       "files": [
         "orc-shaman-rigged.glb",
         "orc-shaman-walking.glb",
-        "orc-shaman-running.glb"
+        "orc-shaman-running.glb",
+        "orc-shaman-death.glb",
+        "orc-shaman-hit.glb",
+        "orc-shaman-stun.glb",
+        "orc-shaman-knockback.glb",
+        "orc-shaman-victory.glb",
+        "orc-shaman-taunt.glb",
+        "orc-shaman-idle2.glb"
       ]
     },
     {
@@ -70,12 +118,28 @@
         "textToImage": "019f162b-32eb-7c38-82cc-59508a64046a",
         "imageTo3d": "019f162d-dffc-7cfe-ae2f-77379e84e5d1",
         "remesh": "019f1631-a2eb-762d-bd72-0a28d18c5768",
-        "rig": "019f1633-7106-7bd1-a447-437204bcec72"
+        "rig": "019f1633-7106-7bd1-a447-437204bcec72",
+        "animations": {
+          "death": "019f1e40-e2a8-76f1-9a3f-9de3de94b717",
+          "hit": "019f1e40-f20c-76f3-b48d-7ddc3b15723e",
+          "stun": "019f1e40-ffc1-76f3-aed2-f67463db3b46",
+          "knockback": "019f1e41-0c64-7e9d-a81c-64f20b489ec8",
+          "victory": "019f1e41-18fa-769f-89fa-a45d639bb664",
+          "taunt": "019f1e41-2459-7729-ba7e-c5e64901b852",
+          "idle2": "019f1e41-2f0a-770e-abaa-5260cd552d20"
+        }
       },
       "files": [
         "bloodelf-mage-rigged.glb",
         "bloodelf-mage-walking.glb",
-        "bloodelf-mage-running.glb"
+        "bloodelf-mage-running.glb",
+        "bloodelf-mage-death.glb",
+        "bloodelf-mage-hit.glb",
+        "bloodelf-mage-stun.glb",
+        "bloodelf-mage-knockback.glb",
+        "bloodelf-mage-victory.glb",
+        "bloodelf-mage-taunt.glb",
+        "bloodelf-mage-idle2.glb"
       ]
     }
   ]
