@@ -2,8 +2,10 @@
 // runtime keeps the build asset-free while still giving every spell, hit, death
 // and round transition its own punchy, "juicy" voice. A light reverb bus and a
 // generative ambient pad round out the immersive feel.
+let _instance = null;
 export class AudioEngine {
   constructor() {
+    _instance = this;
     this.ctx = null;
     this.master = null;
     this.musicGain = null;
@@ -224,6 +226,43 @@ export class AudioEngine {
     }
   }
 
+  // Public: play a short UI/menu sting by name. Respects the SFX mute toggle.
+  menuCue(name) {
+    if (!this.enabled || !this.ctx) return;
+    switch (name) {
+      case "hover":
+        this._tone({ type: "sine", f0: 880, dur: 0.04, gain: 0.12 });
+        break;
+      case "confirm":
+        this._tone({ type: "triangle", f0: 330, f1: 180, dur: 0.12, gain: 0.26 });
+        this._noise({ dur: 0.05, gain: 0.08, type: "lowpass", freq: 900 });
+        break;
+      case "back":
+        this._tone({ type: "sine", f0: 440, f1: 174, dur: 0.12, gain: 0.22 });
+        break;
+      case "transition":
+        this._noise({ dur: 0.2, gain: 0.25, type: "bandpass", freq: 400, sweep: 2000, q: 0.7 });
+        break;
+      case "victory":
+        [523, 659, 784, 1046, 1318].forEach((f, i) =>
+          this._tone({ type: "triangle", f0: f, dur: 0.25, gain: 0.3, when: i * 0.12 }));
+        break;
+      case "defeat":
+        this._tone({ type: "sawtooth", f0: 220, f1: 110, dur: 0.5, gain: 0.25 });
+        this._tone({ type: "sine", f0: 82, f1: 55, dur: 0.5, gain: 0.2 });
+        break;
+      case "lockin":
+        this._tone({ type: "sine", f0: 1200, f1: 2000, dur: 0.1, gain: 0.2 });
+        this._noise({ dur: 0.06, gain: 0.12, type: "highpass", freq: 3000, sweep: 6000 });
+        break;
+      case "countdown":
+        this._tone({ type: "sine", f0: 1046, dur: 0.08, gain: 0.18 });
+        break;
+      default:
+        break;
+    }
+  }
+
   // Generative ambient music pad: a slow minor arpeggio under a drone.
   startMusic() {
     if (!this.ctx || !this.musicOn || this._musicNodes.length) return;
@@ -263,3 +302,6 @@ export class AudioEngine {
     this._musicNodes = [];
   }
 }
+
+// Module-level accessor so other ES modules can fire menu cues without the instance.
+export function menuCue(name) { return _instance?.menuCue(name); }
