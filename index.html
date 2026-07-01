@@ -446,15 +446,7 @@
                 <div class="tut-keys"><span class="tut-key-chip">Mouse</span></div>
               </div>
               <div class="tut-control-row">
-                <span class="tut-control-action">Fire (auto-attack)</span>
-                <div class="tut-keys"><kbd>Space</kbd> <span class="tut-key-or">or</span> <span class="tut-key-chip">Left Click</span></div>
-              </div>
-              <div class="tut-control-row">
-                <span class="tut-control-action">Cast selected spell</span>
-                <div class="tut-keys"><span class="tut-key-chip">Right Click</span></div>
-              </div>
-              <div class="tut-control-row">
-                <span class="tut-control-action">Cast by hotkey</span>
+                <span class="tut-control-action">Cast spell</span>
                 <div class="tut-keys"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd><kbd>6</kbd><kbd>7</kbd><kbd>8</kbd><kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd><kbd>F</kbd><kbd>C</kbd><kbd>V</kbd><kbd>X</kbd><kbd>Z</kbd><kbd>T</kbd><kbd>G</kbd><kbd>B</kbd><kbd>H</kbd></div>
               </div>
               <div class="tut-control-row">
@@ -490,10 +482,10 @@
 
         <div class="tut-practice-cta">
           <button id="btn-practice" class="btn btn-forge">
-            <span class="btn-label">Practice vs Bot</span>
+            <span class="btn-label">Practice Mode</span>
             <span class="btn-spark" aria-hidden="true"></span>
           </button>
-          <p class="tut-practice-hint">Solo match vs one Smart bot — starts instantly, no lobby needed.</p>
+          <p class="tut-practice-hint">Pick any spell loadout, then spawn dummy targets on demand — no bots, no shrinking arena, you can't die.</p>
         </div>
       </div><!-- #screen-tutorial -->
 
@@ -596,6 +588,24 @@
     <div id="center-msg" class="center-msg hidden"></div>
     <div id="ability-bar" class="hidden"></div>
     <div id="item-bar" class="hidden"></div>
+    <div id="practice-panel" class="practice-panel hidden">
+      <div class="practice-panel-title">Practice — Spawn Dummy</div>
+      <div class="practice-panel-buttons">
+        <button class="btn-ghost practice-spawn-btn" data-mob="stoneGiant">Stone Giant</button>
+        <button class="btn-ghost practice-spawn-btn" data-mob="stormingVortex">Storming Vortex</button>
+        <button class="btn-ghost practice-spawn-btn" data-mob="giantDwarf">Giant Dwarf</button>
+        <button class="btn-ghost practice-spawn-btn" data-mob="fireElemental">Fire Elemental</button>
+      </div>
+      <button id="practice-clear-dummies" class="btn-ghost practice-clear-btn">Clear Dummies</button>
+      <div id="practice-dummy-list" class="practice-dummy-list"></div>
+      <div class="practice-panel-divider"></div>
+      <button id="practice-change-loadout" class="btn-ghost practice-loadout-btn">Change Abilities</button>
+      <label id="practice-no-cd-row" class="practice-toggle-row">
+        <input type="checkbox" id="practice-no-cd" />
+        <span class="practice-toggle-switch" aria-hidden="true"></span>
+        <span class="practice-toggle-label">No cooldowns</span>
+      </label>
+    </div>
     <div id="audio-controls">
       <button id="btn-sfx">SFX: On</button>
       <button id="btn-music">Music: On</button>

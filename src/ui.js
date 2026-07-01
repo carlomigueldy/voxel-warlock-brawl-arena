@@ -58,6 +58,12 @@ export class UI {
       // Tutorial
       tutSpellbookList: $("tut-spellbook-list"),
       btnPractice: $("btn-practice"),
+      // Practice-mode dummy spawn panel.
+      practicePanel: $("practice-panel"),
+      practiceClearDummies: $("practice-clear-dummies"),
+      practiceDummyList: $("practice-dummy-list"),
+      practiceChangeLoadout: $("practice-change-loadout"),
+      practiceNoCd: $("practice-no-cd"),
       // ESC pause menu
       pauseMenu: $("pause-menu"), pauseResume: $("pause-resume"),
       pauseSfx: $("pause-sfx"), pauseMusic: $("pause-music"),
@@ -1133,6 +1139,22 @@ export class UI {
     if (this.el.pauseResume) this.el.pauseResume.onclick = () => { this.hidePause(); this.handlers.resume?.(); };
     if (this.el.pauseLeave) this.el.pauseLeave.onclick = () => this.handlers.leaveMatch?.();
     if (this.el.pauseHelp) this.el.pauseHelp.onclick = () => this._togglePauseControls();
+
+    // Practice-mode dummy spawn panel — one button per big-mob type.
+    if (this.el.practicePanel) {
+      this.el.practicePanel.querySelectorAll(".practice-spawn-btn").forEach((btn) => {
+        btn.onclick = () => this.handlers.spawnDummy?.(btn.dataset.mob);
+      });
+    }
+    if (this.el.practiceClearDummies) {
+      this.el.practiceClearDummies.onclick = () => this.handlers.clearDummies?.();
+    }
+    if (this.el.practiceChangeLoadout) {
+      this.el.practiceChangeLoadout.onclick = () => this.openLoadoutEditor(this._lastSnapshot, this._lastLocalId);
+    }
+    if (this.el.practiceNoCd) {
+      this.el.practiceNoCd.onchange = () => this.handlers.toggleNoCooldown?.(this.el.practiceNoCd.checked);
+    }
   }
 
   _tryJoin() {
@@ -1252,7 +1274,7 @@ export class UI {
     this._renderQR(this._inviteLink());
   }
 
-  showGame() {
+  showGame(practiceMode = false) {
     this.preview?.stop();
     this.el.menu.classList.add("hidden");
     this.el.lobby.classList.add("hidden");
@@ -1262,6 +1284,7 @@ export class UI {
     this._buildItemBar();
     if (this.el.itemBar) this.el.itemBar.classList.remove("hidden");
     if (this._touchEnabled && this.el.touch) this.el.touch.classList.remove("hidden");
+    this.el.practicePanel?.classList.toggle("hidden", !practiceMode);
   }
 
   // ---- ESC pause menu ----
@@ -1404,6 +1427,10 @@ export class UI {
         if (e.key === "Escape") {
           e.stopPropagation();
           e.preventDefault();
+          // Practice-mode loadout editor: Esc just closes (dynamic check —
+          // this listener is bound once per overlay lifetime, so it must
+          // route by current state rather than the onAction it closed over).
+          if (this._loadoutEditorOpen) { this.closeLoadoutEditor(); return; }
           onAction?.({ action: "clear" });
           return;
         }
@@ -1484,6 +1511,89 @@ export class UI {
     }
   }
 
+  // ---- Practice mode: on-the-go loadout editor (reuses the draft overlay) ----
+
+  /**
+   * Open the spell-draft overlay as a practice-only "Change Abilities" editor.
+   * Unlike showSpellDraft() (phase-driven, dispatches through sim.applyDraft),
+   * this is opened on demand and keeps its picks purely local in the UI layer
+   * — it never touches player.draftPick/draftReady, so it can't interfere with
+   * real draft-phase state. Confirm fires handlers.changeLoadout(ids); Esc/close
+   * just discards the edit.
+   */
+  openLoadoutEditor(snapshot, localId) {
+    const overlay = this.el.spellDraft;
+    if (!overlay) return;
+    const me = snapshot?.players?.find((p) => p.id === localId);
+    const current = (me?.spellSlots || []).filter((id) => id && id !== "fireball");
+    this._loadoutPicks = current.slice(0, CFG.SPELL_SLOT_COUNT);
+    this._loadoutEditorOpen = true;
+    this._loadoutEditorLocalId = localId;
+
+    const onAction = (action) => {
+      switch (action.action) {
+        case "toggle": {
+          const id = action.spell;
+          const i = this._loadoutPicks.indexOf(id);
+          if (i >= 0) this._loadoutPicks.splice(i, 1);
+          else if (this._loadoutPicks.length < CFG.SPELL_SLOT_COUNT) this._loadoutPicks.push(id);
+          break;
+        }
+        case "template": {
+          const t = SPELL_TEMPLATES?.[action.template];
+          if (t) {
+            this._loadoutPicks = t.spells
+              .filter((id) => SPELLS[id] && id !== "fireball")
+              .slice(0, CFG.SPELL_SLOT_COUNT);
+          }
+          break;
+        }
+        case "clear":
+          this._loadoutPicks = [];
+          break;
+        case "ready":
+          this.handlers.changeLoadout?.([...this._loadoutPicks]);
+          this.closeLoadoutEditor();
+          return;
+        default:
+          break;
+      }
+      this._refreshLoadoutEditor();
+    };
+
+    // Rebuild the overlay skeleton bound to this local onAction (cards/ready
+    // button listeners are freshly wired on every build; the shared Escape
+    // handler routes dynamically via _loadoutEditorOpen — see _buildDraftOverlay).
+    this._buildDraftOverlay(onAction);
+    this._draftBuilt = true;
+    overlay.classList.remove("hidden");
+    this._draftPreviousFocus = document.activeElement;
+    const firstBtn = overlay.querySelector("button:not([disabled])");
+    if (firstBtn) firstBtn.focus();
+    this._refreshLoadoutEditor();
+  }
+
+  /** Refresh the loadout editor using the shared draft-overlay refresh helper,
+   *  fed a synthetic snapshot so real player.draftPick/draftReady are untouched. */
+  _refreshLoadoutEditor() {
+    const fakeSnapshot = {
+      timer: 0,
+      players: [{ id: this._loadoutEditorLocalId, draftPick: this._loadoutPicks, draftReady: false }],
+    };
+    this._refreshDraftOverlay(fakeSnapshot, this._loadoutEditorLocalId);
+    if (this.el.draftTimer) this.el.draftTimer.textContent = "";
+    if (this.el.draftReady) {
+      const label = this.el.draftReady.querySelector(".btn-label");
+      if (label) label.textContent = "Confirm";
+    }
+  }
+
+  /** Close the loadout editor without applying changes (Esc / after Confirm). */
+  closeLoadoutEditor() {
+    this._loadoutEditorOpen = false;
+    this.hideSpellDraft();
+  }
+
   /** Toggle the pause overlay; returns the new paused (visible) state. */
   togglePause() {
     if (this._paused) { this.hidePause(); return false; }
@@ -1505,8 +1615,7 @@ export class UI {
     const rows = [
       ["Move", "W A S D / Arrow keys"],
       ["Aim", "Mouse"],
-      ["Fire", "Space / Left-click"],
-      ["Cast selected", "Right-click"],
+      ["Cast spell", "Ability hotkeys (below)"],
     ];
     // Customizable ability-slot hotkeys (reflect any player remaps).
     const slotKeys = this.spellSlotHotkeys || CFG.DEFAULT_SPELL_SLOT_HOTKEYS;
@@ -1564,10 +1673,17 @@ export class UI {
 
   // ---- in-game HUD ----
   updateHUD(snapshot, localId, meta) {
+    // Cached for the practice-mode "Change Abilities" button, which opens the
+    // loadout editor on demand (outside the phase-driven draft flow below).
+    this._lastSnapshot = snapshot;
+    this._lastLocalId = localId;
+
     // Step 6: spell draft overlay — show when drafting, hide otherwise.
     if (snapshot.phase === "spellSelection") {
       this.showSpellDraft(snapshot, localId, (action) => this.handlers.draft?.(action));
-    } else {
+    } else if (!this._loadoutEditorOpen) {
+      // Practice-mode loadout editor manually opened the same overlay while
+      // phase is "playing" — don't let this per-frame phase check stomp it.
       this.hideSpellDraft();
     }
 
@@ -1653,6 +1769,26 @@ export class UI {
         chip.title = label;
         chip.textContent = label[0];
         this.el.statusIcons.appendChild(chip);
+      }
+    }
+
+    // Practice-mode dummy HP readout — only rendered while the panel is visible.
+    if (this.el.practiceDummyList && this.el.practicePanel && !this.el.practicePanel.classList.contains("hidden")) {
+      const dummies = (snapshot.mobs || []).filter((m) => m.dummy);
+      this.el.practiceDummyList.replaceChildren();
+      if (!dummies.length) {
+        const empty = document.createElement("div");
+        empty.className = "practice-dummy-empty";
+        empty.textContent = "No dummies spawned.";
+        this.el.practiceDummyList.appendChild(empty);
+      } else {
+        for (const m of dummies) {
+          const row = document.createElement("div");
+          row.className = "practice-dummy-row";
+          const name = CFG.MOB_TYPES[m.type]?.name || m.type;
+          row.innerHTML = `<span>${escapeHTML(name)}</span><span class="pd-hp">${m.hp}/${m.max}</span>`;
+          this.el.practiceDummyList.appendChild(row);
+        }
       }
     }
 

@@ -67,13 +67,17 @@ function startHosting(name, options = {}) {
   ui.setMenuStatus("Creating room…");
 
   const sim = new Simulation({
-    mobsEnabled: options.mobsEnabled,
+    // Practice mode spawns zero mobs automatically (dummies are spawned
+    // on-demand via the practice panel — see spawnDummy() below).
+    mobsEnabled: options.practice ? false : options.mobsEnabled,
     arenaWorld: options.arenaWorld,
     landSize: options.landSize,
     enabledObstacles: options.enabledObstacles,
-    // Spell draft is always-on for multiplayer matches; practice mode jumps
-    // straight to gameplay so skips the draft phase entirely.
-    draftEnabled: !options.practice,
+    // Spell draft is always-on, including practice mode, so the player can
+    // freely pick any loadout from the full spell list before testing it.
+    draftEnabled: true,
+    // Fixed arena, invulnerable player, no death-driven round end — see sim.js.
+    practiceMode: !!options.practice,
   });
 
   host = new Host({
@@ -89,12 +93,12 @@ function startHosting(name, options = {}) {
         userId: getUser()?.id || null,
       });
       if (options.practice) {
-        // Practice mode: add one Smart bot and skip the lobby straight to the game.
-        sim.setBotRoster(1, "smart");
-        syncBotMeta();
+        // Practice mode: no auto-spawned hostiles — the arena starts empty
+        // and the lobby is skipped straight to the game (spell draft, then
+        // dummies spawned on demand via the practice panel).
         if (sim.startMatch()) {
           host.broadcast({ type: MSG.START, round: sim.round });
-          ui.showGame();
+          ui.showGame(true);
           inGame = true;
         } else {
           // Fallback: show the lobby so practice never dead-ends.
@@ -145,6 +149,21 @@ function startHosting(name, options = {}) {
   // Host handles draft picks from its own UI locally; clients send them over the wire.
   ui.on("draft", (action) => {
     sim.applyDraft(localId, action);
+  });
+
+  // Practice-mode dummy panel — host-local only (practice is always solo, no
+  // remote peers), so it talks to the sim directly rather than over the wire.
+  ui.on("spawnDummy", (type) => {
+    if (sim.practiceMode) sim.spawnDummyMob(type);
+  });
+  ui.on("clearDummies", () => {
+    if (sim.practiceMode) sim.clearDummies();
+  });
+  ui.on("changeLoadout", (ids) => {
+    if (sim.practiceMode) sim.changeLoadout(localId, ids);
+  });
+  ui.on("toggleNoCooldown", (on) => {
+    if (sim.practiceMode) sim.setPracticeNoCooldown(on);
   });
 
   ui.on("bots", () => {
