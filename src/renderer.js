@@ -5,12 +5,13 @@ import * as THREE from "three";
 import { CFG, SPELLS, isOnArenaWorld } from "./config.js";
 import { Arena } from "./arena.js";
 import {
-  buildWarlock, buildBolt, animateWarlock,
+  buildWarlock, animateWarlock,
   buildBurst, buildLightning, buildMeteor, buildRune, buildItemDrop,
   buildPlateau, buildRamp,
   buildMobByType, animateMob,
   buildStormClouds,
 } from "./voxel.js";
+import { acquireBolt, releaseBolt } from "./pool.js";
 import { PROP_BUILDERS } from "./props.js";
 import {
   loadCharacterTemplate,
@@ -101,6 +102,16 @@ export class GameRenderer {
     glow.position.set(0, -6, 0);
     this.scene.add(glow);
     this._hazardGlow = glow;
+
+    // Shared pool of dynamic point lights reused across active bolts, instead
+    // of a per-bolt PointLight (expensive: each adds a full shadow-less light
+    // to the render loop). Assigned to nearest bolts each frame in update().
+    this._boltLightPool = [];
+    for (let i = 0; i < CFG.LIGHT_POOL_SIZE; i++) {
+      const l = new THREE.PointLight(0xffffff, 0, 6);
+      this.scene.add(l);
+      this._boltLightPool.push(l);
+    }
   }
 
   // Tint the under-glow light and the scene fog/background to match the active
@@ -283,7 +294,7 @@ export class GameRenderer {
       boltSeen.add(b.id);
       let m = this.boltMeshes.get(b.id);
       if (!m) {
-        m = buildBolt(b.c, b.k || "fireball");
+        m = acquireBolt(b.c, b.k || "fireball");
         this.scene.add(m);
         this.boltMeshes.set(b.id, m);
       }
@@ -291,7 +302,7 @@ export class GameRenderer {
     }
     for (const id of [...this.boltMeshes.keys()]) {
       if (!boltSeen.has(id)) {
-        this.scene.remove(this.boltMeshes.get(id));
+        releaseBolt(this.boltMeshes.get(id));
         this.boltMeshes.delete(id);
       }
     }
@@ -310,7 +321,9 @@ export class GameRenderer {
     }
     for (const id of [...this.meteorMeshes.keys()]) {
       if (!metSeen.has(id)) {
-        this.scene.remove(this.meteorMeshes.get(id));
+        const mg = this.meteorMeshes.get(id);
+        mg.userData.dispose?.();
+        this.scene.remove(mg);
         this.meteorMeshes.delete(id);
       }
     }
@@ -405,7 +418,9 @@ export class GameRenderer {
     }
     for (const id of [...this.mobMeshes.keys()]) {
       if (!mobSeen.has(id)) {
-        this.scene.remove(this.mobMeshes.get(id).group);
+        const eg = this.mobMeshes.get(id).group;
+        eg.userData.dispose?.();
+        this.scene.remove(eg);
         this.mobMeshes.delete(id);
         // Clean up any lingering channel decal if the mob was removed mid-channel.
         if (this.mobChannelDecals.has(id)) {
@@ -988,6 +1003,28 @@ export class GameRenderer {
     for (const m of this.boltMeshes.values()) {
       m.rotation.y += dt * 6;
       m.rotation.x += dt * 4;
+    }
+
+    // Assign the shared pool of dynamic point lights to the bolts nearest the
+    // local player (fixed light count instead of one PointLight per bolt).
+    {
+      const localE = this.playerMeshes.get(this.localId);
+      const origin = localE ? localE.group.position : this.camera.position;
+      const active = [...this.boltMeshes.values()];
+      active.sort((a, b) => a.position.distanceToSquared(origin) - b.position.distanceToSquared(origin));
+      const pool = this._boltLightPool;
+      for (let i = 0; i < pool.length; i++) {
+        const light = pool[i];
+        const bolt = active[i];
+        if (bolt) {
+          light.position.copy(bolt.position);
+          const core = bolt.userData.core;
+          if (core && core.material && core.material.color) light.color.copy(core.material.color);
+          light.intensity = 1.2;
+        } else {
+          light.intensity = 0;
+        }
+      }
     }
 
     for (const g of this.runeMeshes.values()) {

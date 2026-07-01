@@ -204,6 +204,10 @@ export const CFG = {
   ],
   DEFAULT_CHARACTER: "ember",
 
+  // --- Performance ---
+  LIGHT_POOL_SIZE: 4,      // shared dynamic PointLights reused across active projectiles
+  BURST_MAX_PARTICLES: 18, // hard cap on shard particles per burst effect
+
   // --- Mobs ---
   // Neutral PvE mobs that spawn during the PLAYING phase and drop ability runes
   // on death.  Stats live here; class / AI / physics live in src/mob.js.

@@ -319,8 +319,9 @@ test("renderer builds projectiles and runes procedurally (no Meshy GLB loading)"
 });
 
 test("renderer builds bolts and runes via the procedural voxel builders", () => {
-  assert.match(renderer, /buildBolt\(b\.c, b\.k \|\| "fireball"\)/);
+  assert.match(renderer, /acquireBolt\(b\.c, b\.k \|\| "fireball"\)/);
   assert.match(renderer, /buildRune\(r\.c \|\| 0xffffff\)/);
+  assert.match(fs.readFileSync("src/pool.js", "utf8"), /buildBolt\(color, kind\)/);
 });
 
 test("loader preloads only character GLBs (no Meshy fetch priming)", () => {

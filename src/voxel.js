@@ -297,8 +297,19 @@ function applyVoxelCastOverlay(rig, cast, time) {
 // while reusing the same flat-shaded emissive recipe (polyhedron core + translucent
 // faceted halo + light). Cores use different polyhedra per kind so fireball /
 // homing / splitter / bouncer / boomerang all read differently at a glance.
-export function buildBolt(color, kind = "fireball") {
-  const g = new THREE.Group();
+// --- Shared bolt geometry/material caches -----------------------------
+// Bolt core/halo/blade geometry is identical across every instance of a
+// given `kind`; only color varies (and only among a small fixed palette of
+// spell colors), so we memoize geometry per-kind and materials per
+// `kind|color` and NEVER dispose these — they are cache-owned, not
+// instance-owned. This lets src/pool.js reuse whole bolt Groups across
+// projectile spawns without rebuilding geometry/materials every shot.
+const _boltGeoCache = new Map(); // kind -> { coreGeo, haloGeo, bladeGeo, coreR, haloR, haloOp }
+const _boltMatCache = new Map(); // `${kind}|${color}` -> { coreMat, haloMat, bladeMat }
+
+function _boltGeoFor(kind) {
+  let entry = _boltGeoCache.get(kind);
+  if (entry) return entry;
   let coreR = 0.34, haloR = 0.62, haloOp = 0.25;
   switch (kind) {
     case "boomerang": coreR = 0.40; haloR = 0.80; break;
@@ -313,25 +324,78 @@ export function buildBolt(color, kind = "fireball") {
     kind === "homing"    ? new THREE.DodecahedronGeometry(coreR, 0) :
     kind === "splitter"  ? new THREE.TetrahedronGeometry(coreR * 1.15, 0) :
                            new THREE.IcosahedronGeometry(coreR, 1);
-  const core = new THREE.Mesh(coreGeo, new THREE.MeshLambertMaterial({
+  const haloGeo = new THREE.IcosahedronGeometry(haloR, 0);
+  const bladeGeo = kind === "boomerang" ? new THREE.OctahedronGeometry(0.5, 0) : null;
+  entry = { coreGeo, haloGeo, bladeGeo, coreR, haloR, haloOp };
+  _boltGeoCache.set(kind, entry);
+  return entry;
+}
+
+function _boltMatFor(kind, color) {
+  const key = `${kind}|${color}`;
+  let entry = _boltMatCache.get(key);
+  if (entry) return entry;
+  const { haloOp } = _boltGeoFor(kind);
+  const coreMat = new THREE.MeshLambertMaterial({
     color, emissive: color, emissiveIntensity: 1.4, flatShading: true,
-  }));
+  });
+  const haloMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: haloOp,
+  });
+  const bladeMat = kind === "boomerang"
+    ? new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 1.2, flatShading: true })
+    : null;
+  entry = { coreMat, haloMat, bladeMat };
+  _boltMatCache.set(key, entry);
+  return entry;
+}
+
+export function buildBolt(color, kind = "fireball") {
+  const g = new THREE.Group();
+  const geo = _boltGeoFor(kind);
+  const mat = _boltMatFor(kind, color);
+
+  const core = new THREE.Mesh(geo.coreGeo, mat.coreMat);
+  core.castShadow = false;
   core.rotation.set(0.6, 0.6, 0);
-  const halo = facetedAura(haloR, color, { opacity: haloOp });
+
+  const halo = new THREE.Mesh(geo.haloGeo, mat.haloMat);
+  halo.castShadow = false;
+  halo.receiveShadow = false;
   halo.rotation.set(0.6, 0.6, 0);
+
   g.add(halo, core);
+
+  let blade = null, blade2 = null;
   if (kind === "boomerang") {
     // Faceted cross-blades so it reads as a spinning boomerang.
-    const blade = facetedShard(1.2, color, { emissive: color, emissiveIntensity: 1.2, cast: false });
+    blade = new THREE.Mesh(geo.bladeGeo, mat.bladeMat);
+    blade.castShadow = false;
+    blade.scale.set(0.25, 1.2, 0.25);
     blade.rotation.z = Math.PI / 2;
     g.add(blade);
-    const blade2 = facetedShard(1.2, color, { emissive: color, emissiveIntensity: 1.2, cast: false });
+    blade2 = new THREE.Mesh(geo.bladeGeo, mat.bladeMat);
+    blade2.castShadow = false;
+    blade2.scale.set(0.25, 1.2, 0.25);
     blade2.rotation.x = Math.PI / 2;
     g.add(blade2);
   }
-  const light = new THREE.PointLight(color, 1.2, 6);
-  g.add(light);
+
   g.userData.kind = kind;
+  g.userData.core = core;
+  g.userData.halo = halo;
+  g.userData.blade = blade;
+  g.userData.blade2 = blade2;
+  g.userData.recolor = (newColor) => {
+    const m = _boltMatFor(g.userData.kind, newColor);
+    core.material = m.coreMat;
+    halo.material = m.haloMat;
+    if (blade) blade.material = m.bladeMat;
+    if (blade2) blade2.material = m.bladeMat;
+  };
+  // No per-instance resources beyond the group itself — geometry/materials
+  // are cache-owned and shared, so there is nothing safe to dispose here.
+  g.userData.dispose = () => {};
   return g;
 }
 
@@ -355,14 +419,23 @@ export function buildRune(color) {
 // with a per-frame `update(dt)` and a `done` flag the renderer polls. Particles
 // are faceted shards (octahedra) so impacts scatter sharp flat-shaded fragments.
 export function buildBurst(color, opts = {}) {
-  const count = opts.count || 14;
+  const count = Math.min(opts.count || 14, CFG.BURST_MAX_PARTICLES);
   const speed = opts.speed || 6;
   const size = opts.size || 0.22;
   const life = opts.life || 0.5;
   const g = new THREE.Group();
   const parts = [];
+  // All shards in a single burst share one octahedron geometry (only scale
+  // and material opacity vary per-particle), cutting per-burst geometry
+  // allocations from `count` down to 1.
+  const shardGeo = new THREE.OctahedronGeometry(0.5, 0);
   for (let i = 0; i < count; i++) {
-    const m = facetedShard(size, color, { emissive: color, emissiveIntensity: 0.8, transparent: true, cast: false });
+    const mat = new THREE.MeshLambertMaterial({
+      color, emissive: color, emissiveIntensity: 0.8, flatShading: true, transparent: true,
+    });
+    const m = new THREE.Mesh(shardGeo, mat);
+    m.castShadow = false;
+    m.scale.set(0.25, size, 0.25);
     const a = Math.random() * Math.PI * 2;
     const el = (Math.random() - 0.3) * 1.4;
     const sp = speed * (0.5 + Math.random());
@@ -383,6 +456,12 @@ export function buildBurst(color, opts = {}) {
       m.scale.setScalar(Math.max(0.05, 1 - k));
     }
     if (k >= 1) g.userData.done = true;
+  };
+  // Per-instance resources: the shared shardGeo (owned by this burst only,
+  // not a global cache) and each particle's own material.
+  g.userData.dispose = () => {
+    shardGeo.dispose();
+    for (const m of parts) m.material?.dispose();
   };
   return g;
 }
@@ -449,6 +528,17 @@ export function buildMeteor(x, z, fall, radius, color) {
     ring.material.opacity = 0.3 + 0.4 * k;
     ring.scale.setScalar(1 + 0.1 * Math.sin(k * 20));
     light.position.y = rock.position.y;
+  };
+  // Per-instance geometry/materials (meteor rock/ring are built fresh per
+  // meteor, unlike the shared bolt caches) — safe to dispose on cleanup.
+  g.userData.dispose = () => {
+    g.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+        else obj.material.dispose();
+      }
+    });
   };
   return g;
 }
@@ -1430,15 +1520,32 @@ export function animateMob(group, state) {
 }
 
 // Dispatcher used by the renderer to build the right mesh for a given type.
+// All mob builders (buildStoneGiant/buildStormingVortex/etc.) build fully
+// per-instance geometry/materials, so buildMobByType attaches a generic
+// dispose() (mirroring buildItemDrop's) so the renderer can release GPU
+// resources on despawn/prune instead of leaking them on churn.
 export function buildMobByType(type, color) {
+  let g;
   switch (type) {
-    case "stoneGiant":     return buildStoneGiant(color);
-    case "stormingVortex": return buildStormingVortex(color);
-    case "giantDwarf":     return buildGiantDwarf(color);
-    case "fireElemental":  return buildFireElemental(color);
-    case "minion":         return buildMinion(color);
-    default:               return buildMinion(color);
+    case "stoneGiant":     g = buildStoneGiant(color); break;
+    case "stormingVortex": g = buildStormingVortex(color); break;
+    case "giantDwarf":     g = buildGiantDwarf(color); break;
+    case "fireElemental":  g = buildFireElemental(color); break;
+    case "minion":         g = buildMinion(color); break;
+    default:               g = buildMinion(color); break;
   }
+  if (!g.userData.dispose) {
+    g.userData.dispose = () => {
+      g.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+          else obj.material.dispose();
+        }
+      });
+    };
+  }
+  return g;
 }
 
 // Back-compat aliases (older callers / any external refs).

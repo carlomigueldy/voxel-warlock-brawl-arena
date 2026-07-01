@@ -8,6 +8,7 @@ import { UI } from "./ui.js";
 import { AudioEngine } from "./audio.js";
 import { CharacterPreview } from "./preview.js";
 import { preloadAssets } from "./loader.js";
+import { perf } from "./perf.js";
 
 // Online services — all modules no-op gracefully when Supabase is not configured.
 import { isEnabled } from "./supabase.js";
@@ -23,6 +24,9 @@ const audio = new AudioEngine();
 renderer.setAudio(audio);
 ui.setAudio(audio);
 ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
+
+// Dev FPS/stats overlay — OFF by default; enable with ?stats=1 or F3.
+perf.init();
 
 // Live 360° character preview — wired up immediately so it warms up behind
 // the loader screen. preview.start() is also called in ui.showMenu() but it
@@ -232,7 +236,9 @@ function startHosting(name, options = {}) {
           _teardownOnlineRoom(snap);
         }
       }
+      perf.begin();
       renderer.update();
+      perf.end();
     } catch (err) {
       console.error("[hostLoop] frame error (continuing):", err);
     }
@@ -326,7 +332,9 @@ function startJoining(name, code, character, { userId, region } = {}) {
           playTransitionAudio(latestSnapshot);
         }
       }
+      perf.begin();
       renderer.update();
+      perf.end();
     } catch (err) {
       console.error("[clientLoop] frame error (continuing):", err);
     }
