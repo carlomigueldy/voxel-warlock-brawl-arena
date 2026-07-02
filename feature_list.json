@@ -1466,6 +1466,189 @@
       "blocks": [
         "feat-region-matchmaking"
       ]
+    },
+    {
+      "id": "EPIC-V1-R3F",
+      "title": "Migrate client to React + Vite + React Three Fiber + TypeScript",
+      "type": "epic",
+      "phase": "v1",
+      "area": "infra",
+      "status": "in_progress",
+      "priority": "P0",
+      "labels": [
+        "epic",
+        "v1",
+        "migration",
+        "rendering",
+        "ui",
+        "infra"
+      ],
+      "issue": {
+        "number": 100,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/100"
+      },
+      "parent": null,
+      "dependencies": [
+        "none"
+      ],
+      "subissues": [
+        "FEAT-V1-R3F-P0-00",
+        "FEAT-V1-R3F-P0-01",
+        "FEAT-V1-R3F-P0-02",
+        "FEAT-V1-R3F-P0-03"
+      ],
+      "acceptance_criteria": [
+        "npm run dev/build/preview serve the game; no CDN runtime dependency",
+        "typecheck+lint+test+build gates all green; feature_list.json valid",
+        "Every feature preserved (33 spells, 10 items, 4 characters+clips, 4 mobs, 5 arenas, P2P room/QR/invite + Supabase mm/accounts/leaderboards, chat/voice/social, onboarding, HUD/menus/juice)",
+        "Declarative R3F render layer at visual parity with the legacy renderer (replay+screenshot signed)",
+        "Legacy prototype removed; Vercel deploy loads with COOP/COEP, PWA installable, SEO/OG unchanged"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md",
+        "AGENTS.md",
+        ".agents/harness/fleet-loop.md"
+      ],
+      "summary": "Strangler-fig migration of the whole client from vanilla JS+Three.js (CDN import map) to React+Vite+React Three Fiber+TypeScript. Full declarative R3F scene orchestration with pure-TS leaf builders; zero feature regressions via legacy-as-golden + deterministic sim-replay + screenshot parity. Autonomous fleet: Sonnet implementers + Haiku scouts + Sonnet/Opus review, gated merges into feat/epic-100-integration."
+    },
+    {
+      "id": "FEAT-V1-R3F-P0-00",
+      "title": "chore(setup): project-scoped refactor skills + backlog seed",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "in_progress",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "infra"
+      ],
+      "issue": {
+        "number": 101,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/101"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "5 skills installed project-scoped under .claude/skills/ (vite, vitest, typescript-advanced-types, vercel-react-best-practices, request-refactor-plan)",
+        "feature_list.json seeded with epic+P0 sub-issues, valid JSON",
+        "No app code touched"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Install project-scoped refactor/migration skills for fleet implementers and seed the backlog mirror."
+    },
+    {
+      "id": "FEAT-V1-R3F-P0-01",
+      "title": "chore(build): stand up Vite/TS/Vitest toolchain + flip CDN->npm deps",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "infra"
+      ],
+      "issue": {
+        "number": 102,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/102"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P0-00"
+      ],
+      "acceptance_criteria": [
+        "vite dev + build+preview boot the unmodified vanilla game",
+        "three/supabase-js/peerjs/qrcode from npm; no CDN runtime calls; three/addons aliased",
+        "all GLB+mp3 load dev+build via public/",
+        "Supabase creds via import.meta.env.VITE_*; graceful when absent",
+        "COOP/COEP in vite dev; live host/join smoke passes",
+        "lint/format/typecheck gates exist and pass; npm test still runs"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Stand up the Vite/TS/Vitest/ESLint toolchain and flip dependency delivery from the CDN import map/global scripts to npm, keeping the vanilla game 100% playable."
+    },
+    {
+      "id": "FEAT-V1-R3F-P0-02",
+      "title": "test(build): port test suite to Vitest + fix fragile tests",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "infra"
+      ],
+      "issue": {
+        "number": 103,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/103"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P0-01"
+      ],
+      "acceptance_criteria": [
+        "11 stable suites green under vitest run",
+        "matchmaking.test uses vi.mock (data:URL hack removed)",
+        "source.test.mjs split into disjoint guard.{sim,render,ui,net,assets} files",
+        "npm test = vitest run; all green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the node:assert suites to Vitest and repair the two fragile tests (matchmaking source-rewrite, source-regex guard)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P0-03",
+      "title": "test(build): deterministic sim-replay harness + fixtures",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "infra"
+      ],
+      "issue": {
+        "number": 104,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/104"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P0-01"
+      ],
+      "acceptance_criteria": [
+        "Documented fixture format seed+config+inputTimeline -> deterministic Snapshot[]",
+        "stepper replays a fixture identically twice (asserted)",
+        "record-replay.mjs records a fixture",
+        "seed fixtures (a spell cast, a mob spawn, an arena shrink) committed",
+        "no app src behavior change"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Deterministic seeded sim-replay harness: the foundation of the zero-regression visual-parity safety net."
     }
   ]
 }
