@@ -2,7 +2,7 @@
 // the host or received from the network) and draws the world. Also owns the
 // camera that follows the local warlock.
 import * as THREE from "three";
-import { CFG, SPELLS, isOnArenaWorld } from "./config.js";
+import { CFG, SPELLS, ITEMS, isOnArenaWorld } from "./config.js";
 import * as social from "./social.js";
 import { Arena } from "./arena.js";
 import {
@@ -1253,10 +1253,29 @@ export class GameRenderer {
           this._addEffect(this._burstAt(ev.x, ev.z, 0x7cff5a, { count: 18, speed: 6 }));
           this.audio?.play("cast", this._panFor(ev.x || 0));
           break;
-        case "itemPickup":
+        case "itemPickup": {
           this._addEffect(this._burstAt(ev.x, ev.z, 0xffd23c, { count: 20, speed: 7, life: 0.5 }));
           this._addEffect(this._ringPulse(ev.x, ev.z, 1.8, 0xffd23c));
-          this.audio?.play("cast", this._panFor(ev.x || 0));
+          const rarity = ITEMS[ev.itemKey]?.rarity;
+          if (rarity === "common") this.audio?.play("pickupCommon", this._panFor(ev.x || 0));
+          else if (rarity === "rare") this.audio?.play("pickupRare", this._panFor(ev.x || 0));
+          else this.audio?.play("cast", this._panFor(ev.x || 0));
+          break;
+        }
+        case "jump":
+          this.audio?.play("jump", this._panFor(ev.x || 0));
+          break;
+        case "land":
+          this.audio?.play(ev.hard ? "landHard" : "landSoft", this._panFor(ev.x || 0));
+          break;
+        case "footstep":
+          this.audio?.play("footstepStone", this._panFor(ev.x || 0));
+          break;
+        case "lowHealth":
+          this.audio?.play("lowHealth", this._panFor(ev.x || 0));
+          break;
+        case "shieldBlock":
+          this.audio?.play("shieldBlock", this._panFor(ev.x || 0));
           break;
         case "runeDestroyed":
           this._addEffect(this._burstAt(ev.x, ev.z, 0xff3a1e, { count: 22, speed: 8, life: 0.6 }));

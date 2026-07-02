@@ -23,6 +23,8 @@ export class Player {
     this.alive = true;
     this.spectating = false;
     this.falling = false;    // off the edge, plummeting to lava
+    this._lowHealthWarned = false; // fires "lowHealth" once per HP-below-threshold crossing
+    this._footstepDist = 0;  // accumulated ground-movement distance since last footstep sfx
     // Practice mode: when true, this player takes no HP damage and never
     // falls to hazard death (sim.js sets this for the local practice player).
     this.invulnerable = false;
@@ -289,6 +291,8 @@ export class Player {
     this.alive = true;
     this.spectating = false;
     this.falling = false;
+    this._lowHealthWarned = false;
+    this._footstepDist = 0;
     this.cooldowns = {};
     this.roundKills = 0;
     this.lastAttackerId = null;
@@ -336,6 +340,7 @@ export class Player {
     // Item regen: restore HP per second from Phoenix Charm / regen items.
     if (this.mods.regen > 0 && this.hp > 0 && this.hp < this.maxHp) {
       this.hp = Math.min(this.maxHp, this.hp + this.mods.regen * dt);
+      if (this._lowHealthWarned && this.hp / this.maxHp > 0.25) this._lowHealthWarned = false;
     }
 
     // Apply player movement intent (only when not heavily knocked back).
@@ -362,8 +367,18 @@ export class Player {
     // Stunned players cannot move under their own control.
     if (!isStunned && mlen > 0.01) {
       const nx = mx / mlen, nz = mz / mlen;
-      this.x += nx * speed * control * dt;
-      this.z += nz * speed * control * dt;
+      const stepDist = speed * control * dt;
+      this.x += nx * stepDist;
+      this.z += nz * stepDist;
+      // Throttled footstep cadence on normal grounded movement (not while
+      // falling/airborne off a ledge) — one sfx event every ~2.2 units walked.
+      if (!this.falling && this.y <= this.groundY + 0.01) {
+        this._footstepDist += stepDist;
+        if (this._footstepDist >= 2.2) {
+          this._footstepDist = 0;
+          this._events.push({ type: "footstep", id: this.id, x: this.x, z: this.z });
+        }
+      }
     }
     this.aim = this.input.aim;
 
@@ -460,9 +475,11 @@ export class Player {
           const drop = this.peakY - newGroundY;
           this.y = newGroundY;
           this.vy = 0;
-          if (drop >= CFG.FALL_STUN_MIN_HEIGHT) {
+          const hardLand = drop >= CFG.FALL_STUN_MIN_HEIGHT;
+          if (hardLand) {
             this.status.stunned = CFG.FALL_STUN_DURATION;
           }
+          this._events.push({ type: "land", id: this.id, x: this.x, z: this.z, hard: hardLand });
           this.peakY = newGroundY;
         }
       } else {
@@ -582,6 +599,12 @@ export class Player {
       this.hp = 0;
       this.alive = false; // hp death — death loop counts it next (sim.js)
     }
+    // Low-health warning: fires once per crossing below ~25% max HP; the
+    // flag resets (in applyHeal/regen) once HP recovers back above it.
+    if (this.alive && !this._lowHealthWarned && this.hp > 0 && this.hp / this.maxHp <= 0.25) {
+      this._lowHealthWarned = true;
+      this._events.push({ type: "lowHealth", id: this.id, x: this.x, z: this.z });
+    }
     return true;
   }
 
@@ -590,6 +613,7 @@ export class Player {
     if (!this.alive || this.falling) return false;
     if (!(amount > 0)) return false;
     this.hp = Math.min(this.maxHp, this.hp + amount);
+    if (this._lowHealthWarned && this.hp / this.maxHp > 0.25) this._lowHealthWarned = false;
     return true;
   }
 

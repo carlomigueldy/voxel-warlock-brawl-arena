@@ -7,6 +7,8 @@
 // reconnect), userId is stable across reconnects when signed in. A remote is
 // considered muted if either key matches.
 
+import { menuCue } from "./audio.js";
+
 const MUTE_LIST_KEY = "vwb-mute-list";
 
 let _cache = null; // memoized { peers: Set<string>, users: Set<string> }
@@ -53,6 +55,7 @@ export function toggleMute(peerId, userId = null) {
 // Explicit set (used by toggleMute and any future UI that needs a direct set).
 export function setMuted(peerId, userId, muted) {
   const state = load();
+  const wasMuted = isMuted(peerId, userId);
   if (peerId) {
     if (muted) state.peers.add(peerId);
     else state.peers.delete(peerId);
@@ -62,6 +65,7 @@ export function setMuted(peerId, userId, muted) {
     else state.users.delete(userId);
   }
   persist();
+  if (muted !== wasMuted) menuCue(muted ? "muteOn" : "muteOff");
 }
 
 // Shallow copy of the current mute list (for display/debug/settings panels).

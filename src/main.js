@@ -196,6 +196,7 @@ function startHosting(name, options = {}) {
         host.sendTo(peerId, { type: MSG.STATE, ...welcomeSnap, mapLayout: sim.mapLayout });
       }
       ui.setLobbyStatus(`${pname} joined.`);
+      audio.play("playerJoin");
       if (options.matchmaking && sim.phase === PHASE.LOBBY && humanPlayers() >= 2) {
         clearMatchmakingHostTimeout();
         ui.setLobbyStatus("Opponent connected. Starting match...");
@@ -215,6 +216,7 @@ function startHosting(name, options = {}) {
         inGame = false;
       }
       if (m) ui.setLobbyStatus(`${m.name} left.`);
+      audio.play("playerLeave");
     },
     onError: (err) => handleHostError(err),
   });
@@ -228,6 +230,7 @@ function startHosting(name, options = {}) {
     const relay = { type: MSG.CHAT, fromId, text: msg.text, kind: msg.kind, t: Date.now() };
     host.broadcast(relay);   // reaches every client incl. the sender (echo/confirm)
     applyChat(relay);        // host's own display
+    audio.play("chatMessage");
   });
   host.onTyping((fromId, v) => { const p = sim.players.get(fromId); if (p) p.typingUntil = v ? Date.now() + CFG.SOCIAL.TYPING_TTL_MS : 0; });
   host.onAfk((fromId, v)    => { const p = sim.players.get(fromId); if (p) p.afk = v; });
@@ -456,7 +459,7 @@ function startJoining(name, code, character, { userId, region, matchmaking } = {
         inGame = true;
       }
     },
-    onChat:   (msg) => applyChat(msg),                  // {fromId,text,kind,t}
+    onChat:   (msg) => { applyChat(msg); audio.play("chatMessage"); },  // {fromId,text,kind,t}
     onRoster: (msg) => { lastRoster = msg.peers || []; voice?.updateRoster(lastRoster); },
     onError: (err) => {
       const t = err.type || "";

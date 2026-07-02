@@ -647,6 +647,11 @@ export class Simulation {
             shooter.charge = Math.max(0, shooter.charge - shooter.mods.lifesteal);
           }
           this.events.push({ type: "hit", x: b.x, z: b.z, victim: res.hit, by: b.ownerId });
+        } else if (victim) {
+          // applyHit returned false (not landed) while a victim exists only
+          // when an active Shield charge absorbed the blow — emit a distinct
+          // block sfx separate from the shield-cast sound.
+          this.events.push({ type: "shieldBlock", x: b.x, z: b.z, victim: res.hit, by: b.ownerId });
         }
       }
     }
