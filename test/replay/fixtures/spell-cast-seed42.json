@@ -1,0 +1,38 @@
+{
+  "name": "spell-cast-seed42",
+  "seed": 42,
+  "config": {
+    "mobsEnabled": false,
+    "draftEnabled": false
+  },
+  "players": [
+    {
+      "id": "p1",
+      "name": "Alice"
+    },
+    {
+      "id": "p2",
+      "name": "Bob"
+    }
+  ],
+  "start": "match",
+  "ticks": 150,
+  "inputTimeline": [
+    {
+      "tick": 95,
+      "inputs": {
+        "p1": {
+          "move": [0, 0],
+          "aim": 0,
+          "casts": [
+            {
+              "spell": "fireball",
+              "tx": 5,
+              "tz": 0
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

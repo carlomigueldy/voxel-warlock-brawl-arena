@@ -1,0 +1,21 @@
+{
+  "name": "mob-spawn-seed1337",
+  "seed": 1337,
+  "config": {
+    "mobsEnabled": true,
+    "draftEnabled": false
+  },
+  "players": [
+    {
+      "id": "p1",
+      "name": "Alice"
+    },
+    {
+      "id": "p2",
+      "name": "Bob"
+    }
+  ],
+  "start": "match",
+  "ticks": 400,
+  "inputTimeline": []
+}
