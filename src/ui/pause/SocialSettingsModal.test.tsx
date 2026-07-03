@@ -133,7 +133,24 @@ describe("SocialSettingsModal — mute list", () => {
     render(<SocialSettingsModal open onClose={() => {}} onReadConduct={() => {}} />);
     expect(screen.getByLabelText("Speaking").className).toMatch(/glyphActive/);
     expect(screen.getByLabelText("Typing").className).toMatch(/glyphActive/);
-    expect(screen.getByLabelText("AFK").className).not.toMatch(/glyphActive/);
+    // AFK is inactive here — its title/aria-label are gated off (#182 F5:
+    // an always-present label made a screen reader announce all 4 glyph
+    // states per row regardless of whether they applied), so it must be
+    // unreachable by accessible name and hidden from the a11y tree.
+    expect(screen.queryByLabelText("AFK")).not.toBeInTheDocument();
+  });
+
+  it("hides inactive presence glyphs from the accessibility tree, and un-hides once active (#182 F5)", () => {
+    syncRoster([{ id: "p2", name: "Beatrix", colorIndex: 1 }]);
+    act(() => useSocialRosterStore.getState().sync([{ id: "p2", ty: 0, afk: 0, spk: 0 }]));
+    render(<SocialSettingsModal open onClose={() => {}} onReadConduct={() => {}} />);
+    expect(screen.queryByLabelText("Speaking")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Typing")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("AFK")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Muted")).not.toBeInTheDocument();
+
+    act(() => useSocialRosterStore.getState().sync([{ id: "p2", ty: 0, afk: 1, spk: 0 }]));
+    expect(screen.getByLabelText("AFK")).toBeInTheDocument();
   });
 });
 

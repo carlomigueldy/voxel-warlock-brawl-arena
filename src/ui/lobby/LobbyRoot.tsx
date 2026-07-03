@@ -49,7 +49,7 @@ export function LobbyRoot() {
           <span className={styles.musterCount}>
             {playerCount} warlock{playerCount === 1 ? "" : "s"} mustered
           </span>
-          <p className={styles.status}>{lobbyStatus}</p>
+          <p className={styles.status} aria-live="polite">{lobbyStatus}</p>
         </div>
         {isHost && (
           <Button

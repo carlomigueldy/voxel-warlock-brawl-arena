@@ -30,7 +30,7 @@
   position: relative;
   z-index: 1;
 }
-.sm .option { font-size: 11px; padding: 8px 4px; min-height: 36px; }
+.sm .option { font-size: 11px; padding: 8px 4px; min-height: 44px; }
 .option:hover { color: var(--text); }
 .option:active { transform: translateY(1px); }
 .option:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
