@@ -1,0 +1,229 @@
+/* Port of src/style.css L547-657 (.lobby-battleground, .battleground-viewport,
+   .map-hero and friends, .arena-cards, .arena-card and friends) — design §4
+   partition: lobby -> lobby module. var(--token) only. grid-area is
+   declared here (not by the parent) so this component can be dropped
+   straight into LobbyRoot's .stage grid as a direct child, same as the
+   other rail components. */
+.battleground {
+  grid-area: battleground;
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  z-index: 1;
+}
+.battleground::before {
+  content: "";
+  position: absolute;
+  inset: -14% -10%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 42%, var(--stage-hazard, rgba(108, 76, 255, 0.4)) 0%, transparent 68%);
+  opacity: 0.6;
+  filter: blur(10px);
+  transition: opacity 0.4s ease;
+}
+
+.viewport {
+  --corner-color: var(--line-strong);
+  --corner-len: 22px;
+  --corner-thick: 2px;
+  position: relative;
+  padding: 8px;
+  border-radius: 6px;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, rgba(10, 8, 20, 0.35), rgba(8, 6, 16, 0.7));
+  box-shadow: var(--bezel), 0 24px 60px -24px rgba(0, 0, 0, 0.75), 0 0 70px -16px var(--stage-hazard, rgba(108, 76, 255, 0.4));
+  transition: box-shadow 0.4s ease;
+}
+.viewport::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    linear-gradient(var(--corner-color), var(--corner-color)), linear-gradient(var(--corner-color), var(--corner-color)),
+    linear-gradient(var(--corner-color), var(--corner-color)), linear-gradient(var(--corner-color), var(--corner-color)),
+    linear-gradient(var(--corner-color), var(--corner-color)), linear-gradient(var(--corner-color), var(--corner-color)),
+    linear-gradient(var(--corner-color), var(--corner-color)), linear-gradient(var(--corner-color), var(--corner-color));
+  background-size:
+    var(--corner-thick) var(--corner-len), var(--corner-len) var(--corner-thick),
+    var(--corner-thick) var(--corner-len), var(--corner-len) var(--corner-thick),
+    var(--corner-thick) var(--corner-len), var(--corner-len) var(--corner-thick),
+    var(--corner-thick) var(--corner-len), var(--corner-len) var(--corner-thick);
+  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;
+}
+.viewport::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0px, rgba(255, 255, 255, 0.05) 1px, transparent 2px, transparent 4px);
+  mix-blend-mode: overlay;
+  animation: scanlineDrift 6s linear infinite;
+}
+@keyframes scanlineDrift { from { background-position-y: 0; } to { background-position-y: 40px; } }
+
+.mapHero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 3px;
+  min-height: clamp(220px, 34vh, 420px);
+  background: radial-gradient(ellipse at 50% 130%, var(--hero-hazard, var(--arcane)) 0%, transparent 60%),
+              linear-gradient(160deg, var(--hero-side, #2a2040), #0a0714 82%);
+}
+.heroHazardGlow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 115%, var(--hero-glow, var(--arcane)) 0%, transparent 58%);
+  mix-blend-mode: screen;
+  opacity: 0.9;
+}
+.heroPlatform {
+  position: absolute;
+  left: 50%;
+  bottom: -42%;
+  width: 68%;
+  height: 90%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--hero-top, var(--arcane)) 0%, rgba(0, 0, 0, 0.55) 100%);
+  box-shadow: 0 0 30px -4px var(--hero-top, var(--arcane));
+}
+.heroMotif { position: absolute; inset: 0; opacity: 0.75; }
+.heroMotif[data-hazard="embers"] { background-image: radial-gradient(circle, var(--hero-hazard) 1.4px, transparent 2.2px); background-size: 16px 20px; background-position: 4px 6px; }
+.heroMotif[data-hazard="spray"] { background-image: radial-gradient(circle, #ffffffaa 1.4px, transparent 2.2px); background-size: 18px 14px; background-position: 6px 3px; }
+.heroMotif[data-hazard="bubbles"] { background-image: radial-gradient(circle, var(--hero-hazard) 2px, transparent 2.8px); background-size: 20px 20px; background-position: 5px 9px; }
+.heroMotif[data-hazard="dust"] { background-image: linear-gradient(75deg, transparent 46%, var(--hero-hazard) 47%, transparent 48%); background-size: 18px 18px; }
+.heroMotif[data-hazard="shards"] { background-image: linear-gradient(120deg, transparent 45%, var(--hero-hazard) 48%, transparent 51%); background-size: 15px 24px; }
+
+.heroCopy {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 4;
+  animation: heroContentIn 0.4s ease both;
+}
+@keyframes heroContentIn { from { opacity: 0; } to { opacity: 1; } }
+.heroWorld { font-family: var(--font-display); font-size: clamp(15px, 2.4vw, 22px); color: var(--text); text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7); }
+.heroHazardName { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--hero-hazard, var(--muted)); text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7); }
+
+/* ---------- Arena filmstrip (host-only) ---------- */
+.filmstripField {
+  grid-area: filmstrip;
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+.filmstripField::after {
+  content: "";
+  position: absolute;
+  top: 30px;
+  right: 0;
+  bottom: 6px;
+  width: 40px;
+  background: linear-gradient(90deg, transparent, rgba(10, 8, 20, 0.85) 75%);
+  pointer-events: none;
+  z-index: 2;
+}
+.filmstripLabel { display: block; margin-bottom: 8px; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.cards {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  min-width: 0;
+}
+.cards::-webkit-scrollbar { height: 6px; }
+.cards::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+
+.card {
+  flex: 0 0 150px;
+  scroll-snap-align: start;
+  position: relative;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: var(--panel-2);
+  text-align: left;
+  transition: transform 0.3s var(--ease-spring), border-color 0.2s;
+  min-height: 44px; /* design floor: touch targets >= 44px */
+}
+.card:hover { transform: translateY(-3px) rotateX(6deg); border-color: var(--line-strong); }
+.card:focus-visible { outline: 2px solid var(--card-hazard, var(--arcane)); outline-offset: 3px; }
+.cardActive { border-color: var(--card-hazard, var(--arcane)); box-shadow: 0 0 0 1px var(--card-hazard, var(--arcane)), var(--glow-arcane); }
+.cardArt {
+  position: relative;
+  height: 64px;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  background: radial-gradient(ellipse at 50% 120%, var(--card-hazard, var(--arcane)) 0%, transparent 60%),
+              linear-gradient(160deg, var(--card-side, #2a2040), #0e0a18 78%);
+  box-shadow: var(--bezel);
+  transition: transform 0.4s var(--ease-spring);
+}
+.card:hover .cardArt { transform: translateZ(14px) rotate(-2deg) scale(1.03); }
+.cardPlatform {
+  position: absolute;
+  left: 50%;
+  bottom: -30%;
+  width: 78%;
+  height: 60%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--card-top, var(--arcane)) 0%, rgba(0, 0, 0, 0.5) 100%);
+  box-shadow: 0 0 14px -2px var(--card-top, var(--arcane));
+}
+.cardHazardGlow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 105%, var(--card-glow, var(--arcane)) 0%, transparent 55%);
+  mix-blend-mode: screen;
+  opacity: 0.85;
+}
+.cardMotif { position: absolute; inset: 0; opacity: 0.8; }
+.cardMotif[data-hazard="embers"] { background-image: radial-gradient(circle, var(--card-hazard) 1px, transparent 1.6px); background-size: 9px 12px; background-position: 2px 4px; }
+.cardMotif[data-hazard="spray"] { background-image: radial-gradient(circle, #ffffffaa 1px, transparent 1.6px); background-size: 11px 9px; background-position: 4px 2px; }
+.cardMotif[data-hazard="bubbles"] { background-image: radial-gradient(circle, var(--card-hazard) 1.4px, transparent 2px); background-size: 13px 13px; background-position: 3px 6px; }
+.cardMotif[data-hazard="dust"] { background-image: linear-gradient(75deg, transparent 46%, var(--card-hazard) 47%, transparent 48%); background-size: 12px 12px; }
+.cardMotif[data-hazard="shards"] { background-image: linear-gradient(120deg, transparent 45%, var(--card-hazard) 48%, transparent 51%); background-size: 10px 16px; }
+
+.cardName { display: block; font-weight: 700; font-size: 14px; color: var(--text); }
+.cardHazard { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+.cardCheck {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--card-hazard, var(--arcane));
+  color: #0a0814;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.25s, transform 0.3s var(--ease-spring);
+}
+.cardActive .cardCheck { opacity: 1; transform: scale(1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .viewport::after { animation: none; }
+  .heroCopy { animation: none; }
+  .card, .cardArt { transition: none; }
+  .card:hover, .card:hover .cardArt { transform: none; }
+  .cardCheck { transition: none; }
+}

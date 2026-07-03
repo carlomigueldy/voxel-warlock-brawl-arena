@@ -2664,7 +2664,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "todo",
+      "status": "review",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -2703,7 +2703,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "todo",
+      "status": "review",
       "priority": "P1",
       "labels": [
         "sub-issue",

@@ -1,21 +1,22 @@
-/* Placeholder shell chrome — p5a is infrastructure only (design brief §Scope:
-   "a minimal UiRoot shell is fine"). The real menu/lobby/HUD/draft/pause
-   surfaces are the sibling PRs (#161-#168) and will replace this entirely;
-   until then, the legacy DOM (#menu etc.) is still statically present on
-   the page underneath (only ?ui=legacy makes it interactive), so this stays
-   a small, out-of-the-way corner badge rather than a centered panel that
-   would visually fight with it. */
-.shell {
+/* Full-viewport wrapper for a mounted screen that does NOT self-position.
+   Most regions (MenuRoot, Hud) own their own fixed/`.overlay` positioning and
+   mount bare in UiRoot; LobbyRoot's `.scene` is `min-height:100%` and needs a
+   `position:fixed; inset:0` parent, so UiRoot wraps it in `.screenLayer`.
+   Mirrors src/style.css's shared `.overlay` (fixed, inset:0, the same
+   ember-field ambient gradient) rather than composing it directly, since
+   #lobby applies its own overrides on top (padding:0, stretch instead of
+   centered, overflow-y:auto — see style.css L423-428). z-index sits above the
+   legacy `.overlay` elements (10) as a belt-and-suspenders guard while the
+   legacy DOM bleed-through is fixed upstream (see the shared-shell
+   consolidation follow-up), and below Modal's onboarding/dialog tiers
+   (150/200, see Modal.module.css). var(--token) only. */
+.screenLayer {
   position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 5;
-  pointer-events: none;
-}
-.shell > * { pointer-events: auto; }
-
-.badge {
-  font-size: 12px;
-  color: var(--muted);
-  max-width: 280px;
+  inset: 0;
+  z-index: 20;
+  overflow-y: auto;
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgba(108, 76, 255, 0.28), transparent 55%),
+    radial-gradient(90% 80% at 50% 120%, rgba(255, 90, 60, 0.16), transparent 60%),
+    radial-gradient(circle at 50% 40%, rgba(13, 11, 26, 0.6), rgba(7, 6, 16, 0.96));
 }
