@@ -18,7 +18,8 @@ import { runReplay } from "../replay/run-replay.mjs";
 import { RENDERER } from "../../src/config/flags";
 import { CAPTURE_FIXED_DT } from "../../src/three/parity/determinism";
 import { runCaptureStep } from "../../src/three/parity/captureStep";
-import { pushSnapshot, setLocalId, resetSnapshotRef } from "../../src/store/snapshotRef";
+import { pushSnapshot, setLocalId, resetSnapshotRef, snapshotRef } from "../../src/store/snapshotRef";
+import { useRosterStore, deriveRoster } from "../../src/store/useRosterStore";
 import type { Snapshot } from "../../src/types";
 
 // eager:false (default) keeps every fixture its own async chunk — loadFixture
@@ -51,8 +52,10 @@ export interface ParityApi {
   loadFixture(id: string): Promise<number>;
   /** Pushes every not-yet-applied tick up to (and including) `frame`, one
    * render step per tick, in order — never skips ticks, so Math.random()
-   * draws inside build/VFX code stay in lockstep with a real run. */
-  stepTo(frame: number): void;
+   * draws inside build/VFX code stay in lockstep with a real run. Returns a
+   * Promise (Playwright's page.evaluate awaits it automatically) — see the
+   * "settle" comment inside for why R3F needs one extra async beat here. */
+  stepTo(frame: number): void | Promise<void>;
 }
 
 let stream: Snapshot[] = [];
@@ -85,6 +88,12 @@ export function installParityHarness(): void {
       const fixture = mod.default as Parameters<typeof runReplay>[0];
       stream = runReplay(fixture) as Snapshot[];
       resetSnapshotRef();
+      // Mirrors onNewSnapshot's teardown/resync pair (design §3 Pooling
+      // note: "Teardown→releaseBolt(flush)+resetSnapshotRef()+
+      // useRosterStore.reset()") — a fresh fixture load must start every
+      // R3F *Layer (design §3: PlayersLayer/MobsLayer/BoltsLayer/...) from
+      // an empty roster, same as resetSnapshotRef() does for snapshotRef.
+      useRosterStore.getState().reset();
       setLocalId(fixture.players[0]?.id ?? null);
       cursor = -1;
       r3fClockT = 0;
@@ -92,12 +101,42 @@ export function installParityHarness(): void {
       api.frameCount = stream.length;
       return api.frameCount;
     },
-    stepTo(frame: number) {
+    async stepTo(frame: number) {
       for (let tick = cursor + 1; tick <= frame; tick++) {
         pushSnapshot(stream[tick]);
+        // R3F's *Layer components (design §3) mount/unmount entities off
+        // useRosterStore's id arrays, NEVER off snapshotRef directly — the
+        // real game loop keeps that store in sync via onNewSnapshot()
+        // (src/loop/onNewSnapshot.ts), which this capture-only replay path
+        // deliberately bypasses (no audio/HUD/session side effects during a
+        // headless capture). Roster sync alone is NOT a side effect (it's
+        // pure structural bookkeeping the render tree depends on to exist
+        // at all — without it every *Layer stays permanently empty under
+        // ?capture=1&renderer=r3f), so it's pulled out and called here on
+        // its own, same as onNewSnapshot's own first two lines.
+        useRosterStore.getState().sync(deriveRoster(stream[tick], snapshotRef.meta));
         renderOneFrame();
       }
       cursor = frame;
+      // Settle pass (R3F only): useRosterStore.sync() above schedules a
+      // React commit through R3F's OWN custom reconciler — <Canvas> mounts
+      // an entirely separate React root (react-reconciler, not react-dom),
+      // so even react-dom's flushSync cannot force that commit synchronous.
+      // A newly-spawned entity (e.g. a player joining) therefore mounts
+      // asynchronously, sometime AFTER this loop already returned; under
+      // frameloop="never" nothing else ever calls advance() again, so that
+      // entity would otherwise register (entityRegistry, mixer, etc.) but
+      // never draw a single pixel. Wait one rAF round-trip — long enough
+      // for React's scheduler to flush the pending commit; the exact
+      // technique scripts/parity.mjs's own capture loop already uses before
+      // every screenshot — then re-advance the R3F root at the SAME
+      // timestamp (dt≈0: this does not advance sim/animation time, it only
+      // lets freshly-mounted useFrame subscribers draw the frame that
+      // already exists).
+      if (RENDERER === "r3f") {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        advance(r3fClockT);
+      }
     },
   };
   (window as unknown as { __parity: ParityApi }).__parity = api;

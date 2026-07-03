@@ -1,17 +1,35 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
+import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { CFG } from "./config.js";
-import { CastAnimator, locomotionState, ReactionAnimator } from "./animations.js";
+import { CastAnimator, locomotionState, ReactionAnimator, type Archetype, type Reaction } from "./animations.js";
 import { asset } from "./asset-url.js";
+
+// P4-140: ported from character.js to TypeScript — value-identical
+// (annotations only, no behavior change). Legacy renderer.js keeps importing
+// "./character.js" unmodified; Vite resolves that specifier to this file
+// (same pattern as lowpoly.ts/voxel.ts). A few previously-module-private
+// helpers below (EXTRA_CLIP_NAMES, extraClipAssets, makeHeroGlyph) are now
+// exported, and one small new pure helper (warlockGlbUrls) is added, purely
+// so src/three/models/useWarlockModel.tsx (P4-140, the R3F GLB path) can
+// reuse the same asset table instead of duplicating it — none of this
+// changes what loadCharacterTemplate/buildCharacterInstance below do.
 
 // Each selectable character is a rigged warlock model rendered with its original
 // shading (smoothed normals and baked maps intact). A glowing hero glyph marks
 // each instance; there is no body tint — original model colors are preserved.
 // The skeletons share the same bone layout, so CastAnimator overlays (animations.js)
 // apply uniformly.
-const url = (p) => asset(p);
-export const CHARACTER_ASSETS = {
+const url = (p: string) => asset(p);
+
+export interface CharacterAssetSet {
+  base: string;
+  walk: string;
+  run: string;
+}
+
+export const CHARACTER_ASSETS: Record<string, CharacterAssetSet> = {
   ember: {
     base: url("assets/characters/ember-warlock-rigged.glb"),
     walk: url("assets/characters/ember-warlock-walking.glb"),
@@ -40,17 +58,23 @@ export const CHARACTER_ASSETS = {
 // clips live under the new slug names below rather than the legacy base/walk/
 // run slugs above. This is purely additive — base/walk/run loading above is
 // untouched.
-const EXTRA_CLIP_NAMES = ["death", "hit", "stun", "knockback", "victory", "taunt", "idle2"];
-const EXTRA_CLIP_SLUGS = {
+//
+// Exported (P4-140) so useWarlockModel.tsx's warlockGlbUrls() below can build
+// the same up-to-10-URL list without re-declaring this table.
+export const EXTRA_CLIP_NAMES = ["death", "hit", "stun", "knockback", "victory", "taunt", "idle2"] as const;
+export type ExtraClipName = (typeof EXTRA_CLIP_NAMES)[number];
+
+const EXTRA_CLIP_SLUGS: Record<string, string> = {
   ember: "undead-warlock",
   frost: "archmage",
   storm: "orc-shaman",
   moss: "bloodelf-mage",
 };
-function extraClipAssets(characterId) {
+
+export function extraClipAssets(characterId: string): Partial<Record<ExtraClipName, string>> {
   const slug = EXTRA_CLIP_SLUGS[characterId];
   if (!slug) return {};
-  const out = {};
+  const out: Partial<Record<ExtraClipName, string>> = {};
   for (const name of EXTRA_CLIP_NAMES) {
     out[name] = url(`assets/characters/${slug}-${name}.glb`);
   }
@@ -60,43 +84,77 @@ function extraClipAssets(characterId) {
 export const DEFAULT_CHARACTER = "ember";
 const TARGET_HEIGHT = CFG.PLAYER_HEIGHT;
 
-let _loadPromises = new Map(); // characterId -> Promise
-let _templates = new Map();    // characterId -> template
-let _loadPromise = null;       // active default load (legacy callers)
-let _template = null;          // active default template (legacy callers)
+// Resolve a character id to its up-to-10 GLB URLs, in a stable order:
+// [base, walk, run, ...extra clips that exist for this character]. Used by
+// the R3F path (useWarlockModel) to pass a single array to drei's useGLTF
+// (suspends, cached per URL) — the legacy Promise.all loader below stays on
+// its own separate GLTFLoader instance/cache, untouched.
+export function warlockGlbUrls(characterId: string): string[] {
+  const id = CHARACTER_ASSETS[characterId] ? characterId : DEFAULT_CHARACTER;
+  const assets = CHARACTER_ASSETS[id];
+  const extra = extraClipAssets(id);
+  const urls = [assets.base, assets.walk, assets.run];
+  for (const name of EXTRA_CLIP_NAMES) {
+    const u = extra[name];
+    if (u) urls.push(u);
+  }
+  return urls;
+}
 
-function findClip(gltf, hint) {
+let _loadPromises = new Map<string, Promise<CharacterTemplate>>(); // characterId -> Promise
+let _templates = new Map<string, CharacterTemplate>();    // characterId -> template
+let _loadPromise: Promise<CharacterTemplate> | null = null;       // active default load (legacy callers)
+let _template: CharacterTemplate | null = null;          // active default template (legacy callers)
+
+/** Loose Object3D shape wide enough to cover both THREE.Mesh and
+ * THREE.SkinnedMesh's `is*`/geometry/material fields without fighting the
+ * strict generic type params THREE.Mesh<TGeo, TMat> carries — this file only
+ * ever duck-types through `.traverse()` callbacks, same as the original JS. */
+interface TraversableMesh extends THREE.Object3D {
+  isMesh?: boolean;
+  isSkinnedMesh?: boolean;
+  geometry?: THREE.BufferGeometry;
+  material?: THREE.Material | THREE.Material[];
+}
+
+function findClip(gltf: GLTF, hint: string): THREE.AnimationClip | null {
   const anims = gltf.animations || [];
   if (!anims.length) return null;
   const lc = hint.toLowerCase();
   return anims.find((c) => (c.name || "").toLowerCase().includes(lc)) || anims[0];
 }
 
-export function loadCharacterTemplate(characterId = DEFAULT_CHARACTER) {
+export interface CharacterTemplate {
+  id: string;
+  scene: THREE.Group;
+  clips: Partial<Record<"idle" | "walk" | "run" | ExtraClipName, THREE.AnimationClip | null>>;
+}
+
+export function loadCharacterTemplate(characterId: string = DEFAULT_CHARACTER): Promise<CharacterTemplate> {
   const id = CHARACTER_ASSETS[characterId] ? characterId : DEFAULT_CHARACTER;
   if (_loadPromises.has(id)) {
-    const p = _loadPromises.get(id);
+    const p = _loadPromises.get(id)!;
     _loadPromise = p;
     return p;
   }
   const assets = CHARACTER_ASSETS[id];
   const loader = new GLTFLoader();
-  const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+  const load = (u: string): Promise<GLTF> => new Promise((res, rej) => loader.load(u, res as (gltf: GLTF) => void, undefined, rej));
 
   const extraAssets = extraClipAssets(id);
-  const extraNames = Object.keys(extraAssets);
+  const extraNames = Object.keys(extraAssets) as ExtraClipName[];
 
   const promise = Promise.all([
     load(assets.base),
     load(assets.walk),
     load(assets.run),
-    ...extraNames.map((name) => load(extraAssets[name])),
+    ...extraNames.map((name) => load(extraAssets[name]!)),
   ])
     .then(([base, walk, run, ...extraGltfs]) => {
       const idleClip = findClip(base, "clip0") || (base.animations || [])[0] || null;
       const walkClip = findClip(walk, "walk");
       const runClip = findClip(run, "run");
-      const extraClips = {};
+      const extraClips: Partial<Record<ExtraClipName, THREE.AnimationClip | null>> = {};
       extraNames.forEach((name, i) => {
         extraClips[name] = findClip(extraGltfs[i], name);
       });
@@ -108,9 +166,10 @@ export function loadCharacterTemplate(characterId = DEFAULT_CHARACTER) {
       // rendered bind-pose extent regardless of node scale.
       const measured = new THREE.Box3();
       scene.traverse((o) => {
-        if ((o.isSkinnedMesh || o.isMesh) && o.geometry) {
-          o.geometry.computeBoundingBox();
-          if (o.geometry.boundingBox) measured.union(o.geometry.boundingBox);
+        const mesh = o as TraversableMesh;
+        if ((mesh.isSkinnedMesh || mesh.isMesh) && mesh.geometry) {
+          mesh.geometry.computeBoundingBox();
+          if (mesh.geometry.boundingBox) measured.union(mesh.geometry.boundingBox);
         }
       });
       const size = new THREE.Vector3();
@@ -120,13 +179,14 @@ export function loadCharacterTemplate(characterId = DEFAULT_CHARACTER) {
       scene.scale.multiplyScalar(s);
       scene.position.y -= measured.min.y * s;
       scene.traverse((o) => {
-        if (o.isMesh || o.isSkinnedMesh) {
-          o.castShadow = true;
-          o.receiveShadow = true;
-          o.frustumCulled = false;
+        const mesh = o as TraversableMesh;
+        if (mesh.isMesh || mesh.isSkinnedMesh) {
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          mesh.frustumCulled = false;
         }
       });
-      const template = {
+      const template: CharacterTemplate = {
         id,
         scene,
         clips: { idle: idleClip, walk: walkClip, run: runClip, ...extraClips },
@@ -141,12 +201,42 @@ export function loadCharacterTemplate(characterId = DEFAULT_CHARACTER) {
   return promise;
 }
 
-export function characterReady(characterId = DEFAULT_CHARACTER) {
+export function characterReady(characterId: string = DEFAULT_CHARACTER): boolean {
   const id = CHARACTER_ASSETS[characterId] ? characterId : DEFAULT_CHARACTER;
   return _templates.has(id);
 }
 
-export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
+export interface CharacterUpdateInfo {
+  dt?: number;
+  maxSpeed?: number;
+  speed?: number;
+  falling?: boolean;
+  alive?: boolean;
+  stunned?: boolean;
+  knockSpeed?: number;
+  channel?: number | boolean;
+  charge?: number;
+  time?: number;
+}
+
+export interface CharacterInstanceState {
+  root: THREE.Group;
+  model: THREE.Object3D;
+  mixer: THREE.AnimationMixer;
+  actions: Partial<Record<"idle" | "walk" | "run" | ExtraClipName, THREE.AnimationAction | null>>;
+  current: THREE.AnimationAction | null | undefined;
+  cast: CastAnimator;
+  reaction: ReactionAnimator;
+  w: { idle: number; walk: number; run: number; death: number; stun: number; knockback: number };
+  glyph: THREE.Mesh;
+  glyphBaseOpacity: number;
+  triggerCast: (archetype: Archetype) => void;
+  triggerReaction: (reaction: Reaction) => void;
+  dispose: () => void;
+  update: (info: CharacterUpdateInfo) => void;
+}
+
+export function buildCharacterInstance(color: number, characterId: string = DEFAULT_CHARACTER): THREE.Group | null {
   const id = CHARACTER_ASSETS[characterId] ? characterId : DEFAULT_CHARACTER;
   const template = _templates.get(id) || _template;
   if (!template) return null;
@@ -158,11 +248,12 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
   // Clone materials per instance so the renderer's per-player emissive/charge
   // writes never bleed across players. Original shading is preserved — no tint,
   // no shading override. Player identity is shown by the hero glyph below.
-  model.traverse((o) => {
+  model.traverse((o3) => {
+    const o = o3 as TraversableMesh;
     if ((o.isMesh || o.isSkinnedMesh) && o.material) {
       const wasArray = Array.isArray(o.material);
-      const mats = wasArray ? o.material : [o.material];
-      const cloned = mats.map((m) => {
+      const mats: THREE.Material[] = wasArray ? (o.material as THREE.Material[]) : [o.material as THREE.Material];
+      const cloned = mats.map((m: THREE.Material) => {
         const c = m.clone();
         c.needsUpdate = true;
         return c;
@@ -177,8 +268,8 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
   root.add(glyph);
 
   const mixer = new THREE.AnimationMixer(model);
-  const actions = {};
-  const make = (clip) => {
+  const actions: CharacterInstanceState["actions"] = {};
+  const make = (clip: THREE.AnimationClip | null | undefined): THREE.AnimationAction | null => {
     if (!clip) return null;
     const a = mixer.clipAction(clip);
     a.enabled = true;
@@ -205,7 +296,7 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
   const restPos = model.position.clone();
   const restRot = model.rotation.clone();
 
-  const state = {
+  const state: CharacterInstanceState = {
     root,
     model,
     mixer,
@@ -216,6 +307,10 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
     w: { idle: current === actions.idle ? 1 : 0, walk: 0, run: 0, death: 0, stun: 0, knockback: 0 },
     glyph,
     glyphBaseOpacity: 0.4,
+    triggerCast: () => {},
+    triggerReaction: () => {},
+    dispose: () => {},
+    update: () => {},
   };
 
   // Fire a cast animation archetype (attack/slam/dash/buff/channel). Triggered
@@ -230,8 +325,9 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
   // (renderer.removePlayer calls this). Material.dispose() does NOT free its map.
   state.dispose = () => {
     glyph.geometry.dispose();
-    if (glyph.material.map) glyph.material.map.dispose();
-    glyph.material.dispose();
+    const mat = glyph.material as THREE.MeshBasicMaterial;
+    if (mat.map) mat.map.dispose();
+    mat.dispose();
   };
 
   state.update = (info) => {
@@ -312,7 +408,7 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
     if (state.glyph) {
       const t = info.time || 0;
       const charge = info.charge || 0;
-      state.glyph.material.opacity = state.glyphBaseOpacity + 0.1 * Math.sin(t * 2) + 0.06 * charge;
+      (state.glyph.material as THREE.MeshBasicMaterial).opacity = state.glyphBaseOpacity + 0.1 * Math.sin(t * 2) + 0.06 * charge;
       state.glyph.scale.setScalar(1 + 0.04 * Math.sin(t * 2.4 + 0.8) + 0.06 * charge);
     }
   };
@@ -324,10 +420,14 @@ export function buildCharacterInstance(color, characterId = DEFAULT_CHARACTER) {
 // Procedural WC3-style hero glyph: a flat additive disc at the feet with a soft
 // radial gradient and two faint rune rings, tinted to the player color. Built
 // per instance so it can be disposed with the player mesh.
-function makeHeroGlyph(color) {
+//
+// Exported (P4-140) so useWarlockModel.tsx's R3F instantiation path can reuse
+// the exact same glyph recipe instead of re-authoring the canvas-gradient
+// drawing code a second time.
+export function makeHeroGlyph(color: number): THREE.Mesh {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 256;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d")!;
   const cx = 128, cy = 128;
   const grad = ctx.createRadialGradient(cx, cy, 8, cx, cy, 128);
   grad.addColorStop(0, "rgba(255,255,255,0.95)");
@@ -364,7 +464,13 @@ function makeHeroGlyph(color) {
 
 // Distinct whole-body poses per cast archetype, blended in by the CastAnimator
 // weight. Applied to the model root so it works on any Meshy skeleton.
-function applyCastOverlay(model, restPos, restRot, cast, info) {
+function applyCastOverlay(
+  model: THREE.Object3D,
+  restPos: THREE.Vector3,
+  restRot: THREE.Euler,
+  cast: CastAnimator,
+  info: CharacterUpdateInfo,
+): void {
   const t = (info && info.time) || 0;
   let pitch = 0, lift = 0, lean = 0, twist = 0;
   const wgt = cast.weight;
