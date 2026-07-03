@@ -1510,7 +1510,18 @@
         "FEAT-V1-R3F-P3-0C",
         "FEAT-V1-R3F-P3-0D",
         "FEAT-V1-R3F-P3-0E",
-        "FEAT-V1-R3F-P3-0F"
+        "FEAT-V1-R3F-P3-0F",
+        "FEAT-V1-R3F-P4-0A",
+        "FEAT-V1-R3F-P4-0B",
+        "FEAT-V1-R3F-P4-0C",
+        "FEAT-V1-R3F-P4-0D",
+        "FEAT-V1-R3F-P4-0E",
+        "FEAT-V1-R3F-P4-0F",
+        "FEAT-V1-R3F-P4-0G",
+        "FEAT-V1-R3F-P4-0H",
+        "FEAT-V1-R3F-P4-0I",
+        "FEAT-V1-R3F-P4-0J",
+        "FEAT-V1-R3F-P4-0K"
       ],
       "acceptance_criteria": [
         "npm run dev/build/preview serve the game; no CDN runtime dependency",
@@ -1976,7 +1987,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "review",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -2019,7 +2030,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "gameplay",
-      "status": "todo",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -2057,7 +2068,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "multiplayer",
-      "status": "todo",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -2092,7 +2103,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "audio",
-      "status": "todo",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -2127,7 +2138,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "todo",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -2161,7 +2172,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "multiplayer",
-      "status": "todo",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -2189,6 +2200,413 @@
         "keen-fluttering-pudding.md"
       ],
       "summary": "Port auth/matchmaking/leaderboard wiring into a hook: auth intents to useUiStore.authView, RegionQueue lifecycle, leaderboard fetch, region persistence."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0A",
+      "title": "R3F scaffold — Canvas/Scene/Camera/Lights/materials (P4a bottleneck)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 137,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/137"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "empty scene renders under ?renderer=r3f (legacy stays default; exclusive flag, no double canvas, no StrictMode)",
+        "renderer/camera/scene/fog match the §0 parity contract exactly",
+        "lights match §0 (hemisphere+directional+hazard point light)",
+        "materials/palette.ts wraps Lambert-flat/Basic recipes only — no MeshStandardMaterial anywhere",
+        "entityRegistry.ts exposes register/unregister for players and mobs + position/trigger accessors",
+        "voxel/lowpoly/props/arena/renderer-util/duotone compile as .ts with zero importer edits",
+        "scene-graph smoke test green",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Stand up the R3F scaffold (GameCanvas/Scene/CameraRig/LightPool/Environment/AimBridge/Bridge), materials/palette.ts, entityRegistry.ts, wire the ?renderer=r3f App.tsx branch, add R3F deps, and mechanically port voxel/lowpoly/props/arena/renderer-util/duotone to .ts. P4 bottleneck — every other P4 sub-issue depends on it."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0B",
+      "title": "deterministic replay→screenshot parity harness (P4a)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 138,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/138"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A",
+        "FEAT-V1-R3F-P0-03"
+      ],
+      "acceptance_criteria": [
+        "legacy-vs-legacy replay diff ≈0",
+        "harness posts golden/candidate/diff PNGs for the full capture set",
+        "deterministic across 2 consecutive runs",
+        "mismatch tolerance documented (starts ~1.5% of pixels, ratchet-down plan noted)",
+        "scene-graph smoke test asserts mesh counts, materials, light topology, GLB clip names, frustumCulled",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the deterministic replay→screenshot parity harness (determinism.ts seeded rng + fixed dt + frozen shake + fixed raster, Playwright replayDriver/parity.spec, scene-graph smoke test) that gates every subsequent P4 PR."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0C",
+      "title": "declarative arena floor + hazards + map layout (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 139,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/139"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 5 arena worlds (floor/hazard/fog/plateaus/obstacles) render at parity with legacy",
+        "plateaus/ramps/obstacles placement matches legacy map layout exactly",
+        "shrink-cull behavior matches legacy _cullMapMeshes",
+        "hazard re-theme dedups by hazard id like legacy _applyHazardTheme",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port arena floor, hazard theming/details, and map layout to declarative R3F (ArenaFloor/Hazard/HazardDetails/MapLayout), reusing the buildPlatform/buildHazard/animate* factories."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0D",
+      "title": "warlock GLB models + player entities (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 140,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/140"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 4 characters × clips render at parity, including manual weight-lerp blend and walk/run timescale",
+        "GLB self-heal is byte-exact (geometry-bbox union, TARGET_HEIGHT=1.8, position.y-=min.y·s, frustumCulled=false)",
+        "charge tint applied per-instance (cloned materials, no bleed)",
+        "Suspense/ErrorBoundary fallback to VoxelWarlockBody matches legacy usingGLB=false",
+        "entity interpolation matches parity contract",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port warlock GLB models and player entities to declarative R3F (useWarlockModel/WarlockBody, PlayersLayer/PlayerEntity/VoxelWarlockBody/NameLabel/HpBar/StatusVisuals, character.ts refactor) with the manual multi-GLB clip state machine ported verbatim."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0E",
+      "title": "mob GLB models + mob entities (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 141,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/141"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 4 mob types render idle/attack/entrance at parity",
+        "entrance rise/scale (no animation during entrance) matches legacy exactly",
+        "HP bar renders and updates per mob",
+        "channel decal matches legacy _buildChannelDecal/updateChannel",
+        "speed smoothing matches parity contract",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port big-mob GLB models and mob entities to declarative R3F (useMobModel/MobBody, MobsLayer/MobEntity/ChannelDecal, mobModel.ts refactor), mirroring the warlock model pattern with mob-specific entrance behavior and channel decal."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0F",
+      "title": "projectiles/bolts/meteors/items + pooling (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 142,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/142"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 8 bolt kinds render + trail pool at parity",
+        "bolt light pool (LIGHT_POOL_SIZE=4, nearest-to-local) matches legacy",
+        "bolts are NOT interpolated (direct from snapshot, per parity contract)",
+        "meteors and items render/despawn at parity",
+        "pooling acquire/release happens only in useEffect cleanup; teardown flushes trails + resets stores",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port projectiles, meteors, and items to declarative R3F with object pooling (BoltsLayer/BoltEntity/MeteorsLayer/ItemsLayer, pool.ts, vfx/projectiles.js→ts)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0G",
+      "title": "AoE VFX builders → TS (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 143,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/143"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "meteor impact, explode, gravity/vacuum, stun, target, and push AoE effects all render at parity",
+        "transient contract preserved: userData.update(dt)+userData.done+userData.dispose()",
+        "self-spawning controller groups (e.g. meteor telegraph rings) ported one-for-one",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Mechanically port the area-of-effect VFX builders vfx/aoe.js→ts, preserving build-time Math.random() call sites for later routing through the shared seedable rng."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0H",
+      "title": "beam VFX builders + light pool → TS (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 144,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/144"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "lightning/chain beams, drain, pull, drag, and link effects all render at parity",
+        "beam light pool (3 PointLights) stays a module-level singleton",
+        "two-endpoint effects resolve endpoints identically to legacy",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the beam VFX builders vfx/beams.js→ts, preserving the 3-slot beam light pool as a module singleton."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0I",
+      "title": "reticle layer + reticle builders → TS (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 145,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/145"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 9 reticle archetypes render at parity, rebuilding only on spell change",
+        "nearest-enemy resolution for TARGET_LOCK/TETHER matches legacy",
+        "SELF_BUFF reticle correctly hidden",
+        "reticle.userData.update(state) tick contract preserved",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the reticle layer and reticle builders (three/vfx/ReticleLayer.tsx, vfx/reticles.js→ts) as a persistent declarative single instance."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0J",
+      "title": "utility VFX builders → TS (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 146,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/146"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 14 utility spells/effects render at parity",
+        "transient contract preserved: userData.update(dt)+userData.done+userData.dispose()",
+        "status auras (shield/wind-walk/invis/stun) render correctly where owned by this module",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Mechanically port the remaining utility VFX builders vfx/utility.js→ts (buffs, status auras, item/rune pickups, other one-shot/persistent utility effects)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0K",
+      "title": "VFX event pipeline (EffectsLayer + eventToEffects) [checkpoint #3] (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 147,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/147"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0C",
+        "FEAT-V1-R3F-P4-0D",
+        "FEAT-V1-R3F-P4-0E",
+        "FEAT-V1-R3F-P4-0F",
+        "FEAT-V1-R3F-P4-0G",
+        "FEAT-V1-R3F-P4-0H",
+        "FEAT-V1-R3F-P4-0I",
+        "FEAT-V1-R3F-P4-0J"
+      ],
+      "acceptance_criteria": [
+        "full _processEvents port: all ~40 GameEvent kinds dispatch to the correct effect/trigger",
+        "per-event shake caps applied non-additively, each clamped to its own cap, preserved literally",
+        "cast/reaction/mob-attack triggers fire on every event before the switch, in legacy order",
+        "SFX + stereo pan wired for all applicable events",
+        "checkpoint #3 VFX-parity sign-off: full replay+screenshot parity suite green across the entire capture set",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Wire the VFX event pipeline (three/vfx/EffectsLayer+eventToEffects.ts, three/fx/builders.ts) integrating every prior P4 sub-issue's entityRegistry triggers and shake channel. Checkpoint #3 — VFX-parity sign-off; integrates last."
     }
   ]
 }
