@@ -1,7 +1,17 @@
-// P4-137: stub, implemented in #141. Scene.tsx references this layer so the
-// R3F scaffold compiles and renders an empty scene before big-mob GLB
-// models/mob entities land; #141 replaces this file's contents only (no
-// other file needs to change to wire the real layer in).
-export function MobsLayer(): null {
-  return null;
+// Maps the roster's mob id array to keyed <MobEntity> instances (design §3)
+// — only spawn/despawn (a mob id entering/leaving useRosterStore.mobIds)
+// re-renders this layer; all per-frame motion/animation lives inside
+// MobEntity's own useFrame reading snapshotRef directly.
+import { useRosterStore } from "../../store/useRosterStore";
+import { MobEntity } from "./MobEntity";
+
+export function MobsLayer() {
+  const ids = useRosterStore((s) => s.mobIds);
+  return (
+    <>
+      {ids.map((id) => (
+        <MobEntity key={id} id={id} />
+      ))}
+    </>
+  );
 }

@@ -1,4 +1,4 @@
-// Source guards for the asset-loading layer: audio.js, loader.js, mobModel.js.
+// Source guards for the asset-loading layer: audio.js, loader.js, mobModel.ts.
 // Split from test/source.test.mjs (#103) by which source file each guard reads.
 import { test } from "vitest";
 import assert from "node:assert";
@@ -20,8 +20,11 @@ test("loader preloads only character GLBs (no Meshy fetch priming)", () => {
 });
 
 // legacy text guard — delete in P6
-test("mobModel.js is the sole owner of GLB loading for the 4 big mobs", () => {
-  const mobModel = fs.readFileSync("src/mobModel.js", "utf8");
+// mobModel.js was ported to mobModel.ts (value-identical — TS annotations
+// only) by #141; voxel.js/renderer.js still import it unchanged via the
+// "./mobModel.js" specifier (Vite/vitest resolve .js -> .ts transparently).
+test("mobModel.ts is the sole owner of GLB loading for the 4 big mobs", () => {
+  const mobModel = fs.readFileSync("src/mobModel.ts", "utf8");
   assert.match(mobModel, /GLTFLoader/);
   assert.match(mobModel, /assets\/mobs\//);
 });
