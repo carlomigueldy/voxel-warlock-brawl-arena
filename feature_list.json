@@ -2207,7 +2207,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "rendering",
-      "status": "todo",
+      "status": "review",
       "priority": "P0",
       "labels": [
         "sub-issue",
