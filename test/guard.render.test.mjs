@@ -13,8 +13,8 @@ console.log("Source guards (render) checks:");
 const renderer = fs.readFileSync("src/renderer.js", "utf8");
 const character = fs.readFileSync("src/character.ts", "utf8");
 const voxel = fs.readFileSync("src/voxel.ts", "utf8");
-const arena = fs.readFileSync("src/arena.js", "utf8");
-const props = fs.readFileSync("src/props.js", "utf8");
+const arena = fs.readFileSync("src/arena.ts", "utf8");
+const props = fs.readFileSync("src/props.ts", "utf8");
 
 // legacy text guard — delete in P6
 test("generated character asset URLs are built via the asset() helper", () => {

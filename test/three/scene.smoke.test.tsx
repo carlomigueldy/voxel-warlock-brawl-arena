@@ -3,8 +3,10 @@
 // with @react-three/test-renderer and asserts the parts of design §0 (THE
 // PARITY CONTRACT) this PR is responsible for: the light topology, the
 // Lambert-flat/Basic material rule, and the camera settings. Full entity-
-// count/material-instance assertions land with the entity issues (#139-#147)
-// that replace the null stub Layers this test also exercises.
+// count/material-instance assertions land with the entity issues (#140-#147)
+// that replace the remaining null stub Layers this test also exercises.
+// ArenaFloor/Hazard/HazardDetails/MapLayout (#139) already replaced their
+// stubs — see test/three/map.smoke.test.tsx for their dedicated coverage.
 import { useEffect } from "react";
 import { afterEach, describe, expect, test } from "vitest";
 import { create, type ReactThreeTestInstance } from "@react-three/test-renderer";
@@ -134,9 +136,27 @@ describe("R3F Scene scaffold (P4a)", () => {
     expect(fog.far).toBe(90);
   });
 
-  test("every stub Layer mounts and renders nothing (empty scene until #139-#147 land)", async () => {
+  test("every entity/vfx stub Layer still mounts and renders nothing (empty scene until #140-#147 land)", async () => {
     renderer = await create(<Scene />, { camera: CAMERA_PROPS });
-    // No geometry/meshes yet — every entity/map/vfx Layer is a null stub.
+    // findAllByType walks the React-managed instance tree, so it only ever
+    // sees declarative JSX children — it does NOT see ArenaFloor/Hazard/
+    // HazardDetails/MapLayout's content, which is added to their <group>
+    // wrapper imperatively via THREE.Object3D.add() (design §4 leaf-builder
+    // bridging, ported one-for-one from Arena's platform/lava/details
+    // lifecycle — see test/three/map.smoke.test.tsx for those assertions,
+    // which traverse the live Object3D graph instead). What's left as a null
+    // stub (PlayersLayer/MobsLayer/BoltsLayer/MeteorsLayer/ItemsLayer/
+    // EffectsLayer/ReticleLayer) renders zero declarative Mesh nodes either way.
     expect(renderer.scene.findAllByType("Mesh")).toHaveLength(0);
+
+    // Confirm the arena/map layer's imperative content is real (not simply
+    // invisible to findAllByType because it doesn't exist) by walking the
+    // actual THREE.Scene graph — regression guard against this test silently
+    // passing for the wrong reason.
+    const liveMeshes: THREE.Object3D[] = [];
+    (renderer.scene.instance as unknown as THREE.Scene).traverse((o) => {
+      if ((o as THREE.Mesh).isMesh || (o as THREE.InstancedMesh).isInstancedMesh) liveMeshes.push(o);
+    });
+    expect(liveMeshes.length).toBeGreaterThan(0);
   });
 });
