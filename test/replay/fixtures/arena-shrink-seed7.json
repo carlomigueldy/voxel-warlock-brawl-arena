@@ -1,0 +1,21 @@
+{
+  "name": "arena-shrink-seed7",
+  "seed": 7,
+  "config": {
+    "mobsEnabled": false,
+    "draftEnabled": false
+  },
+  "players": [
+    {
+      "id": "p1",
+      "name": "Alice"
+    },
+    {
+      "id": "p2",
+      "name": "Bob"
+    }
+  ],
+  "start": "match",
+  "ticks": 450,
+  "inputTimeline": []
+}
