@@ -1530,7 +1530,11 @@
         "FEAT-V1-R3F-P5-0F",
         "FEAT-V1-R3F-P5-0G",
         "FEAT-V1-R3F-P5-0H",
-        "FEAT-V1-R3F-P5-0I"
+        "FEAT-V1-R3F-P5-0I",
+        "FEAT-V1-R3F-P6-0A",
+        "FEAT-V1-R3F-P6-0B",
+        "FEAT-V1-R3F-P6-0C",
+        "FEAT-V1-R3F-P6-0D"
       ],
       "acceptance_criteria": [
         "npm run dev/build/preview serve the game; no CDN runtime dependency",
@@ -2579,7 +2583,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "rendering",
-      "status": "review",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -2623,7 +2627,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "todo",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -2664,7 +2668,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "review",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -2703,7 +2707,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "review",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -2742,7 +2746,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "review",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -2783,7 +2787,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "review",
+      "status": "done",
       "priority": "P2",
       "labels": [
         "sub-issue",
@@ -2820,7 +2824,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "review",
+      "status": "done",
       "priority": "P2",
       "labels": [
         "sub-issue",
@@ -2858,7 +2862,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "review",
+      "status": "done",
       "priority": "P2",
       "labels": [
         "sub-issue",
@@ -2896,7 +2900,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "review",
+      "status": "done",
       "priority": "P2",
       "labels": [
         "sub-issue",
@@ -2932,7 +2936,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "review",
+      "status": "done",
       "priority": "P2",
       "labels": [
         "sub-issue",
@@ -2961,6 +2965,161 @@
         "keen-fluttering-pudding.md"
       ],
       "summary": "Port the remaining legacy juice (screen transitions, nav-feel, gamepad, credits) from src/legacy/juice.ts into React hooks/components that read store state directly instead of observing the DOM."
+    },
+    {
+      "id": "FEAT-V1-R3F-P6-0A",
+      "title": "delete legacy prototype + retire dual-path flags (P6)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "infra",
+        "rendering",
+        "ui"
+      ],
+      "issue": {
+        "number": 179,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/179"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A",
+        "FEAT-V1-R3F-P5-0B",
+        "FEAT-V1-R3F-P5-0C",
+        "FEAT-V1-R3F-P5-0D",
+        "FEAT-V1-R3F-P5-0E",
+        "FEAT-V1-R3F-P5-0F",
+        "FEAT-V1-R3F-P5-0G",
+        "FEAT-V1-R3F-P5-0H",
+        "FEAT-V1-R3F-P5-0I"
+      ],
+      "acceptance_criteria": [
+        "src/main.js, src/ui.js, src/renderer.js and every legacy-only module reachable only from them are deleted",
+        "?renderer=legacy|r3f, ?ui=legacy|react, ?shell flags are gone from the codebase (no reads, no branches)",
+        "LegacyUiBridge and LegacyRendererBridge components are deleted, along with every legacy dual-write/call-site that fed them",
+        "index.html is reduced to <div id=\"root\"></div> + main.tsx entry — no legacy <script>/DOM scaffolding remains",
+        "the app runs identically with no query flags set; a grep for any import of a deleted module returns nothing",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Delete src/main.js/ui.js/renderer.js + legacy-only modules, remove the ?renderer/?ui/?shell flags + LegacyUiBridge/LegacyRendererBridge + every legacy dual-write call-site, and reduce index.html to <div id=root> + main.tsx so the React/R3F path is the only path. P6 bottleneck — unblocks 0B/0C/0D."
+    },
+    {
+      "id": "FEAT-V1-R3F-P6-0B",
+      "title": "retire legacy source guard.ui + text-guard tests (P6)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "infra"
+      ],
+      "issue": {
+        "number": 180,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/180"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P6-0A"
+      ],
+      "acceptance_criteria": [
+        "every one of the 12 guard.ui.test.mjs assertions (p5-design §8) has a corresponding RTL/component test, mapped explicitly in the PR description",
+        "test/guard.ui.test.mjs is deleted once the mapping is verified",
+        "other legacy-source text-guards are deleted only for assertions whose source file was removed in P6-0A; guards over surviving source are kept or ported",
+        "coverage floor does not drop versus the pre-deletion baseline",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md",
+        "p5-design.md"
+      ],
+      "summary": "Delete test/guard.ui.test.mjs + the other legacy-source text-guards once RTL/R3F coverage proves ≥ the 12 guard.ui assertions (p5-design §8); ensure the coverage floor doesn't drop."
+    },
+    {
+      "id": "FEAT-V1-R3F-P6-0C",
+      "title": "Vercel vite-build/dist output + retire supabase-config gen (P6)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "infra"
+      ],
+      "issue": {
+        "number": 181,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/181"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P6-0A"
+      ],
+      "acceptance_criteria": [
+        "vercel.json: buildCommand \"vite build\", outputDirectory \"dist\"",
+        "COOP same-origin + COEP headers, cleanUrls: true, and the SPA rewrite are all still present post-change",
+        "scripts/gen-supabase-config.mjs is deleted; Supabase config is read from VITE_SUPABASE_* via import.meta.env at build time",
+        ".env.example documents the required VITE_SUPABASE_* vars",
+        "PWA manifest + icons are emitted into dist/ and the app is installable from a vite build && vite preview run",
+        "SEO/OG metadata (title/description/OG tags, sitemap.xml, robots.txt, llms.txt) is unchanged",
+        "vite build + vite preview serves the app with COOP/COEP headers intact"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Point vercel.json at buildCommand: vite build / outputDirectory: dist, preserve COOP same-origin/COEP + cleanUrls + SPA rewrite, keep PWA installable + SEO/OG unchanged, and retire gen-supabase-config.mjs in favor of VITE_SUPABASE_* env vars."
+    },
+    {
+      "id": "FEAT-V1-R3F-P6-0D",
+      "title": "epic-wide adversarial Opus review + merge gate (P6, checkpoint #4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "infra"
+      ],
+      "issue": {
+        "number": 182,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/182"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P6-0A",
+        "FEAT-V1-R3F-P6-0B",
+        "FEAT-V1-R3F-P6-0C"
+      ],
+      "acceptance_criteria": [
+        "fresh adversarial multi-lens Opus review run against the full feat/epic-100-integration diff vs main",
+        "every finding is fixed or explicitly cleared by an agent other than the one who authored the flagged code",
+        "per-feature parity checklist (spells/items/characters/mobs/arenas/P2P/social/onboarding/HUD) walked and signed off, with replay/screenshot parity evidence linked",
+        "typecheck + lint + test + build all green on the epic branch",
+        "autonomous-merge gate (Hard rule 5 / fleet-loop.md §8) holds: Opus approval + all local gates green + mergeable + no fleet:blocked/hold:owner label",
+        "evidence posted as comments on this issue and/or the epic→main PR before merge"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md",
+        "AGENTS.md",
+        ".agents/harness/fleet-loop.md"
+      ],
+      "summary": "Checkpoint #4 (pre-cutover): fresh adversarial multi-lens Opus review of the whole epic branch, every finding cleared by a different agent, per-feature parity checklist signed — the Hard-rule-5 gate for the epic→main PR."
     }
   ]
 }
