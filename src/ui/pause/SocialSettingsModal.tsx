@@ -94,29 +94,48 @@ function PlayerRosterMute() {
             const p = presence[id];
             const muted = social.isMuted(id, m?.userId ?? null);
             const name = m?.name || "warlock";
+            // Gate each glyph's title/aria-label on its own active flag —
+            // otherwise a screen reader announces all 4 states (Speaking/
+            // Typing/AFK/Muted) on every row regardless of whether they
+            // apply, even to a silent, non-typing, present, unmuted player.
+            const speakActive = !!p?.speaking && !muted;
+            const typingActive = !!p?.typing && !muted;
+            const afkActive = !!p?.afk;
             return (
               <div key={id} className={styles.rosterRow}>
                 <span className={styles.chip} style={{ background: hex(CFG.COLORS[(m?.colorIndex ?? 0) % CFG.COLORS.length]) }} />
                 <span className={styles.name}>{name}</span>
                 <span className={styles.status}>
                   <span
-                    className={[styles.glyph, styles.speak, !!p?.speaking && !muted && styles.glyphActive].filter(Boolean).join(" ")}
-                    title="Speaking"
-                    aria-label="Speaking"
+                    className={[styles.glyph, styles.speak, speakActive && styles.glyphActive].filter(Boolean).join(" ")}
+                    title={speakActive ? "Speaking" : undefined}
+                    aria-label={speakActive ? "Speaking" : undefined}
+                    aria-hidden={speakActive ? undefined : true}
                   >
                     🎤
                   </span>
                   <span
-                    className={[styles.glyph, styles.typing, !!p?.typing && !muted && styles.glyphActive].filter(Boolean).join(" ")}
-                    title="Typing"
-                    aria-label="Typing"
+                    className={[styles.glyph, styles.typing, typingActive && styles.glyphActive].filter(Boolean).join(" ")}
+                    title={typingActive ? "Typing" : undefined}
+                    aria-label={typingActive ? "Typing" : undefined}
+                    aria-hidden={typingActive ? undefined : true}
                   >
                     ···
                   </span>
-                  <span className={[styles.glyph, styles.afk, !!p?.afk && styles.glyphActive].filter(Boolean).join(" ")} title="AFK" aria-label="AFK">
+                  <span
+                    className={[styles.glyph, styles.afk, afkActive && styles.glyphActive].filter(Boolean).join(" ")}
+                    title={afkActive ? "AFK" : undefined}
+                    aria-label={afkActive ? "AFK" : undefined}
+                    aria-hidden={afkActive ? undefined : true}
+                  >
                     💤
                   </span>
-                  <span className={[styles.glyph, styles.muted, muted && styles.glyphActive].filter(Boolean).join(" ")} title="Muted" aria-label="Muted">
+                  <span
+                    className={[styles.glyph, styles.muted, muted && styles.glyphActive].filter(Boolean).join(" ")}
+                    title={muted ? "Muted" : undefined}
+                    aria-label={muted ? "Muted" : undefined}
+                    aria-hidden={muted ? undefined : true}
+                  >
                     🔇
                   </span>
                 </span>

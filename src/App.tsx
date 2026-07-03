@@ -4,6 +4,7 @@
 // UiRoot).
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { CAPTURE } from "./three/parity/determinism";
+import { ErrorBoundary } from "./three/ErrorBoundary";
 import { getAudio } from "./services/registry";
 import { useSessionStore } from "./store/useSessionStore";
 import { useSettingsStore } from "./store/useSettingsStore";
@@ -128,9 +129,14 @@ export default function App() {
           fixture snapshots straight into snapshotRef (design §7), so the
           host/client loop this mounts must not also run. */}
       {!CAPTURE && <GameSession />}
-      <Suspense fallback={null}>
-        <GameCanvas />
-      </Suspense>
+      {/* A scene render throw must degrade to a blank canvas, not white-
+          screen the whole app — the DOM HUD/menu/onboarding below live
+          outside this boundary and stay interactive either way. */}
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <GameCanvas />
+        </Suspense>
+      </ErrorBoundary>
       {/* ?capture=1: the HUD/menu/onboarding DOM is force-hidden anyway
           (determinism.ts's hideChrome) and has nothing to wire — skip it. */}
       {!CAPTURE && <UiRoot />}

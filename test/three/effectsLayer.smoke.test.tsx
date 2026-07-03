@@ -101,6 +101,28 @@ describe("<EffectsLayer> scene-graph smoke (design §5, issue #147)", () => {
     expect(stillAlive.length).toBe(0);
   });
 
+  test('a "death" event for an id absent from the roster still spawns a transient, falling back to origin {0,0} (#182 F7: makeEventFxCtx posForId/colorForId guard fallbacks)', async () => {
+    // No syncRoster()/registry entry for "ghost" — entityPlayerPos("ghost")
+    // and snapshotRef.meta.get("ghost") both miss, exercising
+    // EffectsLayer.tsx's makeEventFxCtx fallbacks: posForId's
+    // `?? { x: 0, z: 0 }` and colorForId's `: 0xffffff` (their unit coverage
+    // was dropped when eventToEffects.ts's ctx was split out of a single
+    // mock-everything test into this real-ctx smoke suite).
+    pushSnapshot(makeSnapshot([{ type: "death", id: "ghost" }], 1));
+    renderer = await create(<EffectsLayer />, { camera: CAMERA_PROPS });
+    await renderer.advanceFrames(1, 1 / 30);
+
+    const fxRoot = renderer.scene.children[0].instance as THREE.Group;
+    expect(fxRoot.children.length).toBeGreaterThan(0);
+    // fxRoot's children are added imperatively via ctx.addEffect (fxRoot.add,
+    // not JSX) — real THREE.Object3D instances, unlike renderer.scene.children
+    // (R3F test-renderer fiber nodes with their own `.instance` wrapper).
+    for (const obj of fxRoot.children) {
+      expect(obj.position.x).toBeCloseTo(0, 5);
+      expect(obj.position.z).toBeCloseTo(0, 5);
+    }
+  });
+
   test('a new snapshot with a fresh events array (later t) drains again', async () => {
     pushSnapshot(makeSnapshot([{ type: "hit", x: 0, z: 0, victim: "p2", by: "mob1" }], 1));
     renderer = await create(<EffectsLayer />, { camera: CAMERA_PROPS });

@@ -35,7 +35,7 @@ export function CenterMessage({ phase, timer }: CenterMessageProps) {
   if (!big) return null;
 
   return (
-    <div className={styles.centerMsg} data-testid="center-msg">
+    <div className={styles.centerMsg} data-testid="center-msg" role="status" aria-live="polite">
       {big}
       {small && <small className={styles.centerMsgSmall}>{small}</small>}
     </div>
