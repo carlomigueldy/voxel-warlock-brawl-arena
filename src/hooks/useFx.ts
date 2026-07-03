@@ -129,7 +129,7 @@ export const FX: FxApi = {
       p.style.top = y + "px";
       const angle = Math.random() * Math.PI * 2;
       const speed = 40 + Math.random() * 90;
-      let dx = Math.cos(angle) * speed;
+      const dx = Math.cos(angle) * speed;
       let dy = Math.sin(angle) * speed;
       if (kind === "ember") dy = -Math.abs(dy) - 30;
       else if (kind === "confetti") dy = Math.abs(dy) + 40;

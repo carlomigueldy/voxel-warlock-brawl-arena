@@ -31,9 +31,9 @@ function disposeGroup(root: THREE.Object3D): void {
 }
 
 export function PrimitiveFx({ build, tick }: PrimitiveFxProps) {
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- build is a
-  // factory called exactly once per mount (identity change remounts via key),
-  // matching legacy's build-once-then-tick-imperatively contract.
+  // build is a factory called exactly once per mount (identity change remounts
+  // via key), matching legacy's build-once-then-tick-imperatively contract.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const group = useMemo(build, []);
 
   useFrame((_, rawDt) => tick?.(group, Math.min(0.05, rawDt)));

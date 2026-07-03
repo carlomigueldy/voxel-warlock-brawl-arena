@@ -226,7 +226,7 @@ export class InputController {
     });
     // No mouse-button casting: LMB/RMB do not fire spells (spell-only combat via
     // ability hotkeys). Mouse clicks still count as activity for auto-AFK.
-    addEventListener("mousedown", (e: MouseEvent) => {
+    addEventListener("mousedown", (_e: MouseEvent) => {
       if (this.paused || this.chatting) return;
       this._activity();
     });
@@ -331,7 +331,6 @@ export class InputController {
 
     const start = (e: TouchEvent | MouseEvent) => {
       active = true;
-      const t = "touches" in e && e.touches ? e.touches[0] : (e as MouseEvent);
       const rect = joystick.getBoundingClientRect();
       originX = rect.left + rect.width / 2;
       originY = rect.top + rect.height / 2;

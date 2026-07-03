@@ -88,8 +88,8 @@ function makeEventFxCtx(fxRootRef: MutableRefObject<THREE.Group | null>, effects
 export function EffectsLayer() {
   const fxRootRef = useRef<THREE.Group>(null);
   const effectsRef = useRef<THREE.Object3D[]>([]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- fxRootRef/effectsRef
-  // are stable ref objects; the ctx built from them never needs to change.
+  // fxRootRef/effectsRef are stable ref objects; the ctx built from them never
+  // needs to change.
   const ctx = useMemo(() => makeEventFxCtx(fxRootRef, effectsRef.current), []);
 
   useFrame((_, rawDt) => {

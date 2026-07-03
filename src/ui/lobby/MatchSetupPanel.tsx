@@ -92,7 +92,7 @@ function HostFields() {
   );
 }
 
-function ObstacleToggle({ id, label, checked, onChange }: { id: ObstacleTypeId; label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+function ObstacleToggle({ id: _id, label, checked, onChange }: { id: ObstacleTypeId; label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return (
     <label className={[styles.obsToggle, checked && styles.obsToggleOn].filter(Boolean).join(" ")}>
       <input

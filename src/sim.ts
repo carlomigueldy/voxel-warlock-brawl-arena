@@ -1,11 +1,11 @@
 // Pure, authoritative game simulation. Deliberately free of Three.js so it can
 // run on the host and be unit-tested headlessly in Node.
-import { CFG, SPELLS, SPELL_ORDER, SPELL_TEMPLATES, ITEMS, getArenaLandSize, getArenaWorld, isOnArenaWorld } from "./config.js";
+import { CFG, SPELLS, SPELL_TEMPLATES, ITEMS, getArenaLandSize, getArenaWorld, isOnArenaWorld } from "./config.js";
 import { MapQuery } from "./arena-query.js";
 import { generateMap } from "./mapgen.js";
 import { Player, resolveKillCredit } from "./player.js";
 import { Bolt } from "./bolt.js";
-import { castSpell, advanceCasts, applyAoE, nearestEnemy } from "./spells.js";
+import { castSpell, advanceCasts, applyAoE } from "./spells.js";
 import { BotBrain, BOT_PROFILES, botSpellLoadout, closestApproach as _closestApproach } from "./bot.js";
 import { makePrng } from "./rng.js";
 import { makeMobPrng, stepMobPhysics, spawnMob } from "./mob.js";
@@ -1141,7 +1141,7 @@ export class Simulation {
     });
   }
 
-  _fireMobAbility(mob: any, target: any) {
+  _fireMobAbility(mob: any, _target: any) {
     const typeCfg: any = CFG.MOB_TYPES[mob.type];
     const ability  = typeCfg.ability;
     if (!ability) return;
@@ -1248,7 +1248,7 @@ export class Simulation {
 
   // Apply scaled spell damage to a single mob — player-sourced only (never called from
   // mob-ability paths, preserving the invariant that mob bolts cannot damage mobs).
-  damageMobAt(mob: any, { dmg, kb = 0, by }: { dmg: number; kb?: number; by: string }) {
+  damageMobAt(mob: any, { dmg, kb = 0, by: _by }: { dmg: number; kb?: number; by: string }) {
     if (!mob.alive || mob.spawnInvuln > 0 || mob.entering > 0) return;
     const hits = Math.max(1, Math.round(dmg / CFG.BOLT_BASE_DAMAGE));
     if (kb > 0) {

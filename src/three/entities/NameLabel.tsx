@@ -37,9 +37,8 @@ function makeLabelTexture(name: string, color: number): THREE.CanvasTexture {
 
 export function NameLabel({ name, color, bodyKindRef }: NameLabelProps) {
   const spriteRef = useRef<THREE.Sprite>(null!);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- texture is a pure
-  // function of (name, color); canvas draw is cheap and this only reruns when
-  // either input actually changes (name edits, color re-roll).
+  // texture is a pure function of (name, color); canvas draw is cheap and this
+  // only reruns when either input actually changes (name edits, color re-roll).
   const texture = useMemo(() => makeLabelTexture(name, color), [name, color]);
 
   useEffect(() => () => texture.dispose(), [texture]);

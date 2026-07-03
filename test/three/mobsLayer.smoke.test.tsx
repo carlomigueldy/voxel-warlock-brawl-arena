@@ -7,7 +7,7 @@
 // mobModel.test.mjs covers the GLB-loading path (self-heal scale/position,
 // clip-name resolution, attack LoopOnce+clampWhenFinished) in isolation.
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { act, create, type ReactThreeTestInstance } from "@react-three/test-renderer";
+import { act, create } from "@react-three/test-renderer";
 import * as THREE from "three";
 import { CFG } from "../../src/config";
 import { MobsLayer } from "../../src/three/entities/MobsLayer";

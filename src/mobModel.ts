@@ -70,8 +70,8 @@ interface MobModelTemplate {
   clips: MobModelClips;
 }
 
-let _loadPromises = new Map<string, Promise<MobModelTemplate | null>>(); // mobType -> Promise
-let _templates = new Map<string, MobModelTemplate>();    // mobType -> template
+const _loadPromises = new Map<string, Promise<MobModelTemplate | null>>(); // mobType -> Promise
+const _templates = new Map<string, MobModelTemplate>();    // mobType -> template
 
 function findClip(gltf: GLTF, hint: string): THREE.AnimationClip | null {
   const anims = gltf.animations || [];

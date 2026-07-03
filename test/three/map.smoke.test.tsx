@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { create, type Renderer } from "@react-three/test-renderer";
 import * as THREE from "three";
 import { CFG } from "../../src/config";
-import { snapshotRef, pushSnapshot, resetSnapshotRef } from "../../src/store/snapshotRef";
+import { pushSnapshot, resetSnapshotRef } from "../../src/store/snapshotRef";
 import { ArenaFloor } from "../../src/three/map/ArenaFloor";
 import { Hazard } from "../../src/three/map/Hazard";
 import { HazardDetails } from "../../src/three/map/HazardDetails";

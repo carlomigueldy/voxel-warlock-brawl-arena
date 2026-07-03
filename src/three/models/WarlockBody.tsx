@@ -32,8 +32,9 @@ export function WarlockBody({ regId, characterId, color, animRef, posRef, bodyKi
       pos: posRef,
     });
     return () => unregisterPlayer(regId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- posRef/bodyKindRef are
-    // stable mutable-object refs owned by <PlayerEntity> for this entity's lifetime.
+    // posRef/bodyKindRef are stable mutable-object refs owned by <PlayerEntity>
+    // for this entity's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regId, instance]);
 
   useFrame(() => {

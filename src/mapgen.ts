@@ -200,7 +200,7 @@ export function generateMap(
 
       plateaus.push({ x: px, z: pz, w, d, height, ramps });
       placed_rects.push({ x: px, z: pz, hw, hd });
-      break placed; // eslint-disable-line no-labels
+      break placed;
     }
   }
 
@@ -254,7 +254,7 @@ export function generateMap(
         const rot    = rng() * Math.PI * 2;
         obstacles.push({ id: obsId++, type: spec.type, x, z, r, height, rot });
         circ_placed.push({ x, z, r });
-        break placed; // eslint-disable-line no-labels
+        break placed;
       }
     }
   }
