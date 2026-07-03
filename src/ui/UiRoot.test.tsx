@@ -28,4 +28,17 @@ describe("UiRoot", () => {
     expect(container).toBeEmptyDOMElement();
     expect(screen.queryByTestId("ui-root")).toBeNull();
   });
+
+  // design §9: screen==="menu" -> <MenuRoot/> (#161 p5-menu's own region).
+  // Imports useSessionStore dynamically (after the preceding resetModules)
+  // so it resolves to the SAME fresh module instance UiRoot itself reads —
+  // a static top-of-file import would be a stale, pre-reset copy.
+  it("mounts MenuRoot when useSessionStore.screen is 'menu'", async () => {
+    vi.doMock("../three/parity/determinism", () => ({ CAPTURE: false }));
+    const { useSessionStore } = await import("../store/useSessionStore");
+    useSessionStore.setState({ screen: "menu" });
+    const { UiRoot } = await import("./UiRoot");
+    render(<UiRoot />);
+    expect(screen.getByTestId("menu-root")).toBeInTheDocument();
+  });
 });
