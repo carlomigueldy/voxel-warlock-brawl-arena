@@ -2,7 +2,7 @@
 // Mulberry32 — fast, seedable, good statistical quality for game use.
 
 /** FNV-1a hash of a string → unsigned 32-bit seed. */
-export function idSeed(id) {
+export function idSeed(id: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i);
@@ -15,9 +15,9 @@ export function idSeed(id) {
  * Mulberry32 PRNG factory.
  * Returns a zero-argument function that yields floats in [0, 1).
  */
-export function makePrng(seed) {
+export function makePrng(seed: number): () => number {
   let s = seed >>> 0;
-  return function next() {
+  return function next(): number {
     s += 0x6d2b79f5;
     let t = s;
     t = Math.imul(t ^ (t >>> 15), t | 1);

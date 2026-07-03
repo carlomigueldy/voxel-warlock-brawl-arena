@@ -11,23 +11,28 @@ import { menuCue } from "./audio.js";
 
 const MUTE_LIST_KEY = "vwb-mute-list";
 
-let _cache = null; // memoized { peers: Set<string>, users: Set<string> }
+interface MuteState {
+  peers: Set<string>;
+  users: Set<string>;
+}
 
-function load() {
+let _cache: MuteState | null = null; // memoized { peers: Set<string>, users: Set<string> }
+
+function load(): MuteState {
   if (_cache) return _cache;
-  let parsed = null;
+  let parsed: { peers?: unknown; users?: unknown } | null = null;
   try {
     parsed = JSON.parse(localStorage.getItem(MUTE_LIST_KEY) || "{}");
   } catch {
     parsed = {};
   }
-  const peers = Array.isArray(parsed?.peers) ? parsed.peers : [];
-  const users = Array.isArray(parsed?.users) ? parsed.users : [];
+  const peers = Array.isArray(parsed?.peers) ? (parsed.peers as string[]) : [];
+  const users = Array.isArray(parsed?.users) ? (parsed.users as string[]) : [];
   _cache = { peers: new Set(peers), users: new Set(users) };
   return _cache;
 }
 
-function persist() {
+function persist(): void {
   const state = load();
   try {
     localStorage.setItem(
@@ -38,7 +43,7 @@ function persist() {
 }
 
 // True if this peerId or userId is on the local mute list.
-export function isMuted(peerId, userId = null) {
+export function isMuted(peerId?: string | null, userId: string | null = null): boolean {
   const state = load();
   if (peerId && state.peers.has(peerId)) return true;
   if (userId && state.users.has(userId)) return true;
@@ -46,14 +51,14 @@ export function isMuted(peerId, userId = null) {
 }
 
 // Flips the mute state for this peer/user pair, persists, returns the new bool.
-export function toggleMute(peerId, userId = null) {
+export function toggleMute(peerId?: string | null, userId: string | null = null): boolean {
   const next = !isMuted(peerId, userId);
   setMuted(peerId, userId, next);
   return next;
 }
 
 // Explicit set (used by toggleMute and any future UI that needs a direct set).
-export function setMuted(peerId, userId, muted) {
+export function setMuted(peerId: string | null | undefined, userId: string | null | undefined, muted: boolean): void {
   const state = load();
   const wasMuted = isMuted(peerId, userId);
   if (peerId) {
@@ -69,13 +74,13 @@ export function setMuted(peerId, userId, muted) {
 }
 
 // Shallow copy of the current mute list (for display/debug/settings panels).
-export function getMuteList() {
+export function getMuteList(): { peers: string[]; users: string[] } {
   const state = load();
   return { peers: [...state.peers], users: [...state.users] };
 }
 
 // Wipes the mute list and persists (used by the "clear mute list" settings action).
-export function clearMuteList() {
+export function clearMuteList(): void {
   _cache = { peers: new Set(), users: new Set() };
   persist();
 }
