@@ -15,6 +15,7 @@ import {
   facetedCone, facetedCylinder, facetedRock, facetedShard,
   facetedSlab, facetedCrystal,
 } from "./lowpoly.js";
+import type { MapObstacle, ObstacleTypeId } from "./types";
 
 // ---------------------------------------------------------------------------
 // Prop builders
@@ -26,7 +27,7 @@ import {
  * Dead tree: faceted trunk with three stacked conical canopy tiers.
  * Palette: dark-brown trunk, three shades of green for canopy.
  */
-function buildTree(obs) {
+function buildTree(obs: MapObstacle): THREE.Group {
   const g = new THREE.Group();
   const h = obs.height, r = obs.r;
   const trunkH = h * 0.55;
@@ -45,7 +46,7 @@ function buildTree(obs) {
  * Stone cluster: a main faceted boulder with two side rocks for natural
  * irregularity. Palette: gray-brown rock tones.
  */
-function buildStone(obs) {
+function buildStone(obs: MapObstacle): THREE.Group {
   const g = new THREE.Group();
   const h = obs.height, r = obs.r;
   g.add(facetedRock(r * 0.95, 0x8a7a6a, { detail: 1, perturb: 0.14, sx: 1.5, sy: 0.9, sz: 1.3, y: h * 0.35 }));
@@ -58,7 +59,7 @@ function buildStone(obs) {
  * Ruined column: faceted base slab, hex-prism shaft with a mid-ring band, and a
  * faceted capital. Palette: marble white / shadowed stone.
  */
-function buildColumn(obs) {
+function buildColumn(obs: MapObstacle): THREE.Group {
   const g = new THREE.Group();
   const h = obs.height, r = obs.r;
   // Each seam below overlaps the one beneath it by h*0.02 (rather than sitting
@@ -77,7 +78,7 @@ function buildColumn(obs) {
  * Rubble debris: four offset faceted shards for a scattered ruin look.
  * Palette: sand/stone rubble tones.
  */
-function buildDebris(obs) {
+function buildDebris(obs: MapObstacle): THREE.Group {
   const g = new THREE.Group();
   const h = obs.height, r = obs.r;
   g.add(facetedShard(h * 0.55, 0x8a7860, { rx: 0.3, ry: 0.8, rz: 0.2, scale: r * 1.1, x: 0, y: h * 0.275 }));
@@ -92,7 +93,7 @@ function buildDebris(obs) {
  * top. Oriented along x by default; obs.rot is applied externally by the
  * renderer. Palette: stone masonry with a darker mortar shadow.
  */
-function buildWall(obs) {
+function buildWall(obs: MapObstacle): THREE.Group {
   const g = new THREE.Group();
   const h = obs.height, r = obs.r;
   // Main slab with width/height segments so the face reads as faceted masonry.
@@ -108,7 +109,7 @@ function buildWall(obs) {
  * Boulder: a chunky angular faceted rock with a rounded cap and a protruding
  * shard. Palette: dark granite / shadow tones.
  */
-function buildBoulder(obs) {
+function buildBoulder(obs: MapObstacle): THREE.Group {
   const g = new THREE.Group();
   const h = obs.height, r = obs.r;
   g.add(facetedRock(r * 0.9, 0x7a6a60, { detail: 1, perturb: 0.16, sx: 1.8, sy: 1.0, sz: 1.6, y: h * 0.5 }));
@@ -122,7 +123,7 @@ function buildBoulder(obs) {
  * Components: torso, head, two arms, two legs — faceted slabs/rocks.
  * Palette: rotted flesh / shadow.
  */
-function buildDeadGiant(obs) {
+function buildDeadGiant(obs: MapObstacle): THREE.Group {
   const g = new THREE.Group();
   const h = obs.height, r = obs.r;
   // Torso (elongated along x)
@@ -143,7 +144,7 @@ function buildDeadGiant(obs) {
  * Dragon skeleton: a faceted spine, four rib pairs (shards), and a horned
  * skull. Palette: old ivory / bone white.
  */
-function buildDragonBones(obs) {
+function buildDragonBones(obs: MapObstacle): THREE.Group {
   const g = new THREE.Group();
   const h = obs.height, r = obs.r;
   // Spine running along +x
@@ -169,7 +170,7 @@ function buildDragonBones(obs) {
  * Maps every obstacle type string (from mapgen) to its builder function.
  * Renderer calls: `PROP_BUILDERS[ob.type](ob)` then positions/rotates the group.
  */
-export const PROP_BUILDERS = {
+export const PROP_BUILDERS: Record<ObstacleTypeId, (obs: MapObstacle) => THREE.Group> = {
   tree:        buildTree,
   stone:       buildStone,
   column:      buildColumn,
