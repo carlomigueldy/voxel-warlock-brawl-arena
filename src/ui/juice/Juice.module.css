@@ -37,6 +37,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 44px; /* design floor: touch targets >= 44px */
   padding: 6px 12px 6px 9px;
   font-family: var(--font-body, inherit);
   font-size: 11px;
