@@ -2,7 +2,7 @@
 // item/spell slots, and draft grid to render a distinct icon per spell,
 // tinted via `currentColor` (see style.css .ability-swatch / .dsc-swatch).
 
-export const SPELL_ICONS = {
+export const SPELL_ICONS: Record<string, string> = {
   fireball: `<svg viewBox="0 0 24 24" fill="none">
   <polygon points="22,12 16,6 17,10 10,7 13,12 10,17 17,14 16,18" fill="currentColor"/>
   <polygon points="19,12 15,9.5 16,12 15,14.5" fill="currentColor" opacity="0.45"/>
@@ -85,14 +85,14 @@ const FALLBACK_ICON = `<svg viewBox="0 0 24 24" fill="none">
   <circle cx="12" cy="16.2" r="1.1" fill="currentColor"/>
 </svg>`;
 
-export function spellIconSvg(id) {
+export function spellIconSvg(id: string): string {
   return SPELL_ICONS[id] || FALLBACK_ICON;
 }
 
 // Item shape -> glyph icons for the item bar (mirrors ITEMS[].shape in
 // config.js: orb, blade, boots, crown, rune, tome). Same viewBox/style
 // contract as SPELL_ICONS so they drop into .ability-swatch unchanged.
-const ITEM_ICONS = {
+const ITEM_ICONS: Record<string, string> = {
   orb: `<svg viewBox="0 0 24 24" fill="none">
   <circle cx="12" cy="12" r="8" fill="currentColor"/>
   <ellipse cx="9" cy="8.5" rx="2.3" ry="1.5" fill="#fff" opacity="0.35"/>
@@ -120,6 +120,6 @@ const ITEM_ICONS = {
 </svg>`,
 };
 
-export function itemIconSvg(shape) {
+export function itemIconSvg(shape: string): string {
   return ITEM_ICONS[shape] || FALLBACK_ICON;
 }

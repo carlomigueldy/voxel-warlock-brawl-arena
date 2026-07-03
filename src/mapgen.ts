@@ -15,6 +15,7 @@
 //     0 = +x face, 1 = -x face, 2 = +z face, 3 = -z face.
 //   • Obstacle x/z is the centre; r is the collision radius.
 import { CFG, isOnArenaWorld } from "./config.js";
+import type { MapLayout, MapPlateau, MapRamp, MapObstacle, ObstacleTypeId } from "./types";
 
 // --- Placement guard distances (exported so tests and other modules can use them) ---
 
@@ -27,7 +28,7 @@ export const MAP_SPAWN_RING_CLEAR = 1.5;
 // Seeded PRNG — Mulberry32 (public domain, Bob Jenkins variant).
 // Produces a float in [0, 1) from a uint32 seed.
 // ---------------------------------------------------------------------------
-function mulberry32(seed) {
+function mulberry32(seed: number): () => number {
   let s = seed >>> 0;
   return function rng() {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -38,12 +39,12 @@ function mulberry32(seed) {
 }
 
 // randRange — uniform float in [lo, hi).
-function randRange(rng, lo, hi) { return lo + rng() * (hi - lo); }
+function randRange(rng: () => number, lo: number, hi: number): number { return lo + rng() * (hi - lo); }
 // randInt  — integer in [lo, hi] inclusive.
-function randInt(rng, lo, hi)   { return Math.floor(lo + rng() * (hi - lo + 1 - 1e-9)); }
+function randInt(rng: () => number, lo: number, hi: number): number   { return Math.floor(lo + rng() * (hi - lo + 1 - 1e-9)); }
 
 // Fisher-Yates shuffle in-place using the seeded RNG.
-function shuffle(rng, arr) {
+function shuffle<T>(rng: () => number, arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -66,7 +67,12 @@ function shuffle(rng, arr) {
  *   (back-compat with callers that omit the argument).
  * @returns {{ seed:number, plateaus:object[], obstacles:object[] }}
  */
-export function generateMap(worldId, radius, seed, enabledObstacles = {}) {
+export function generateMap(
+  worldId: string,
+  radius: number,
+  seed: number,
+  enabledObstacles: Partial<Record<ObstacleTypeId, boolean>> = {},
+): MapLayout {
   const rng = mulberry32(seed);
   const m   = CFG.MAP;
 
@@ -89,7 +95,7 @@ export function generateMap(worldId, radius, seed, enabledObstacles = {}) {
   //   • not inside the centre clear zone
   //   • not inside the spawn-ring clearance band
   //   • on solid ground at minimum arena radius
-  function isValidCenter(x, z) {
+  function isValidCenter(x: number, z: number): boolean {
     const d = Math.hypot(x, z);
     if (d < MAP_CENTER_CLEAR) return false;
     if (Math.abs(d - spawnRingR) < MAP_SPAWN_RING_CLEAR) return false;
@@ -98,7 +104,7 @@ export function generateMap(worldId, radius, seed, enabledObstacles = {}) {
 
   // True when the rectangular footprint (centre x/z, half-extents hw×hd) does
   // not overlap any already-placed rectangle by less than the plateau clearance.
-  function rectClear(x, z, hw, hd, placed) {
+  function rectClear(x: number, z: number, hw: number, hd: number, placed: { x: number; z: number; hw: number; hd: number }[]): boolean {
     const gap = m.PLATEAU_CLEARANCE;
     for (const p of placed) {
       if (Math.abs(x - p.x) < hw + p.hw + gap &&
@@ -109,7 +115,7 @@ export function generateMap(worldId, radius, seed, enabledObstacles = {}) {
 
   // True when a circle (x,z,r) clears all already-placed circles by the
   // configured minimum gap (keeps obstacles spaced out, not bunched).
-  function circleClear(x, z, r, placed) {
+  function circleClear(x: number, z: number, r: number, placed: { x: number; z: number; r: number }[]): boolean {
     const gap = m.OBS_MIN_GAP ?? 0.5;
     for (const p of placed) {
       if (Math.hypot(x - p.x, z - p.z) < r + p.r + gap) return false;
@@ -118,7 +124,7 @@ export function generateMap(worldId, radius, seed, enabledObstacles = {}) {
   }
 
   // True when the circle (x,z,r) doesn't overlap any plateau AABB.
-  function circleClearOfPlateaus(x, z, r) {
+  function circleClearOfPlateaus(x: number, z: number, r: number): boolean {
     for (const pl of placed_rects) {
       // Closest point on AABB to circle centre:
       const cx = Math.max(pl.x - pl.hw, Math.min(x, pl.x + pl.hw));
@@ -135,8 +141,8 @@ export function generateMap(worldId, radius, seed, enabledObstacles = {}) {
   // ------------------------------------------------------------------
   // Usually one high ground; a small chance of a second placed far away.
   const plateauCount = m.PLATEAU_BASE_COUNT + (rng() < m.PLATEAU_SECOND_CHANCE ? 1 : 0);
-  const plateaus     = [];
-  const placed_rects = []; // { x, z, hw, hd } — for clearance bookkeeping
+  const plateaus: MapPlateau[] = [];
+  const placed_rects: { x: number; z: number; hw: number; hd: number }[] = []; // for clearance bookkeeping
 
   for (let i = 0; i < plateauCount; i++) {
     placed: for (let t = 0; t < TRIES; t++) {
@@ -168,14 +174,14 @@ export function generateMap(worldId, radius, seed, enabledObstacles = {}) {
       //   rampLen = height (gives a 45° max slope — comfortable to walk).
       //   rampWidth = min(1.5, 45 % of the relevant plateau side).
       const rampCount = randInt(rng, 1, 2);
-      const sides     = shuffle(rng, [0, 1, 2, 3]);
-      const ramps     = [];
+      const sides     = shuffle<0 | 1 | 2 | 3>(rng, [0, 1, 2, 3]);
+      const ramps: MapRamp[] = [];
       const rampLen   = Math.max(height, 1.0);
       const rampWide  = Math.min(1.5, Math.min(w, d) * 0.45);
 
       for (let r = 0; r < rampCount; r++) {
         const side = sides[r];
-        let rx, rz, rw, rd;
+        let rx: number, rz: number, rw: number, rd: number;
         if (side === 0) {        // +x face → ramp extends in +x
           rx = px + hw + rampLen / 2;  rz = pz;
           rw = rampLen;                rd = rampWide;
@@ -203,7 +209,7 @@ export function generateMap(worldId, radius, seed, enabledObstacles = {}) {
   // ------------------------------------------------------------------
   // Each spec defines the obstacle type, collision-radius range, height range,
   // and count range (driven by CFG.MAP tunables).
-  const OBS_SPECS = [
+  const OBS_SPECS: { type: ObstacleTypeId; rLo: number; rHi: number; hLo: number; hHi: number; cLo: number; cHi: number }[] = [
     { type: "tree",       rLo: 0.4, rHi: 0.7,  hLo: 2.0, hHi: 3.5, cLo: m.OBS_TREE_MIN,        cHi: m.OBS_TREE_MAX },
     { type: "stone",      rLo: 0.5, rHi: 0.9,  hLo: 0.8, hHi: 1.6, cLo: m.OBS_STONE_MIN,       cHi: m.OBS_STONE_MAX },
     { type: "column",     rLo: 0.3, rHi: 0.6,  hLo: 2.0, hHi: 3.0, cLo: m.OBS_COLUMN_MIN,      cHi: m.OBS_COLUMN_MAX },
@@ -215,8 +221,8 @@ export function generateMap(worldId, radius, seed, enabledObstacles = {}) {
   ];
 
   let obsId = 0;
-  const obstacles   = [];
-  const circ_placed = []; // { x, z, r } — for obstacle-vs-obstacle clearance
+  const obstacles: MapObstacle[] = [];
+  const circ_placed: { x: number; z: number; r: number }[] = []; // for obstacle-vs-obstacle clearance
 
   for (const spec of OBS_SPECS) {
     // Skip disabled types before any RNG draw. NOTE: this means disabling a

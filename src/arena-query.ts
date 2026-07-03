@@ -20,6 +20,12 @@
 //   Ramp x/z is the CENTRE; w/d are FULL extents.
 //   Ramp sides: 0=+x face, 1=-x face, 2=+z face, 3=-z face.
 import { CFG, isOnArenaWorld } from "./config.js";
+import type { MapLayout, MapRamp } from "./types";
+
+/** Layout subset the pure query functions actually read (seed is not needed
+ * for height/collision math; worldId is carried along by MapQuery's active
+ * cache but not read by the standalone functions below). */
+type LayoutLike = Pick<MapLayout, "plateaus" | "obstacles"> & { worldId?: string };
 
 const BASE_Y = CFG.PLATFORM_TOP; // 0 — the default platform surface
 
@@ -32,7 +38,7 @@ const BLOCK_THRESHOLD = 0.3;
 // ---------------------------------------------------------------------------
 
 /** Returns true when (x, z) lies inside a ramp's AABB footprint. */
-function inRampBox(x, z, ramp) {
+function inRampBox(x: number, z: number, ramp: MapRamp): boolean {
   return x >= ramp.x - ramp.w * 0.5 - 1e-6 &&
          x <= ramp.x + ramp.w * 0.5 + 1e-6 &&
          z >= ramp.z - ramp.d * 0.5 - 1e-6 &&
@@ -50,9 +56,9 @@ function inRampBox(x, z, ramp) {
  *   side 2 (+z): extends in +z from plateau.  Head at ramp.z - ramp.d/2.
  *   side 3 (-z): extends in -z from plateau.  Head at ramp.z + ramp.d/2.
  */
-function rampHeightAt(x, z, ramp, plateauHeight) {
+function rampHeightAt(x: number, z: number, ramp: MapRamp, plateauHeight: number): number {
   // t = 0 at the head (full height), t = 1 at the foot (ground).
-  let t;
+  let t: number;
   switch (ramp.side) {
     case 0: { const head = ramp.x - ramp.w * 0.5; t = (x - head) / ramp.w; break; }
     case 1: { const head = ramp.x + ramp.w * 0.5; t = (head - x) / ramp.w; break; }
@@ -70,7 +76,7 @@ function rampHeightAt(x, z, ramp, plateauHeight) {
  * Liang-Barsky segment/AABB intersection test (XZ only).
  * Returns [tEnter, tExit] (both ∈ [0,1]) or null when the segment misses.
  */
-function segmentAABB2D(x0, z0, x1, z1, xMin, xMax, zMin, zMax) {
+function segmentAABB2D(x0: number, z0: number, x1: number, z1: number, xMin: number, xMax: number, zMin: number, zMax: number): [number, number] | null {
   let lo = 0, hi = 1;
   const dx = x1 - x0;
   if (Math.abs(dx) < 1e-10) {
@@ -99,7 +105,7 @@ function segmentAABB2D(x0, z0, x1, z1, xMin, xMax, zMin, zMax) {
  * Parametric segment/circle intersection test (XZ only).
  * Returns the first entry parameter t ∈ [0,1] inside the circle, or null.
  */
-function segmentCircle2D(x0, z0, x1, z1, cx, cz, r) {
+function segmentCircle2D(x0: number, z0: number, x1: number, z1: number, cx: number, cz: number, r: number): number | null {
   const dx = x1 - x0, dz = z1 - z0;
   const fx = x0 - cx, fz = z0 - cz;
   const a = dx * dx + dz * dz;
@@ -133,7 +139,7 @@ function segmentCircle2D(x0, z0, x1, z1, cx, cz, r) {
  * @param {{ plateaus:object[], obstacles:object[] }|null} layout
  * @returns {number}
  */
-export function groundHeightAt(x, z, layout) {
+export function groundHeightAt(x: number, z: number, layout: LayoutLike | null): number {
   if (!layout) return BASE_Y;
   for (const pl of layout.plateaus) {
     // Ramps are checked first: they lie outside the plateau box and transition
@@ -172,7 +178,7 @@ export function groundHeightAt(x, z, layout) {
  * @param {{ plateaus:object[], obstacles:object[] }|null} layout
  * @returns {boolean}
  */
-export function blocksMovement(x, z, fromY, layout) {
+export function blocksMovement(x: number, z: number, fromY: number, layout: LayoutLike | null): boolean {
   if (!layout) return false;
 
   for (const pl of layout.plateaus) {
@@ -214,7 +220,7 @@ export function blocksMovement(x, z, fromY, layout) {
  * @param {{ plateaus:object[], obstacles:object[] }|null} layout
  * @returns {boolean}
  */
-export function obstaclesBlockingRay(x0, z0, y0, x1, z1, y1, layout) {
+export function obstaclesBlockingRay(x0: number, z0: number, y0: number, x1: number, z1: number, y1: number, layout: LayoutLike | null): boolean {
   if (!layout) return false;
 
   const dy = y1 - y0;
@@ -259,7 +265,7 @@ export function obstaclesBlockingRay(x0, z0, y0, x1, z1, y1, layout) {
  * @param {{ plateaus:object[], obstacles:object[] }|null} layout
  * @returns {boolean}
  */
-export function onRamp(x, z, layout) {
+export function onRamp(x: number, z: number, layout: LayoutLike | null): boolean {
   if (!layout) return false;
   for (const pl of layout.plateaus) {
     for (const ramp of pl.ramps) {
@@ -275,8 +281,12 @@ export function onRamp(x, z, layout) {
 // ---------------------------------------------------------------------------
 
 export class MapQuery {
-  constructor(layout = null) {
-    /** @type {{ worldId?:string, plateaus:object[], obstacles:object[] }|null} */
+  layout: MapLayout | null;
+  activeRadius: number;
+  _activeLayout: LayoutLike | null;
+  _activeKey: number | null;
+
+  constructor(layout: MapLayout | null = null) {
     this.layout = layout;
     // Active-radius filtering: as the arena shrinks, features whose CENTRE has
     // left the platform are inert. activeRadius = Infinity means "no shrink
@@ -287,7 +297,7 @@ export class MapQuery {
   }
 
   /** Replace the stored layout (call at round start after generateMap). */
-  setLayout(layout) {
+  setLayout(layout: MapLayout | null): void {
     this.layout = layout;
     this.activeRadius = Infinity;
     this._activeLayout = layout;
@@ -300,14 +310,14 @@ export class MapQuery {
    * ground height. Cheap: the filtered view is rebuilt only when the radius
    * crosses a 0.25-unit bucket.
    */
-  setActiveRadius(radius) {
+  setActiveRadius(radius: number): void {
     this.activeRadius = radius;
     if (!this.layout || !Number.isFinite(radius)) { this._activeLayout = this.layout; this._activeKey = null; return; }
     const key = Math.round(radius * 4); // 0.25-unit buckets
     if (key === this._activeKey) return;
     this._activeKey = key;
     const worldId = this.layout.worldId ?? CFG.DEFAULT_ARENA_WORLD;
-    const onPlat = (cx, cz) => isOnArenaWorld(worldId, radius, cx, cz);
+    const onPlat = (cx: number, cz: number) => isOnArenaWorld(worldId, radius, cx, cz);
     this._activeLayout = {
       worldId,
       plateaus:  this.layout.plateaus.filter((pl) => onPlat(pl.x, pl.z)),
@@ -316,14 +326,14 @@ export class MapQuery {
   }
 
   /** Is the feature whose centre is (cx,cz) still on the platform? */
-  isActiveAt(cx, cz) {
+  isActiveAt(cx: number, cz: number): boolean {
     if (!Number.isFinite(this.activeRadius) || !this.layout) return true;
     const worldId = this.layout.worldId ?? CFG.DEFAULT_ARENA_WORLD;
     return isOnArenaWorld(worldId, this.activeRadius, cx, cz);
   }
 
-  groundHeightAt(x, z)                              { return groundHeightAt(x, z, this._activeLayout); }
-  blocksMovement(x, z, fromY)                        { return blocksMovement(x, z, fromY, this._activeLayout); }
-  obstaclesBlockingRay(x0, z0, y0, x1, z1, y1)      { return obstaclesBlockingRay(x0, z0, y0, x1, z1, y1, this._activeLayout); }
-  onRamp(x, z)                                       { return onRamp(x, z, this._activeLayout); }
+  groundHeightAt(x: number, z: number): number                                                       { return groundHeightAt(x, z, this._activeLayout); }
+  blocksMovement(x: number, z: number, fromY: number): boolean                                        { return blocksMovement(x, z, fromY, this._activeLayout); }
+  obstaclesBlockingRay(x0: number, z0: number, y0: number, x1: number, z1: number, y1: number): boolean { return obstaclesBlockingRay(x0, z0, y0, x1, z1, y1, this._activeLayout); }
+  onRamp(x: number, z: number): boolean                                                                { return onRamp(x, z, this._activeLayout); }
 }

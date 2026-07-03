@@ -181,6 +181,48 @@ export interface SpellTemplate {
   spells: string[];
 }
 
+// ─── Procedural map layout (src/mapgen.js / src/arena-query.js) ───────────
+
+/** A single ramp footprint attached to a plateau (src/mapgen.js generateMap). */
+export interface MapRamp {
+  /** Which plateau face the ramp connects to: 0=+x, 1=-x, 2=+z, 3=-z. */
+  side: 0 | 1 | 2 | 3;
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+}
+
+/** A raised rectangular platform with 1-2 ramps down to ground level. */
+export interface MapPlateau {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  height: number;
+  ramps: MapRamp[];
+}
+
+/** A circular-footprint blocking prop (tree/stone/column/etc). */
+export interface MapObstacle {
+  id: number;
+  type: ObstacleTypeId;
+  x: number;
+  z: number;
+  r: number;
+  height: number;
+  rot: number;
+}
+
+/** Full procedural layout returned by src/mapgen.js generateMap() and
+ * broadcast host->clients as Snapshot.mapLayout. */
+export interface MapLayout {
+  seed: number;
+  worldId: string;
+  plateaus: MapPlateau[];
+  obstacles: MapObstacle[];
+}
+
 // ─── Runtime / wire snapshot shapes ─────────────────────────────────────────
 
 /** Sim phase (src/sim.js PHASE) — kept literal here since sim.js isn't
@@ -401,10 +443,7 @@ export type GameEvent =
 
 /**
  * Full snapshot the host broadcasts to clients each tick (sim.js
- * `snapshot()`). `mapLayout` is produced by src/mapgen.js — a not-yet-
- * converted, deeply procedural structure — so it is left `unknown` here
- * rather than guessed at; a later P1 mapgen.js conversion should replace
- * this with a real `MapLayout` type.
+ * `snapshot()`). `mapLayout` is produced by src/mapgen.js.
  */
 export interface Snapshot {
   t: number;
@@ -428,7 +467,7 @@ export interface Snapshot {
   events: GameEvent[];
   /** Procedural map layout (src/mapgen.js); omitted when unchanged since the
    * last broadcast (bandwidth gate) — see sim.js snapshot() doc comment. */
-  mapLayout?: unknown;
+  mapLayout?: MapLayout;
   mapV: number;
 }
 
