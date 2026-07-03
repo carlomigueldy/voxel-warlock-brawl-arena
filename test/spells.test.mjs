@@ -1,16 +1,11 @@
 // Headless tests for the full handbook spellbook + item system.
 // Run with: node test/spells.test.mjs
+import { test } from "vitest";
 import assert from "node:assert";
 import { Simulation, PHASE } from "../src/sim.js";
 import { Bolt } from "../src/bolt.js";
 import { CFG, SPELLS, SPELL_ORDER, ITEMS } from "../src/config.js";
 import { castSpell } from "../src/spells.js";
-
-let passed = 0;
-function test(name, fn) {
-  try { fn(); console.log("  ok  -", name); passed++; }
-  catch (e) { console.error("  FAIL-", name, "\n", e.message); process.exitCode = 1; }
-}
 
 function advance(sim, seconds, dt = 1 / CFG.TICK_RATE) {
   for (let t = 0; t < seconds; t += dt) sim.step(dt);
@@ -850,4 +845,3 @@ test("summon adds a minion mob with ttl set", () => {
   assert.strictEqual(sim.mobs.filter(m => m.summoned && m.alive).length, 0, "summoned minion did not despawn");
 });
 
-console.log(`\n${passed} spellbook tests passed.`);

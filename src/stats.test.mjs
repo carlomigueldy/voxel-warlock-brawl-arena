@@ -1,14 +1,9 @@
 // Pure unit tests for kill-attribution logic.
 // Run with: node src/stats.test.mjs
+import { test } from "vitest";
 import assert from "node:assert";
 import { resolveKillCredit } from "./player.js";
 import { CFG } from "./config.js";
-
-let passed = 0;
-function test(name, fn) {
-  try { fn(); console.log("  ok  -", name); passed++; }
-  catch (e) { console.error("  FAIL-", name, "\n", e.message); process.exitCode = 1; }
-}
 
 console.log("Kill attribution tests:");
 
@@ -66,4 +61,3 @@ test("resolveKillCredit handles zero lastAttackerAt (uninitialised) safely", () 
     "a lastAttackerAt of 0 (uninitialised) must not yield a kill credit");
 });
 
-console.log(`\n${passed} tests passed.`);

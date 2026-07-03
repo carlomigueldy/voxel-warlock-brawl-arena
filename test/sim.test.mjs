@@ -1,5 +1,6 @@
 // Headless smoke + logic tests for the pure simulation (no browser needed).
 // Run with: node test/sim.test.mjs
+import { test } from "vitest";
 import assert from "node:assert";
 import { Simulation, PHASE } from "../src/sim.js";
 import { Bolt } from "../src/bolt.js";
@@ -7,12 +8,6 @@ import { CFG, SPELLS } from "../src/config.js";
 import { Player } from "../src/player.js";
 import { dodgeVector } from "../src/bot.js";
 import { castSpell } from "../src/spells.js";
-
-let passed = 0;
-function test(name, fn) {
-  try { fn(); console.log("  ok  -", name); passed++; }
-  catch (e) { console.error("  FAIL-", name, "\n", e.message); process.exitCode = 1; }
-}
 
 function advance(sim, seconds, dt = 1 / CFG.TICK_RATE) {
   for (let t = 0; t < seconds; t += dt) sim.step(dt);
@@ -1083,4 +1078,3 @@ test("integration: non-practice host option object enables spell draft (mirrors 
     "if this fails, check that main.js startHosting passes draftEnabled: !options.practice");
 });
 
-console.log(`\n${passed} tests passed.`);

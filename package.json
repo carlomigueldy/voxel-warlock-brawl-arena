@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "prepare": "husky",
-    "test": "bash -c 'rc=0; for t in test/sim.test.mjs test/spells.test.mjs test/cast.test.mjs test/matchmaking.test.mjs test/source.test.mjs test/animations.test.mjs test/mapgen.test.mjs test/collision.test.mjs test/physics.test.mjs test/mobs.test.mjs test/items.test.mjs test/social.test.mjs src/stats.test.mjs; do node $t || rc=1; done; exit $rc'"
+    "test": "vitest run"
   },
   "keywords": [
     "threejs",

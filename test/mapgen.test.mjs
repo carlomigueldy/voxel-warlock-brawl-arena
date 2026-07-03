@@ -1,20 +1,9 @@
 // Unit tests for src/mapgen.js
 // Run with: node test/mapgen.test.mjs
+import { test } from "vitest";
 import assert from "node:assert";
 import { CFG, isOnArenaWorld } from "../src/config.js";
 import { generateMap, MAP_CENTER_CLEAR, MAP_SPAWN_RING_CLEAR } from "../src/mapgen.js";
-
-let passed = 0;
-function test(name, fn) {
-  try {
-    fn();
-    console.log("  ok  -", name);
-    passed++;
-  } catch (e) {
-    console.error("  FAIL-", name, "\n", e.message);
-    process.exitCode = 1;
-  }
-}
 
 console.log("Map generation tests:");
 
@@ -495,4 +484,3 @@ test("passing undefined explicitly behaves the same as omitting the 4th arg", ()
     "generateMap(w,r,s,undefined) must equal generateMap(w,r,s)");
 });
 
-console.log(`\n${passed} map-gen checks passed.`);
