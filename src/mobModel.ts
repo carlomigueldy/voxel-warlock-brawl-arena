@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
+import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { CFG } from "./config.js";
 import { makeMobHealthBar } from "./lowpoly.js";
 import { asset } from "./asset-url.js";
@@ -11,8 +11,18 @@ import { asset } from "./asset-url.js";
 // voxel.js stay procedural-only per docs/superpowers/specs/
 // 2026-07-01-low-poly-asset-enhancements-design.md; only these 4 mobs, not
 // minion, get real rigged bodies).
-const url = (p) => asset(p);
-export const MOB_MODEL_ASSETS = {
+const url = (p: string): string => asset(p);
+
+export interface MobModelAssets {
+  base: string;
+  idle: string;
+  walk: string;
+  run: string;
+  attack: string;
+  healthBar: { color: number; yPos: number };
+}
+
+export const MOB_MODEL_ASSETS: Record<string, MobModelAssets> = {
   stoneGiant: {
     base:   url("assets/mobs/stone-giant-rigged.glb"),
     idle:   url("assets/mobs/stone-giant-idle.glb"),
@@ -47,23 +57,36 @@ export const MOB_MODEL_ASSETS = {
   },
 };
 
-let _loadPromises = new Map(); // mobType -> Promise
-let _templates = new Map();    // mobType -> template
+interface MobModelClips {
+  idle: THREE.AnimationClip | null;
+  walk: THREE.AnimationClip | null;
+  run: THREE.AnimationClip | null;
+  attack: THREE.AnimationClip | null;
+}
 
-function findClip(gltf, hint) {
+interface MobModelTemplate {
+  id: string;
+  scene: THREE.Object3D;
+  clips: MobModelClips;
+}
+
+let _loadPromises = new Map<string, Promise<MobModelTemplate | null>>(); // mobType -> Promise
+let _templates = new Map<string, MobModelTemplate>();    // mobType -> template
+
+function findClip(gltf: GLTF, hint: string): THREE.AnimationClip | null {
   const anims = gltf.animations || [];
   if (!anims.length) return null;
   const lc = hint.toLowerCase();
   return anims.find((c) => (c.name || "").toLowerCase().includes(lc)) || anims[0];
 }
 
-export function loadMobModelTemplate(type) {
+export function loadMobModelTemplate(type: string): Promise<MobModelTemplate | null> | null {
   const assets = MOB_MODEL_ASSETS[type];
   if (!assets) return null;
-  if (_loadPromises.has(type)) return _loadPromises.get(type);
+  if (_loadPromises.has(type)) return _loadPromises.get(type)!;
 
   const loader = new GLTFLoader();
-  const load = (u) => new Promise((res, rej) => loader.load(u, res, undefined, rej));
+  const load = (u: string): Promise<GLTF> => new Promise((res, rej) => loader.load(u, res, undefined, rej));
 
   const promise = Promise.all([load(assets.base), load(assets.idle), load(assets.walk), load(assets.run), load(assets.attack)])
     .then(([base, idle, walk, run, attack]) => {
@@ -81,7 +104,9 @@ export function loadMobModelTemplate(type) {
       // same gotcha documented in character.js).
       const measured = new THREE.Box3();
       scene.traverse((o) => {
-        if ((o.isSkinnedMesh || o.isMesh) && o.geometry) {
+        // SkinnedMesh extends Mesh, so this one instanceof check covers both
+        // legacy flag reads (o.isSkinnedMesh || o.isMesh).
+        if (o instanceof THREE.Mesh && o.geometry) {
           o.geometry.computeBoundingBox();
           if (o.geometry.boundingBox) measured.union(o.geometry.boundingBox);
         }
@@ -94,13 +119,13 @@ export function loadMobModelTemplate(type) {
       scene.scale.multiplyScalar(s);
       scene.position.y -= measured.min.y * s;
       scene.traverse((o) => {
-        if (o.isMesh || o.isSkinnedMesh) {
+        if (o instanceof THREE.Mesh) {
           o.castShadow = true;
           o.receiveShadow = true;
           o.frustumCulled = false;
         }
       });
-      const template = { id: type, scene, clips: { idle: idleClip, walk: walkClip, run: runClip, attack: attackClip } };
+      const template: MobModelTemplate = { id: type, scene, clips: { idle: idleClip, walk: walkClip, run: runClip, attack: attackClip } };
       _templates.set(type, template);
       return template;
     })
@@ -117,11 +142,38 @@ export function loadMobModelTemplate(type) {
   return promise;
 }
 
-export function mobModelReady(type) {
+export function mobModelReady(type: string): boolean {
   return _templates.has(type);
 }
 
-export function buildMobModelInstance(type, color) {
+export interface MobModelUpdateInfo {
+  dt: number;
+  speed?: number;
+  maxSpeed?: number;
+  falling?: boolean;
+}
+
+interface MobModelActions {
+  idle: THREE.AnimationAction | null;
+  walk: THREE.AnimationAction | null;
+  run: THREE.AnimationAction | null;
+  attack: THREE.AnimationAction | null;
+}
+
+export interface MobModelState {
+  root: THREE.Group;
+  model: THREE.Object3D;
+  mixer: THREE.AnimationMixer;
+  actions: MobModelActions;
+  current: THREE.AnimationAction | null;
+  w: { idle: number; walk: number; run: number };
+  attacking: boolean;
+  attackT: number;
+  triggerAttack: () => void;
+  update: (info: MobModelUpdateInfo) => void;
+}
+
+export function buildMobModelInstance(type: string, color: number): THREE.Group | null {
   const template = _templates.get(type);
   if (!template) return null;
   const assets = MOB_MODEL_ASSETS[type];
@@ -133,9 +185,9 @@ export function buildMobModelInstance(type, color) {
   // Clone materials per instance so per-instance status VFX (opacity toggles
   // for WW/invis, etc.) never bleed across mob instances sharing a template.
   model.traverse((o) => {
-    if ((o.isMesh || o.isSkinnedMesh) && o.material) {
+    if (o instanceof THREE.Mesh && o.material) {
       const wasArray = Array.isArray(o.material);
-      const mats = wasArray ? o.material : [o.material];
+      const mats = wasArray ? (o.material as THREE.Material[]) : [o.material as THREE.Material];
       const cloned = mats.map((m) => {
         const c = m.clone();
         c.needsUpdate = true;
@@ -146,14 +198,14 @@ export function buildMobModelInstance(type, color) {
   });
 
   const mixer = new THREE.AnimationMixer(model);
-  const actions = {};
-  const make = (clip, opts) => {
+  const actions: MobModelActions = { idle: null, walk: null, run: null, attack: null };
+  const make = (clip: THREE.AnimationClip | null, opts?: { oneShot?: boolean }): THREE.AnimationAction | null => {
     if (!clip) return null;
     const a = mixer.clipAction(clip);
     a.enabled = true;
     a.setEffectiveWeight(0);
     if (opts && opts.oneShot) {
-      a.setLoop(THREE.LoopOnce);
+      a.setLoop(THREE.LoopOnce, 1);
       a.clampWhenFinished = true;
     }
     a.play();
@@ -173,7 +225,7 @@ export function buildMobModelInstance(type, color) {
   root.add(hb.group);
   root.userData.healthBar = hb.bar;
 
-  const state = {
+  const state: MobModelState = {
     root,
     model,
     mixer,
@@ -182,6 +234,8 @@ export function buildMobModelInstance(type, color) {
     w: { idle: current === actions.idle ? 1 : 0, walk: 0, run: 0 },
     attacking: false,
     attackT: 0,
+    triggerAttack: () => {},
+    update: () => {},
   };
 
   state.triggerAttack = () => {
@@ -204,7 +258,7 @@ export function buildMobModelInstance(type, color) {
     actions.attack.play();
   };
 
-  state.update = (info) => {
+  state.update = (info: MobModelUpdateInfo) => {
     const dt = Math.min(0.05, Math.max(0.0001, info.dt || 0.016));
 
     if (state.attacking && actions.attack) {

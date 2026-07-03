@@ -6,6 +6,7 @@
 // <Canvas>, voxel builders) makes its first Math.random()/Clock.getDelta()/
 // getContext() call.
 import * as THREE from "three";
+import { _roots } from "@react-three/fiber";
 import { makePrng } from "../../rng";
 
 const params = new URLSearchParams(location.search);
@@ -77,8 +78,34 @@ function patchGetContext(): void {
 //    real-time jitter into R3F's elapsedTime a moment before advance()'s own
 //    override overwrites it — patching getDelta() to a deterministic,
 //    real-clock-free step removes that leak too.
+// R3F's own frameloop="never" update() (@react-three/fiber's internal
+// update(timestamp, state)) calls `state.clock.getDelta()` ONCE per
+// advance(timestamp) call, then IMMEDIATELY recomputes delta itself as
+// `timestamp - state.clock.elapsedTime` and overwrites
+// `state.clock.elapsedTime = timestamp` — R3F fully owns that clock's
+// elapsedTime in this mode already, the getDelta() call/return value is
+// vestigial for it. If this patch ALSO advances `elapsedTime` by
+// CAPTURE_FIXED_DT on that same call — the exact amount replayDriver.ts's
+// `advance()` timestamp increments by every tick — the two stay in
+// permanent lockstep and R3F's subtraction always computes to EXACTLY
+// ZERO, silently freezing dt (and therefore ALL R3F entity
+// interpolation/animation, e.g. CameraRig/MobEntity) for the entire
+// capture while every OTHER gate (typecheck/test/build) stays green. Skip
+// the mutation specifically for whichever THREE.Clock instance R3F itself
+// owns (found via the `_roots` registry every mounted <Canvas> is tracked
+// under) and let R3F's own overwrite be the sole source of truth for it;
+// legacy's `this.clock` (renderer.js — not an R3F root) keeps advancing via
+// this same patch exactly as before.
+function isR3FOwnedClock(clock: THREE.Clock): boolean {
+  for (const root of _roots.values()) {
+    if (root.store.getState().clock === clock) return true;
+  }
+  return false;
+}
+
 function patchClock(): void {
   THREE.Clock.prototype.getDelta = function (this: THREE.Clock) {
+    if (isR3FOwnedClock(this)) return CAPTURE_FIXED_DT;
     this.elapsedTime += CAPTURE_FIXED_DT;
     return CAPTURE_FIXED_DT;
   };
