@@ -74,26 +74,6 @@ function glowBox(w: number, h: number, d: number, color: number, opts: GlowBoxOp
   return m;
 }
 
-interface AuraBoxOpts {
-  x?: number;
-  y?: number;
-  z?: number;
-  opacity?: number;
-}
-
-// Unlit translucent voxel — for halos / aura shells (matches buildBolt halo look).
-function auraBox(w: number, h: number, d: number, color: number, opts: AuraBoxOpts = {}): THREE.Mesh {
-  const geo = new THREE.BoxGeometry(w, h, d);
-  const mat = new THREE.MeshBasicMaterial({
-    color,
-    transparent: true,
-    opacity:     opts.opacity ?? 0.3,
-  });
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(opts.x ?? 0, opts.y ?? 0, opts.z ?? 0);
-  return m;
-}
-
 // Richer color transform than shade(): independent hue/sat/light deltas.
 function tint(hex: number, dh = 0, ds = 0, dl = 0): number {
   const c = new THREE.Color(hex);
@@ -122,18 +102,9 @@ interface SecondaryEntry {
   base: THREE.Vector3;
 }
 
-// Register a node for cheap secondary motion (bob / sway / spin / pulse). Pushes
-// a descriptor into group.userData._sec[]; driven by animateSecondary(). Additive
-// and opt-in — a builder calls wobble() and never touches anim code directly.
-// cfg: { bobAmp, bobHz, swayAmp, swayHz, spinX, spinY, spinZ,
-//        pulseMat, pulseBase, pulseAmp, pulseHz, phase }
-function wobble(group: THREE.Object3D, node: THREE.Object3D, cfg: WobbleCfg): THREE.Object3D {
-  ((group.userData._sec ??= []) as SecondaryEntry[]).push({ node, cfg, base: node.position.clone() });
-  return node;
-}
-
-// Drives every node registered via wobble() on this group. Safe to call on a group
-// with no _sec list (no-op). Pure transform/opacity writes, no allocation per frame.
+// Drives every node registered into group.userData._sec[] (bob / sway / spin /
+// pulse secondary motion). Safe to call on a group with no _sec list (no-op).
+// Pure transform/opacity writes, no allocation per frame.
 export function animateSecondary(group: THREE.Object3D, t: number, dt: number): void {
   const sec = group.userData._sec as SecondaryEntry[] | undefined;
   if (!sec || !sec.length) return;
@@ -628,7 +599,7 @@ export function buildLightning(x1: number, z1: number, x2: number, z2: number, c
 }
 
 // A telegraphed meteor: a falling faceted rock plus a ground ring marker.
-export function buildMeteor(x: number, z: number, fall: number, radius: number, color: number): THREE.Group {
+export function buildMeteor(x: number, z: number, fall: number, radius: number, _color: number): THREE.Group {
   const g = new THREE.Group();
   const rock = facetedRock(0.9, 0x552211, {
     detail: 1, perturb: 0.18, sx: 1.6, sy: 1.6, sz: 1.6,

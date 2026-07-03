@@ -27,7 +27,7 @@ import * as THREE from "three";
 import type { ObjectMap } from "@react-three/fiber";
 import type { GLTF } from "three-stdlib";
 import { CFG } from "../../src/config";
-import { snapshotRef, pushSnapshot, setLocalId, resetSnapshotRef } from "../../src/store/snapshotRef";
+import { pushSnapshot, setLocalId, resetSnapshotRef } from "../../src/store/snapshotRef";
 import { useRosterStore, deriveRoster } from "../../src/store/useRosterStore";
 import { player as registryPlayer } from "../../src/three/entities/entityRegistry";
 import { warlockGlbUrls } from "../../src/character";

@@ -6,7 +6,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Panel } from "./Panel";
-import { Button } from "./Button";
 import { Icon } from "./Icon";
 import styles from "./Modal.module.css";
 

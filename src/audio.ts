@@ -109,6 +109,10 @@ export class AudioEngine {
   _musicTimer?: ReturnType<typeof setInterval> | null;
 
   constructor() {
+    // Singleton registration, not the closure-capture anti-pattern this rule
+    // usually catches — the exported helpers below (menuCue, etc.) read
+    // _instance back out.
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     _instance = this;
     this.ctx = null;
     this.master = null;
@@ -515,7 +519,6 @@ export class AudioEngine {
     drone.start();
     this._musicNodes.push(drone, dg);
 
-    let step = 0;
     this._musicTimer = setInterval(() => {
       if (!this.musicOn) return;
       const semi = scale[Math.floor(Math.random() * scale.length)] + (Math.random() < 0.3 ? 12 : 0);
@@ -529,7 +532,6 @@ export class AudioEngine {
       g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
       osc.connect(g); g.connect(this.musicGain!); g.connect(this.reverb!);
       osc.start(t); osc.stop(t + 1.3);
-      step++;
     }, 620);
   }
 

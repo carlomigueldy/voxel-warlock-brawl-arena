@@ -13,7 +13,7 @@
 import * as THREE from "three";
 import {
   facetedCone, facetedCylinder, facetedRock, facetedShard,
-  facetedSlab, facetedCrystal,
+  facetedSlab,
 } from "./lowpoly.js";
 import type { MapObstacle, ObstacleTypeId } from "./types";
 

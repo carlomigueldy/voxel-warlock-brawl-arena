@@ -23,8 +23,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // eslint-disable-next-line no-console -- surfaced for diagnosis; the UI
-    // itself degrades gracefully to the voxel fallback below.
+    // Surfaced for diagnosis; the UI itself degrades gracefully to the voxel
+    // fallback below.
     console.error("[WarlockBody] GLB path failed, falling back to voxel body:", error, info.componentStack);
   }
 

@@ -38,7 +38,7 @@
 // field is optional — builders fall back sensibly when absent, matching the
 // VFX_REGISTRY ctx contract's "the base contract does not guarantee them".
 import * as THREE from "three";
-import { CFG, SPELLS } from "../config.js";
+import { SPELLS } from "../config.js";
 import { secondaryColor } from "./duotone.js";
 
 // SPELLS entries carry per-kind tunables (range, radius, cone, spread,

@@ -10,7 +10,7 @@
 //   spawnMob(id,type,x,z,parentId?) → factory
 
 import { CFG } from "./config.js";
-import type { MobSnap, MobChannelSnap } from "./types";
+import type { MobSnap } from "./types";
 
 // ── Seeded PRNG (Mulberry32) ─ same pattern as bot.js:14-32 ─────────────────
 // Never use Math.random() in mob logic so simulations are always reproducible.

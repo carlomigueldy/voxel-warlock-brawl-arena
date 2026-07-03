@@ -101,9 +101,8 @@ export function warlockGlbUrls(characterId: string): string[] {
   return urls;
 }
 
-let _loadPromises = new Map<string, Promise<CharacterTemplate>>(); // characterId -> Promise
-let _templates = new Map<string, CharacterTemplate>();    // characterId -> template
-let _loadPromise: Promise<CharacterTemplate> | null = null;       // active default load (legacy callers)
+const _loadPromises = new Map<string, Promise<CharacterTemplate>>(); // characterId -> Promise
+const _templates = new Map<string, CharacterTemplate>();    // characterId -> template
 let _template: CharacterTemplate | null = null;          // active default template (legacy callers)
 
 /** Loose Object3D shape wide enough to cover both THREE.Mesh and
@@ -133,9 +132,7 @@ export interface CharacterTemplate {
 export function loadCharacterTemplate(characterId: string = DEFAULT_CHARACTER): Promise<CharacterTemplate> {
   const id = CHARACTER_ASSETS[characterId] ? characterId : DEFAULT_CHARACTER;
   if (_loadPromises.has(id)) {
-    const p = _loadPromises.get(id)!;
-    _loadPromise = p;
-    return p;
+    return _loadPromises.get(id)!;
   }
   const assets = CHARACTER_ASSETS[id];
   const loader = new GLTFLoader();
@@ -197,7 +194,6 @@ export function loadCharacterTemplate(characterId: string = DEFAULT_CHARACTER): 
     });
 
   _loadPromises.set(id, promise);
-  _loadPromise = promise;
   return promise;
 }
 

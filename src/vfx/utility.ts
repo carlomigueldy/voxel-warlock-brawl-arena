@@ -193,7 +193,7 @@ function _streakFan(g: THREE.Group, disposables: Disposable[], color: number, op
     d.userData.a = a;
     shards.push(d);
   }
-  return (k, dt) => {
+  return (k, _dt) => {
     for (const d of shards) {
       const dist = speed * ((k * (2 - k))) * 0.4;
       d.position.set(Math.cos(d.userData.a) * dist, d.position.y, Math.sin(d.userData.a) * dist);

@@ -26,7 +26,7 @@ import { useSettingsStore } from "../../../store/useSettingsStore";
 import { Button } from "../../common";
 import styles from "../Onboarding.module.css";
 
-export const HOTKEY_SPELL_IDS = SPELL_ORDER.slice(0, CFG.SPELL_SLOT_COUNT);
+const HOTKEY_SPELL_IDS = SPELL_ORDER.slice(0, CFG.SPELL_SLOT_COUNT);
 
 // Enter/Tab/Space/NumpadEnter mirror legacy's RESERVED_CODES — Escape is
 // deliberately excluded (see file header).

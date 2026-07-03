@@ -542,7 +542,6 @@ export function useGameSession(): GameSessionIntents {
       void teardownOnlineRoom(sim.snapshot({ trackSend: false }));
     }, 250);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engines.role, engines.sim]);
 
   useHostLoop(engines.host, engines.sim, getInput(), localIdRef);

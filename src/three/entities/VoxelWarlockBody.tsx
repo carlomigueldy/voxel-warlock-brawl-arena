@@ -20,9 +20,8 @@ export interface VoxelWarlockBodyProps {
 }
 
 export function VoxelWarlockBody({ regId, color, animRef, posRef, bodyKindRef }: VoxelWarlockBodyProps) {
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- build-once-then-tick-
-  // imperatively contract (design §4 PrimitiveFx), keyed on color like every
-  // other leaf-builder bridge in this tree.
+  // build-once-then-tick-imperatively contract (design §4 PrimitiveFx), keyed
+  // on color like every other leaf-builder bridge in this tree.
   const group = useMemo(() => buildWarlock(color), [color]);
 
   useEffect(() => {
@@ -44,8 +43,9 @@ export function VoxelWarlockBody({ regId, color, animRef, posRef, bodyKindRef }:
         if (mat) (Array.isArray(mat) ? mat : [mat]).forEach((m) => m.dispose?.());
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- posRef/bodyKindRef are
-    // stable mutable-object refs owned by <PlayerEntity> for this entity's lifetime.
+    // posRef/bodyKindRef are stable mutable-object refs owned by <PlayerEntity>
+    // for this entity's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regId, group]);
 
   useFrame(() => {

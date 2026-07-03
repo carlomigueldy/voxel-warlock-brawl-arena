@@ -23,7 +23,7 @@
 // component once it exists; this PR's scope is the phase-driven draft only
 // (design §9's itemization: pick grid, timer, ready state, draft-juice).
 import { useEffect, useRef, useState } from "react";
-import { CFG, SPELLS, SPELL_ORDER, SPELL_TEMPLATES } from "../../config.js";
+import { CFG, SPELLS, SPELL_ORDER } from "../../config.js";
 import { menuCue } from "../../audio.js";
 import { gameSessionRef } from "../../loop/useGameSession";
 import { useDraftStore } from "../../store/useDraftStore";
@@ -217,5 +217,3 @@ export function DraftOverlay() {
   );
 }
 
-// Re-exported for RTL coverage of the template count without re-deriving it.
-export const DRAFT_TEMPLATE_COUNT = SPELL_TEMPLATES.length;

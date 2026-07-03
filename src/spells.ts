@@ -288,7 +288,7 @@ const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) =>
     emit(sim, { type: "thrust", id: c.id, x: c.x, z: c.z, dir });
   },
 
-  swap(sim, c, cast) {
+  swap(sim, c, _cast) {
     const s = SPELLS.swap as SpellTunables;
     const tgt = nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!tgt) return;
@@ -298,7 +298,7 @@ const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) =>
     emit(sim, { type: "swap", a: c.id, b: tgt.id, ax: c.x, az: c.z, bx: tgt.x, bz: tgt.z });
   },
 
-  drain(sim, c, cast) {
+  drain(sim, c, _cast) {
     const s = SPELLS.drain as SpellTunables;
     const tgt = nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!tgt) return;
@@ -346,7 +346,7 @@ const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) =>
     emit(sim, { type: "gravity", id: c.id, x: tx, z: tz, radius: s.radius, duration: s.duration });
   },
 
-  link(sim, c, cast) {
+  link(sim, c, _cast) {
     const s = SPELLS.link as SpellTunables;
     const tgt = nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!tgt) return;
@@ -365,24 +365,24 @@ const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) =>
     emit(sim, { type: "cast", spell: "disable", id: c.id, x: c.x, z: c.z });
   },
 
-  shield(sim, c, cast) {
+  shield(sim, c, _cast) {
     const s = SPELLS.shield as SpellTunables;
     c.status.shield = s.duration;
     c.status.shieldCharges = s.charges;
     emit(sim, { type: "shield", id: c.id });
   },
 
-  windWalk(sim, c, cast) {
+  windWalk(sim, c, _cast) {
     c.status.windWalk = (SPELLS.windWalk as SpellTunables).duration;
     emit(sim, { type: "windwalk", id: c.id });
   },
 
-  rush(sim, c, cast) {
+  rush(sim, c, _cast) {
     c.status.rush = (SPELLS.rush as SpellTunables).duration;
     emit(sim, { type: "rush", id: c.id });
   },
 
-  timeShift(sim, c, cast) {
+  timeShift(sim, c, _cast) {
     // Bookmark current position/charge; restored after `delay` seconds.
     c.timeshift = {
       x: c.x, z: c.z, charge: c.charge, t: (SPELLS.timeShift as SpellTunables).delay,
@@ -390,7 +390,7 @@ const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) =>
     emit(sim, { type: "timeshift", id: c.id, x: c.x, z: c.z });
   },
 
-  pocketWatch(sim, c, cast) {
+  pocketWatch(sim, c, _cast) {
     // Item active: reset all of the caster's own spell cooldowns.
     c.cooldowns = {};
     emit(sim, { type: "pocketwatch", id: c.id });
@@ -403,7 +403,7 @@ const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) =>
     emit(sim, { type: "cast", spell: "projectile", id: c.id, x: c.x, z: c.z });
   },
 
-  target(sim, c, cast) {
+  target(sim, c, _cast) {
     const s = SPELLS.target as SpellTunables;
     const t = aimedEnemy(sim, c, s.range, null) || nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!t) return;
@@ -428,7 +428,7 @@ const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) =>
     emit(sim, { type: "explode", id: c.id, x: tx, z: tz, radius: s.radius * explodeAoeMul });
   },
 
-  stun(sim, c, cast) {
+  stun(sim, c, _cast) {
     const s = SPELLS.stun as SpellTunables;
     const t = aimedEnemy(sim, c, s.range, null) || nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!t) return;
@@ -443,7 +443,7 @@ const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) =>
     sim.damageMobsInRadius(c.x, c.z, s.range, { dmg: s.dmg, kb: s.kb * 0.25, by: c.id });
   },
 
-  push(sim, c, cast) {
+  push(sim, c, _cast) {
     const s = SPELLS.push as SpellTunables;
     for (const p of sim.players.values()) {
       if (p.id === c.id || !p.alive || p.falling || p.spectating) continue;
@@ -463,7 +463,7 @@ const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) =>
     sim.damageMobsInRadius(c.x, c.z, s.range, { dmg: s.dmg, kb: s.kb * 0.25, by: c.id });
   },
 
-  pull(sim, c, cast) {
+  pull(sim, c, _cast) {
     const s = SPELLS.pull as SpellTunables;
     const t = aimedEnemy(sim, c, s.range, 0.6) || nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!t) return;
@@ -505,7 +505,7 @@ const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) =>
 // Channel tick handlers — called repeatedly during the channel phase.
 // Spells present here but absent from HANDLERS are pure channels (no wind-up effect).
 const CHANNEL_TICK: Record<string, (sim: Simulation, c: Player, ac: ActiveCastState, dt: number) => void> = {
-  heal(sim, c, ac, dt) {
+  heal(sim, c, _ac, _dt) {
     c.applyHeal((SPELLS.heal as SpellTunables).heal);
     emit(sim, { type: "heal", id: c.id, x: c.x, z: c.z });
   },
@@ -523,7 +523,7 @@ const CHANNEL_TICK: Record<string, (sim: Simulation, c: Player, ac: ActiveCastSt
     }
     emit(sim, { type: "vacuumTick", id: c.id, x: c.x, z: c.z, radius: s.radius });
   },
-  drag(sim, c, ac, dt) {
+  drag(sim, c, ac, _dt) {
     const s = SPELLS.drag as SpellTunables;
     if (ac.targetId === undefined) {
       const t = aimedEnemy(sim, c, s.range, null) || nearestEnemy(sim, c.id, c.x, c.z, s.range);

@@ -109,9 +109,9 @@ export function PlayerEntity({ id, meta }: PlayerEntityProps) {
     info.knockSpeed = Math.max(0, spd.current - CFG.MOVE_SPEED);
   });
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- fallback element
-  // identity churning every render is harmless (Suspense/ErrorBoundary only
-  // read it when they actually need to show it) but memoizing keeps it stable.
+  // fallback element identity churning every render is harmless (Suspense/
+  // ErrorBoundary only read it when they actually need to show it) but
+  // memoizing keeps it stable.
   const voxelFallback = useMemo(
     () => <VoxelWarlockBody regId={id} color={color} animRef={animRef} posRef={posRef} bodyKindRef={bodyKindRef} />,
     [id, color, posRef],
