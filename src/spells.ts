@@ -5,21 +5,38 @@
 // here or via persistent item modifiers in Player.applyItems().
 import { CFG, SPELLS } from "./config.js";
 import { Bolt } from "./bolt.js";
+import type { Player, ActiveCastState } from "./player";
+import type { Simulation } from "./sim";
+import type { GameEvent, CastCmd } from "./types";
+
+// SPELLS entries carry per-kind tunables (dmg, kb, range, ...) via SpellDef's
+// index signature (typed `unknown` — see the doc comment above SpellDef in
+// types.ts). spells.ts is the intended consumer of those dynamic tunables, so
+// handlers read them through this widened alias rather than sprinkling `as`
+// casts on every access.
+type SpellTunables = Record<string, any>;
+
+/** Cast target shape read by HANDLERS — satisfied by both a fresh CastCmd and
+ * an in-flight ActiveCastState (both carry tx/tz). */
+interface CastTarget {
+  tx: number;
+  tz: number;
+}
 
 // Direction helper from a caster toward a target point (falls back to aim).
-function aimToward(caster, tx, tz) {
+function aimToward(caster: Player, tx: number, tz: number) {
   if (Number.isFinite(tx) && Number.isFinite(tz)) {
     return Math.atan2(tz - caster.z, tx - caster.x);
   }
   return caster.aim;
 }
 
-function emit(sim, ev) { sim.events.push(ev); }
+function emit(sim: Simulation, ev: GameEvent) { sim.events.push(ev); }
 
 // Line-of-sight check: returns true when there is an unobstructed path from
 // `from` to `to` at mid-body height.  Gracefully returns true when the arena
 // has no layout set (null) or the obstaclesBlockingRay method is absent.
-function hasLoS(sim, from, to) {
+function hasLoS(sim: Simulation, from: Player, to: Player) {
   if (!sim.arena || typeof sim.arena.obstaclesBlockingRay !== "function") return true;
   const y0 = (from.groundY ?? CFG.PLATFORM_TOP) + 1.0;
   const y1 = (to.groundY   ?? CFG.PLATFORM_TOP) + 1.0;
@@ -27,7 +44,7 @@ function hasLoS(sim, from, to) {
 }
 
 // Spawn a single projectile with the spell's tuning.
-function spawnProjectile(sim, caster, dir, spell, overrides = {}) {
+function spawnProjectile(sim: Simulation, caster: Player, dir: number, spell: SpellTunables, overrides: Record<string, any> = {}) {
   const ox = caster.x + Math.cos(dir) * (CFG.PLAYER_RADIUS + 0.6);
   const oz = caster.z + Math.sin(dir) * (CFG.PLAYER_RADIUS + 0.6);
   let kb = (spell.kb ?? CFG.BOLT_BASE_KNOCKBACK) * caster.mods.dmgMul;
@@ -53,8 +70,8 @@ function spawnProjectile(sim, caster, dir, spell, overrides = {}) {
 }
 
 // Find the closest valid target within `range` of (x,z).
-function nearestEnemy(sim, casterId, x, z, range) {
-  let best = null, bestD = range * range;
+function nearestEnemy(sim: Simulation, casterId: string, x: number, z: number, range: number): Player | null {
+  let best: Player | null = null, bestD = range * range;
   for (const p of sim.players.values()) {
     if (p.id === casterId || !p.alive || p.falling || p.spectating) continue;
     const d = (p.x - x) ** 2 + (p.z - z) ** 2;
@@ -63,8 +80,18 @@ function nearestEnemy(sim, casterId, x, z, range) {
   return best;
 }
 
+interface AoEOpts {
+  burn?: number;
+  burnDur?: number;
+  stun?: number;
+  slow?: number;
+  slowMul?: number;
+  curse?: number;
+  curseMul?: number;
+}
+
 // Apply AoE knockback+damage to all enemies within radius of (x,z).
-function applyAoE(sim, c, x, z, radius, kb, dmg, opts = {}) {
+function applyAoE(sim: Simulation, c: Player, x: number, z: number, radius: number, kb: number, dmg: number, opts: AoEOpts = {}) {
   for (const p of sim.players.values()) {
     if (p.id === c.id || !p.alive || p.falling || p.spectating) continue;
     const dx = p.x - x, dz = p.z - z, d = Math.hypot(dx, dz);
@@ -74,7 +101,7 @@ function applyAoE(sim, c, x, z, radius, kb, dmg, opts = {}) {
     const l = Math.hypot(ndx, ndz) || 1;
     if (p.applyHit(ndx / l, ndz / l, kb)) {
       p.applyDamage(dmg, c.id);
-      if (opts.burn)  { p.status.burn = opts.burnDur; p.status.burnDps = opts.burn; p.status.burnBy = c.id; }
+      if (opts.burn)  { p.status.burn = opts.burnDur!; p.status.burnDps = opts.burn; p.status.burnBy = c.id; }
       if (opts.stun)  { p.status.stunned = Math.max(p.status.stunned, opts.stun);
                         emit(sim, { type: "statusApplied", status: "stun",  x: p.x, z: p.z, victim: p.id }); }
       if (opts.slow)  { p.status.slow = opts.slow; p.status.slowMul = opts.slowMul ?? 1;
@@ -87,8 +114,8 @@ function applyAoE(sim, c, x, z, radius, kb, dmg, opts = {}) {
 }
 
 // Nearest enemy within range AND optionally within a forward cone of c.aim.
-function aimedEnemy(sim, c, range, halfAngle) {
-  let best = null, bestD = range * range;
+function aimedEnemy(sim: Simulation, c: Player, range: number, halfAngle: number | null): Player | null {
+  let best: Player | null = null, bestD = range * range;
   for (const p of sim.players.values()) {
     if (p.id === c.id || !p.alive || p.falling || p.spectating) continue;
     const dx = p.x - c.x, dz = p.z - c.z, d = dx * dx + dz * dz;
@@ -105,7 +132,7 @@ function aimedEnemy(sim, c, range, halfAngle) {
 }
 
 // The big dispatch table: spellId -> handler(sim, caster, cast).
-const HANDLERS = {
+const HANDLERS: Record<string, (sim: Simulation, c: Player, cast: CastTarget) => void> = {
   fireball(sim, c, cast) {
     spawnProjectile(sim, c, aimToward(c, cast.tx, cast.tz), SPELLS.fireball);
     emit(sim, { type: "cast", spell: "fireball", id: c.id, x: c.x, z: c.z });
@@ -132,7 +159,7 @@ const HANDLERS = {
   },
 
   fireSpray(sim, c, cast) {
-    const s = SPELLS.fireSpray;
+    const s = SPELLS.fireSpray as SpellTunables;
     const base = aimToward(c, cast.tx, cast.tz);
     for (let i = 0; i < s.count; i++) {
       const a = base + (i - (s.count - 1) / 2) * (s.spread / s.count) * 2;
@@ -142,7 +169,7 @@ const HANDLERS = {
   },
 
   lightning(sim, c, cast) {
-    const s = SPELLS.lightning;
+    const s = SPELLS.lightning as SpellTunables;
     const dir = aimToward(c, cast.tx, cast.tz);
     // Primary target: nearest enemy in range with line-of-sight.
     // Cover (obstacles/plateau walls) blocks direct-hit spells; targets without
@@ -199,7 +226,7 @@ const HANDLERS = {
   },
 
   meteor(sim, c, cast) {
-    const s = SPELLS.meteor;
+    const s = SPELLS.meteor as SpellTunables;
     // Land at the target point, clamped to cast range.
     let tx = Number.isFinite(cast.tx) ? cast.tx : c.x + Math.cos(c.aim) * s.range;
     let tz = Number.isFinite(cast.tz) ? cast.tz : c.z + Math.sin(c.aim) * s.range;
@@ -222,7 +249,7 @@ const HANDLERS = {
   },
 
   teleport(sim, c, cast) {
-    const s = SPELLS.teleport;
+    const s = SPELLS.teleport as SpellTunables;
     let tx = Number.isFinite(cast.tx) ? cast.tx : c.x + Math.cos(c.aim) * s.range;
     let tz = Number.isFinite(cast.tz) ? cast.tz : c.z + Math.sin(c.aim) * s.range;
     const dx = tx - c.x, dz = tz - c.z;
@@ -233,7 +260,7 @@ const HANDLERS = {
   },
 
   thrust(sim, c, cast) {
-    const s = SPELLS.thrust;
+    const s = SPELLS.thrust as SpellTunables;
     const dir = aimToward(c, cast.tx, cast.tz);
     c.vx += Math.cos(dir) * s.power;
     c.vz += Math.sin(dir) * s.power;
@@ -262,7 +289,7 @@ const HANDLERS = {
   },
 
   swap(sim, c, cast) {
-    const s = SPELLS.swap;
+    const s = SPELLS.swap as SpellTunables;
     const tgt = nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!tgt) return;
     const px = c.x, pz = c.z;
@@ -272,7 +299,7 @@ const HANDLERS = {
   },
 
   drain(sim, c, cast) {
-    const s = SPELLS.drain;
+    const s = SPELLS.drain as SpellTunables;
     const tgt = nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!tgt) return;
     // Pull the target toward the caster and steal some of their charge.
@@ -289,7 +316,7 @@ const HANDLERS = {
   },
 
   gravity(sim, c, cast) {
-    const s = SPELLS.gravity;
+    const s = SPELLS.gravity as SpellTunables;
     let tx = Number.isFinite(cast.tx) ? cast.tx : c.x + Math.cos(c.aim) * s.range;
     let tz = Number.isFinite(cast.tz) ? cast.tz : c.z + Math.sin(c.aim) * s.range;
     const dx = tx - c.x, dz = tz - c.z;
@@ -320,7 +347,7 @@ const HANDLERS = {
   },
 
   link(sim, c, cast) {
-    const s = SPELLS.link;
+    const s = SPELLS.link as SpellTunables;
     const tgt = nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!tgt) return;
     c.status.link = s.duration; c.status.linkedTo = tgt.id;
@@ -329,7 +356,7 @@ const HANDLERS = {
   },
 
   disable(sim, c, cast) {
-    const s = SPELLS.disable;
+    const s = SPELLS.disable as SpellTunables;
     // Travels as a brief projectile that silences on hit.
     spawnProjectile(sim, c, aimToward(c, cast.tx, cast.tz),
       { ...s, proj: "fireball" }, { life: 1.0 });
@@ -339,26 +366,26 @@ const HANDLERS = {
   },
 
   shield(sim, c, cast) {
-    const s = SPELLS.shield;
+    const s = SPELLS.shield as SpellTunables;
     c.status.shield = s.duration;
     c.status.shieldCharges = s.charges;
     emit(sim, { type: "shield", id: c.id });
   },
 
   windWalk(sim, c, cast) {
-    c.status.windWalk = SPELLS.windWalk.duration;
+    c.status.windWalk = (SPELLS.windWalk as SpellTunables).duration;
     emit(sim, { type: "windwalk", id: c.id });
   },
 
   rush(sim, c, cast) {
-    c.status.rush = SPELLS.rush.duration;
+    c.status.rush = (SPELLS.rush as SpellTunables).duration;
     emit(sim, { type: "rush", id: c.id });
   },
 
   timeShift(sim, c, cast) {
     // Bookmark current position/charge; restored after `delay` seconds.
     c.timeshift = {
-      x: c.x, z: c.z, charge: c.charge, t: SPELLS.timeShift.delay,
+      x: c.x, z: c.z, charge: c.charge, t: (SPELLS.timeShift as SpellTunables).delay,
     };
     emit(sim, { type: "timeshift", id: c.id, x: c.x, z: c.z });
   },
@@ -377,7 +404,7 @@ const HANDLERS = {
   },
 
   target(sim, c, cast) {
-    const s = SPELLS.target;
+    const s = SPELLS.target as SpellTunables;
     const t = aimedEnemy(sim, c, s.range, null) || nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!t) return;
     t.applyDamage(s.dmg * c.mods.dmgMul, c.id);
@@ -389,7 +416,7 @@ const HANDLERS = {
   },
 
   explode(sim, c, cast) {
-    const s = SPELLS.explode;
+    const s = SPELLS.explode as SpellTunables;
     let tx = Number.isFinite(cast.tx) ? cast.tx : c.x + Math.cos(c.aim) * s.range;
     let tz = Number.isFinite(cast.tz) ? cast.tz : c.z + Math.sin(c.aim) * s.range;
     const dx = tx - c.x, dz = tz - c.z, d = Math.hypot(dx, dz);
@@ -402,7 +429,7 @@ const HANDLERS = {
   },
 
   stun(sim, c, cast) {
-    const s = SPELLS.stun;
+    const s = SPELLS.stun as SpellTunables;
     const t = aimedEnemy(sim, c, s.range, null) || nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!t) return;
     const dx = t.x - c.x, dz = t.z - c.z;
@@ -417,7 +444,7 @@ const HANDLERS = {
   },
 
   push(sim, c, cast) {
-    const s = SPELLS.push;
+    const s = SPELLS.push as SpellTunables;
     for (const p of sim.players.values()) {
       if (p.id === c.id || !p.alive || p.falling || p.spectating) continue;
       const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz);
@@ -437,7 +464,7 @@ const HANDLERS = {
   },
 
   pull(sim, c, cast) {
-    const s = SPELLS.pull;
+    const s = SPELLS.pull as SpellTunables;
     const t = aimedEnemy(sim, c, s.range, 0.6) || nearestEnemy(sim, c.id, c.x, c.z, s.range);
     if (!t) return;
     const dx = c.x - t.x, dz = c.z - t.z, l = Math.hypot(dx, dz) || 1;
@@ -449,18 +476,18 @@ const HANDLERS = {
   },
 
   invisible(sim, c) {
-    c.status.invisible = SPELLS.invisible.duration;
+    c.status.invisible = (SPELLS.invisible as SpellTunables).duration;
     emit(sim, { type: "invisible", id: c.id });
   },
 
   speed(sim, c) {
-    c.status.haste = SPELLS.speed.duration;
-    c.status.hasteMul = SPELLS.speed.hasteMul;
+    c.status.haste = (SPELLS.speed as SpellTunables).duration;
+    c.status.hasteMul = (SPELLS.speed as SpellTunables).hasteMul;
     emit(sim, { type: "speed", id: c.id });
   },
 
   blink(sim, c, cast) {
-    const s = SPELLS.blink;
+    const s = SPELLS.blink as SpellTunables;
     let tx = Number.isFinite(cast.tx) ? cast.tx : c.x + Math.cos(c.aim) * s.range;
     let tz = Number.isFinite(cast.tz) ? cast.tz : c.z + Math.sin(c.aim) * s.range;
     const dx = tx - c.x, dz = tz - c.z, d = Math.hypot(dx, dz);
@@ -470,20 +497,20 @@ const HANDLERS = {
   },
 
   summon(sim, c) {
-    if (typeof sim.spawnSummon === "function") sim.spawnSummon(c, SPELLS.summon.summonTtl);
+    if (typeof sim.spawnSummon === "function") sim.spawnSummon(c, (SPELLS.summon as SpellTunables).summonTtl);
     emit(sim, { type: "summon", id: c.id, x: c.x, z: c.z });
   },
 };
 
 // Channel tick handlers — called repeatedly during the channel phase.
 // Spells present here but absent from HANDLERS are pure channels (no wind-up effect).
-const CHANNEL_TICK = {
+const CHANNEL_TICK: Record<string, (sim: Simulation, c: Player, ac: ActiveCastState, dt: number) => void> = {
   heal(sim, c, ac, dt) {
-    c.applyHeal(SPELLS.heal.heal);
+    c.applyHeal((SPELLS.heal as SpellTunables).heal);
     emit(sim, { type: "heal", id: c.id, x: c.x, z: c.z });
   },
   vacuum(sim, c, ac, dt) {
-    const s = SPELLS.vacuum;
+    const s = SPELLS.vacuum as SpellTunables;
     for (const p of sim.players.values()) {
       if (p.id === c.id || !p.alive || p.falling || p.spectating) continue;
       const dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz);
@@ -497,7 +524,7 @@ const CHANNEL_TICK = {
     emit(sim, { type: "vacuumTick", id: c.id, x: c.x, z: c.z, radius: s.radius });
   },
   drag(sim, c, ac, dt) {
-    const s = SPELLS.drag;
+    const s = SPELLS.drag as SpellTunables;
     if (ac.targetId === undefined) {
       const t = aimedEnemy(sim, c, s.range, null) || nearestEnemy(sim, c.id, c.x, c.z, s.range);
       ac.targetId = t ? t.id : null;
@@ -514,8 +541,8 @@ const CHANNEL_TICK = {
 // Resolve one cast request from a player. Returns true if it fired (started).
 // For cast-time/channel spells: the spell is "fired" at cast-begin (cooldown + rune consumed),
 // and advanceCasts() drives the wind-up and channel phases each tick.
-export function castSpell(sim, caster, cast) {
-  const spell = SPELLS[cast.spell];
+export function castSpell(sim: Simulation, caster: Player, cast: CastCmd): boolean {
+  const spell = SPELLS[cast.spell] as SpellTunables;
   if (!spell) return false;
   if (!caster.canCast(cast.spell)) return false;
   if (!HANDLERS[cast.spell] && !CHANNEL_TICK[cast.spell]) return false;
@@ -535,7 +562,7 @@ export function castSpell(sim, caster, cast) {
     return true;
   }
   // Instant spell: fire immediately.
-  HANDLERS[cast.spell](sim, caster, cast);
+  HANDLERS[cast.spell]!(sim, caster, cast);
   caster.startCooldown(cast.spell);
   if (sim.practiceNoCooldown) caster.cooldowns[cast.spell] = 0;
   if (spell.sfx) emit(sim, { type: "sfx", sfx: spell.sfx, x: caster.x, z: caster.z });
@@ -544,7 +571,7 @@ export function castSpell(sim, caster, cast) {
 
 // Advance all active casts (wind-up / channel state machine). Call once per sim
 // tick, AFTER p.step() and the cast-resolve loop so stun/disable/move are current.
-export function advanceCasts(sim, dt) {
+export function advanceCasts(sim: Simulation, dt: number) {
   for (const c of sim.players.values()) {
     const ac = c.activeCast;
     if (!ac) continue;
@@ -558,8 +585,8 @@ export function advanceCasts(sim, dt) {
     if (!ac.channeling) {
       // Wind-up phase: wait for castTime to elapse, then fire.
       if (ac.t >= ac.castTime) {
-        const spell = SPELLS[ac.spell];
-        if (HANDLERS[ac.spell]) HANDLERS[ac.spell](sim, c, ac);
+        const spell = SPELLS[ac.spell] as SpellTunables;
+        if (HANDLERS[ac.spell]) HANDLERS[ac.spell]!(sim, c, ac);
         if (spell.sfx) emit(sim, { type: "sfx", sfx: spell.sfx, x: c.x, z: c.z });
         if (ac.channel > 0) {
           // Transition to channel phase.
@@ -580,7 +607,7 @@ export function advanceCasts(sim, dt) {
       c.activeCast = null; continue;
     }
     // Fire channel ticks at the configured interval.
-    const tick = SPELLS[ac.spell].tick || CFG.CAST_TICK_DEFAULT;
+    const tick = (SPELLS[ac.spell] as SpellTunables).tick || CFG.CAST_TICK_DEFAULT;
     ac.tickAcc += dt;
     while (ac.tickAcc >= tick) { ac.tickAcc -= tick; CHANNEL_TICK[ac.spell]?.(sim, c, ac, tick); }
     if (ac.t >= ac.channel) {

@@ -1,9 +1,151 @@
 // A warlock. The host owns the authoritative state; clients hold a visual
 // proxy that is interpolated toward host snapshots.
 import { CFG, SPELLS, SPELL_TEMPLATES, ITEMS } from "./config.js";
+import type { CooldownMap, InputState, CastCmd, GameEvent, PlayerSnap } from "./types";
+
+export interface PlayerOptions {
+  isBot?: boolean;
+  botSkill?: string | null;
+}
+
+export interface PlayerStatus {
+  windWalk: number;
+  rush: number;
+  shield: number;
+  shieldCharges: number;
+  disabled: number;
+  gravity: number;
+  gravX: number;
+  gravZ: number;
+  gravPull: number;
+  gravBy: string | null;
+  gravImplDmg?: number | null;
+  linkedTo: string | null;
+  link: number;
+  stunned: number;
+  slow: number;
+  slowMul: number;
+  burn: number;
+  burnDps: number;
+  burnBy: string | null;
+  burnTickAcc: number;
+  curse: number;
+  curseMul: number;
+  invisible: number;
+  haste: number;
+  hasteMul: number;
+}
+
+/** Status keys that are simple countdown timers (ticked down in _tickStatus). */
+const TICK_STATUS_KEYS: (keyof Pick<
+  PlayerStatus,
+  "windWalk" | "rush" | "shield" | "disabled" | "gravity" | "link" | "stunned" | "slow" | "curse" | "invisible" | "haste"
+>)[] = ["windWalk", "rush", "shield", "disabled", "gravity", "link", "stunned", "slow", "curse", "invisible", "haste"];
+
+export interface PlayerMods {
+  speedMul: number;
+  kbResist: number;
+  cdr: number;
+  lifesteal: number;
+  dmgMul: number;
+  takenMul: number;
+  fireballKbMul: number;
+  lavaGrace: number;
+  aoeMul: number;
+  regen: number;
+  maxHpBonus: number;
+}
+
+/** In-flight cast/channel wind-up state machine (player.js activeCast). Not the
+ * same shape as the wire-format ActiveCastSnap — this carries full timing state. */
+export interface ActiveCastState {
+  spell: string;
+  tx: number;
+  tz: number;
+  castTime: number;
+  channel: number;
+  interruptible: boolean;
+  t: number;
+  channeling: boolean;
+  tickAcc: number;
+  anchorX: number;
+  anchorZ: number;
+  /** Set lazily by spells.ts's drag channel-tick handler. */
+  targetId?: string | null;
+}
+
+export interface TimeshiftState {
+  x: number;
+  z: number;
+  charge: number;
+  t: number;
+}
+
+/** Minimal shape of the logical arena player.step() interacts with (implemented
+ * by sim.ts's LogicArena). */
+export interface PlayerArena {
+  isOnPlatform(x: number, z: number): boolean;
+  groundHeightAt?(x: number, z: number): number;
+  blocksMovement?(x: number, z: number, fromY: number): boolean;
+  onRamp?(x: number, z: number): boolean;
+}
 
 export class Player {
-  constructor(id, name, colorIndex, options = {}) {
+  id: string;
+  name: string;
+  colorIndex: number;
+  color: number;
+  isBot: boolean;
+  botSkill: string | null;
+  x: number; z: number; y: number;
+  vx: number; vz: number; vy: number;
+  groundY: number;
+  peakY: number;
+  aim: number;
+  charge: number;
+  maxHp: number;
+  hp: number;
+  alive: boolean;
+  spectating: boolean;
+  falling: boolean;
+  _lowHealthWarned: boolean;
+  _footstepDist: number;
+  invulnerable: boolean;
+  score: number;
+  roundKills: number;
+  kills: number;
+  deaths: number;
+  lastAttackerId: string | null;
+  lastAttackerAt: number;
+  typingUntil: number;
+  afk: boolean;
+  speaking: boolean;
+  cooldowns: CooldownMap;
+  spells: Set<string>;
+  spellSlots: (string | null)[];
+  status: PlayerStatus;
+  _events: GameEvent[];
+  timeshift: TimeshiftState | null;
+  items: string[];
+  mods: PlayerMods;
+  input: InputState;
+  activeCast: ActiveCastState | null;
+  _countedDeath: number;
+  _castSeen: number;
+  pendingCasts: CastCmd[];
+  _nextBotAbilityAt: number;
+  _botCastId: number;
+  _hazardTime: number;
+  draftPick: string[];
+  draftReady: boolean;
+  _draftLoadout: string[] | null;
+  /** Bot AI brain (bot.js BotBrain) — set only for bot-controlled players. */
+  _brain?: any;
+  _lavaGrace?: number;
+  /** Bot-only: profile-derived spell kit (sim.js setBotRoster) reapplied each round. */
+  _spawnLoadout?: string[];
+
+  constructor(id: string, name: string, colorIndex: number, options: PlayerOptions = {}) {
     this.id = id;
     this.name = name;
     this.colorIndex = colorIndex;
@@ -101,15 +243,19 @@ export class Player {
   }
 
   // Recompute modifiers from the player's item loadout.
-  applyItems(itemKeys = []) {
+  applyItems(itemKeys: string[] = []) {
     this.items = itemKeys.filter((k) => ITEMS[k]);
-    const m = {
+    const m: PlayerMods = {
       speedMul: 1, kbResist: 0, cdr: 0, lifesteal: 0,
       dmgMul: 1, takenMul: 1, fireballKbMul: 1, lavaGrace: 0,
       aoeMul: 1, regen: 0, maxHpBonus: 0,
     };
     for (const key of this.items) {
-      const it = ITEMS[key];
+      // ITEMS[key] is a typed ItemDef, but legacy item kinds (lifesteal,
+      // glassCannon, empowerFireball) read tunables (dmg/dealt/taken/kb/speed)
+      // that no current ITEMS entry declares — widen locally to read them
+      // without changing runtime behavior (kept for Step-7 test compat).
+      const it = ITEMS[key] as any;
       switch (it.kind) {
         case "kbResist": m.kbResist += it.value; break;
         case "speed": m.speedMul *= it.value; break;
@@ -134,7 +280,7 @@ export class Player {
   }
 
   // Equip a looted item into the first free item slot (cap = ITEM_SLOT_COUNT).
-  acquireItem(itemKey) {
+  acquireItem(itemKey: string) {
     const it = ITEMS[itemKey];
     if (!it) return false;
     // Dedup active items before the slot-cap check: a second copy of an
@@ -155,18 +301,18 @@ export class Player {
   }
 
   // Cooldown for a spell after applying cooldown-reduction items.
-  spellCooldown(spellId) {
+  spellCooldown(spellId: string) {
     const s = SPELLS[spellId];
     if (!s) return 0;
     return s.cd * (1 - this.mods.cdr);
   }
 
-  hasSpell(spellId) {
+  hasSpell(spellId: string) {
     return this.spells.has(spellId);
   }
 
   // acquireSpell: reserved / superseded by item system (Step 4) — kept for Step-7 tests (spells.test.mjs:344-349, sim.test.mjs:841).
-  acquireSpell(spellId) {
+  acquireSpell(spellId: string) {
     if (!SPELLS[spellId]) return false;
     if (this.spells.has(spellId)) return true;
     const slot = this.spellSlots.indexOf(null);
@@ -177,7 +323,7 @@ export class Player {
     return true;
   }
 
-  removeSpell(spellId) {
+  removeSpell(spellId: string) {
     if (spellId === "fireball") return;
     this.spells.delete(spellId);
     const slot = this.spellSlots.indexOf(spellId);
@@ -194,10 +340,10 @@ export class Player {
   // SPELL_SLOT_COUNT list MUST include fireball, OR pass only SPELL_SLOT_COUNT-1
   // spells and let this method fill slot 0. botSpellLoadout() in bot.js already
   // follows the latter convention.
-  setLoadout(spellIds = []) {
+  setLoadout(spellIds: string[] = []) {
     this.spellSlots = Array(CFG.SPELL_SLOT_COUNT).fill(null);
     this.spells = new Set();
-    const ids = [];
+    const ids: string[] = [];
     for (const id of spellIds) {
       if (!SPELLS[id] || ids.includes(id)) continue;
       ids.push(id);
@@ -220,7 +366,7 @@ export class Player {
   }
 
   /** Toggle a spell in/out of the draft picks. No-ops when ready, invalid id, fireball, or over cap. */
-  toggleDraftSpell(id) {
+  toggleDraftSpell(id: string) {
     if (this.draftReady || !SPELLS[id] || id === "fireball") return;
     const i = this.draftPick.indexOf(id);
     if (i >= 0) { this.draftPick.splice(i, 1); return; }
@@ -229,7 +375,7 @@ export class Player {
   }
 
   /** Apply one of the three quick-pick templates (index 0/1/2). No-op when ready or index invalid. */
-  applyDraftTemplate(n) {
+  applyDraftTemplate(n: number) {
     if (this.draftReady) return;
     const t = SPELL_TEMPLATES?.[n];
     if (!t) return;
@@ -244,7 +390,7 @@ export class Player {
   }
 
   /** Mark this player as ready to start; host transitions out of draft when all players are ready. */
-  setDraftReady(v) {
+  setDraftReady(v: boolean) {
     this.draftReady = !!v;
   }
 
@@ -252,7 +398,7 @@ export class Player {
    * Commit a drafted loadout: fireball stays the free always-on basic (in spells Set,
    * not in a slot); the 6 slot positions are filled with the provided ids.
    */
-  setDraftLoadout(ids = []) {
+  setDraftLoadout(ids: string[] = []) {
     this.spells = new Set(["fireball"]);
     this.spellSlots = Array(CFG.SPELL_SLOT_COUNT).fill(null);
     let slot = 0;
@@ -265,7 +411,7 @@ export class Player {
     }
   }
 
-  canCast(spellId) {
+  canCast(spellId: string) {
     if (!this.alive || this.falling) return false;
     if (this.status.disabled > 0) return false;
     if (this.status.stunned > 0) return false;
@@ -274,11 +420,11 @@ export class Player {
     return (this.cooldowns[spellId] || 0) <= 0;
   }
 
-  startCooldown(spellId) {
+  startCooldown(spellId: string) {
     this.cooldowns[spellId] = this.spellCooldown(spellId);
   }
 
-  spawn(angle, radius) {
+  spawn(angle: number, radius: number) {
     this.x = Math.cos(angle) * radius;
     this.z = Math.sin(angle) * radius;
     this.y = CFG.PLATFORM_TOP;
@@ -318,7 +464,7 @@ export class Player {
   }
 
   // --- AUTHORITATIVE physics step (host only) ---
-  step(dt, arena) {
+  step(dt: number, arena: PlayerArena) {
     if (!this.alive) return;
     if (this._events.length) this._events.length = 0;
 
@@ -353,8 +499,10 @@ export class Player {
     // Movement control is reduced while being knocked back hard, but Rush and
     // Wind Walk improve mobility per the handbook.
     let speed = CFG.MOVE_SPEED * this.mods.speedMul;
-    if (this.status.windWalk > 0) speed *= SPELLS.windWalk.speedMul;
-    if (this.status.rush > 0) speed *= SPELLS.rush.speedMul;
+    // SPELLS entries carry per-kind tunables (speedMul, kbResist, ...) via
+    // SpellDef's index signature (typed `unknown`) — widen locally to read them.
+    if (this.status.windWalk > 0) speed *= (SPELLS.windWalk as any).speedMul;
+    if (this.status.rush > 0) speed *= (SPELLS.rush as any).speedMul;
     if (this.status.haste > 0) speed *= this.status.hasteMul;
     if (this.status.slow > 0) speed *= this.status.slowMul;
     if (inHazard) speed *= CFG.HAZARD_MOVE_SPEED_MUL;
@@ -501,8 +649,8 @@ export class Player {
       } else if (this.mods.lavaGrace > 0 && this._lavaGrace === undefined) {
         this._lavaGrace = this.mods.lavaGrace;
       }
-      if (this._lavaGrace > 0) {
-        this._lavaGrace -= dt;
+      if ((this._lavaGrace ?? 0) > 0) {
+        this._lavaGrace = (this._lavaGrace ?? 0) - dt;
       } else {
         this._hazardTime += dt;
         if (this._hazardTime >= CFG.HAZARD_DEATH_DELAY) {
@@ -516,9 +664,9 @@ export class Player {
     }
   }
 
-  _tickStatus(dt) {
+  _tickStatus(dt: number) {
     const s = this.status;
-    for (const k of ["windWalk", "rush", "shield", "disabled", "gravity", "link", "stunned", "slow", "curse", "invisible", "haste"]) {
+    for (const k of TICK_STATUS_KEYS) {
       if (s[k] > 0) {
         const prev = s[k];
         s[k] = Math.max(0, s[k] - dt);
@@ -530,8 +678,11 @@ export class Player {
           const ox = this.x - s.gravX;
           const oz = this.z - s.gravZ;
           const dist = Math.hypot(ox, oz);
+          // SPELLS.gravity carries per-kind tunables (radius, gravKb, dmg) via
+          // SpellDef's index signature (typed `unknown`) — widen locally to read them.
+          const gravitySpell = SPELLS.gravity as any;
           // Only burst if still inside the field (player didn't fully escape).
-          if (dist <= (SPELLS.gravity.radius ?? 8)) {
+          if (dist <= (gravitySpell.radius ?? 8)) {
             // Dead-centre fallback: if the pull dragged the victim exactly to
             // the origin the direction vector is ~(0,0); fling along the player's
             // current aim instead so the payoff always fires (mirrors meteor logic).
@@ -539,10 +690,10 @@ export class Player {
             const dz = dist < 0.001 ? Math.sin(this.aim) : oz;
             // Guard the feedback event on the hit landing (shield can block it)
             // so the client spark/SFX matches the authoritative result.
-            if (this.applyHit(dx, dz, SPELLS.gravity.gravKb ?? 14)) {
+            if (this.applyHit(dx, dz, gravitySpell.gravKb ?? 14)) {
               // Prefer mob-sourced implosion damage (set by vacuum ability) over the
               // player Gravity spell's dmg so mob tuning stays decoupled from spell rebalancing.
-              this.applyDamage(s.gravImplDmg ?? SPELLS.gravity.dmg ?? CFG.BOLT_BASE_DAMAGE, s.gravBy ?? null);
+              this.applyDamage(s.gravImplDmg ?? gravitySpell.dmg ?? CFG.BOLT_BASE_DAMAGE, s.gravBy ?? null);
               this._events.push({ type: "hit", x: this.x, z: this.z, victim: this.id, by: s.gravBy ?? this.id });
             }
           }
@@ -564,7 +715,7 @@ export class Player {
   // Apply a bolt hit: knockback scales with current charge (Smash-style),
   // then the hit increases charge so subsequent hits send them further.
   // `base` lets each spell scale its raw knockback; items/statuses modify it.
-  applyHit(dirX, dirZ, base = CFG.BOLT_BASE_KNOCKBACK) {
+  applyHit(dirX: number, dirZ: number, base: number = CFG.BOLT_BASE_KNOCKBACK) {
     // Shield blocks the next incoming hit entirely.
     if (this.status.shieldCharges > 0) {
       this.status.shieldCharges--;
@@ -576,7 +727,7 @@ export class Player {
     if (this.status.curse > 0) impulse *= this.status.curseMul;
     // Knockback resistance from items / Rush.
     let resist = this.mods.kbResist;
-    if (this.status.rush > 0) resist += SPELLS.rush.kbResist;
+    if (this.status.rush > 0) resist += (SPELLS.rush as any).kbResist;
     impulse *= (1 - Math.min(0.85, resist));
     const len = Math.hypot(dirX, dirZ) || 1;
     this.vx += (dirX / len) * impulse;
@@ -588,7 +739,7 @@ export class Player {
   // HP damage — SEPARATE from applyHit knockback. Clamps to [0,maxHp]; sets the
   // player dead at 0 (funnels into sim's existing death-detection loop). Records
   // the attacker for kill-credit so an HP kill is attributed even with no hit event.
-  applyDamage(amount, byId = null) {
+  applyDamage(amount: number, byId: string | null = null) {
     if (!this.alive || this.falling) return false; // already doomed; ignore
     if (this.invulnerable) return false; // practice mode: no HP damage
     if (!(amount > 0)) return false;
@@ -609,7 +760,7 @@ export class Player {
   }
 
   // Restore HP (step-3 Mend channel). Clamps to maxHp. Returns false when no-op.
-  applyHeal(amount) {
+  applyHeal(amount: number) {
     if (!this.alive || this.falling) return false;
     if (!(amount > 0)) return false;
     this.hp = Math.min(this.maxHp, this.hp + amount);
@@ -619,13 +770,13 @@ export class Player {
 
   // Record the most recent attacker for kill-credit attribution.
   // `now` is a millisecond timestamp (e.g. Date.now()).
-  recordAttacker(attackerId, now) {
+  recordAttacker(attackerId: string, now: number) {
     this.lastAttackerId = attackerId;
     this.lastAttackerAt = now;
   }
 
   // Serialize the bits clients need to render.
-  snapshot() {
+  snapshot(): PlayerSnap {
     return {
       id: this.id,
       x: +this.x.toFixed(3),
@@ -679,8 +830,8 @@ export class Player {
     };
   }
 
-  _cdSnapshot() {
-    const out = {};
+  _cdSnapshot(): CooldownMap {
+    const out: CooldownMap = {};
     for (const k in this.cooldowns) {
       if (this.cooldowns[k] > 0) out[k] = +this.cooldowns[k].toFixed(2);
     }
@@ -695,7 +846,12 @@ export class Player {
 //   lastAttackerAt  - timestamp (ms) when that hit landed
 //   now             - current timestamp (ms)
 //   windowSeconds   - attribution window (CFG.KILL_CREDIT_WINDOW)
-export function resolveKillCredit(lastAttackerId, lastAttackerAt, now, windowSeconds) {
+export function resolveKillCredit(
+  lastAttackerId: string | null,
+  lastAttackerAt: number,
+  now: number,
+  windowSeconds: number
+): string | null {
   if (!lastAttackerId) return null;
   if ((now - lastAttackerAt) >= windowSeconds * 1000) return null;
   return lastAttackerId;

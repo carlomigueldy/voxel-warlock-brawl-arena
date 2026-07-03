@@ -434,7 +434,7 @@ export type GameEvent =
   | { type: "dotTick"; x: number; z: number; victim: string }
   | { type: "sfx"; sfx: string; x: number; z: number }
   | { type: "mobSpawn"; id: string; mobType: string; x: number; z: number; parentId: string; color: number }
-  | { type: "mobIncoming"; id: string; mobType: string; x: number; z: number; color: number; entrance: "shatter" | "storm" | "summon" | "meteor"; duration: number }
+  | { type: "mobIncoming"; id: string; mobType: string; x: number; z: number; color: number; entrance: "shatter" | "storm" | "summon" | "meteor" | "none"; duration: number }
   | { type: "mobArrive"; id: string; mobType: string; x: number; z: number; radius: number }
   | { type: "mobHit"; id: string; hp: number; max: number; x: number; z: number }
   | { type: "mobTelegraph"; id: string; mobType: string; ability: string; x: number; z: number; radius: number; castTime: number; color: number }
@@ -466,8 +466,10 @@ export interface Snapshot {
   spellSlotsEnabled: true;
   events: GameEvent[];
   /** Procedural map layout (src/mapgen.js); omitted when unchanged since the
-   * last broadcast (bandwidth gate) — see sim.js snapshot() doc comment. */
-  mapLayout?: MapLayout;
+   * last broadcast (bandwidth gate) — see sim.js snapshot() doc comment. `null`
+   * means the layout was explicitly cleared (lobby / round reset); the
+   * renderer distinguishes it from "omitted" to know when to clear meshes. */
+  mapLayout?: MapLayout | null;
   mapV: number;
 }
 
