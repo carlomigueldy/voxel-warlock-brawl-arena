@@ -102,16 +102,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="./src/style.css" />
-<!-- Three.js + addons + Supabase via import map (no build step required) -->
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
-  }
-}
-</script>
 </head>
 <body>
   <canvas id="game-canvas"></canvas>
@@ -801,11 +791,6 @@
     <button id="fire-btn">FIRE</button>
   </div>
 
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script type="module">
-    import QRCode from "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm";
-    window.QRCode = QRCode;
-  </script>
   <script type="module" src="./src/main.js"></script>
   <!-- ===== Wave-2 juice & feel modules (import FX from ./src/fx.js) ===== -->
   <script type="module" src="./src/screens.js"></script>

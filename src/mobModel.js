@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { CFG } from "./config.js";
 import { makeMobHealthBar } from "./lowpoly.js";
+import { asset } from "./asset-url.js";
 
 // Meshy-generated GLB bodies for the 4 "big mob" enemy types. This is the mob
 // counterpart of character.js's CHARACTER_ASSETS/loadCharacterTemplate — the
@@ -10,38 +11,38 @@ import { makeMobHealthBar } from "./lowpoly.js";
 // voxel.js stay procedural-only per docs/superpowers/specs/
 // 2026-07-01-low-poly-asset-enhancements-design.md; only these 4 mobs, not
 // minion, get real rigged bodies).
-const url = (p) => new URL(p, import.meta.url).href;
+const url = (p) => asset(p);
 export const MOB_MODEL_ASSETS = {
   stoneGiant: {
-    base:   url("../assets/mobs/stone-giant-rigged.glb"),
-    idle:   url("../assets/mobs/stone-giant-idle.glb"),
-    walk:   url("../assets/mobs/stone-giant-walking.glb"),
-    run:    url("../assets/mobs/stone-giant-running.glb"),
-    attack: url("../assets/mobs/stone-giant-attack.glb"),
+    base:   url("assets/mobs/stone-giant-rigged.glb"),
+    idle:   url("assets/mobs/stone-giant-idle.glb"),
+    walk:   url("assets/mobs/stone-giant-walking.glb"),
+    run:    url("assets/mobs/stone-giant-running.glb"),
+    attack: url("assets/mobs/stone-giant-attack.glb"),
     healthBar: { color: 0xff3a1e, yPos: 5.2 },
   },
   stormingVortex: {
-    base:   url("../assets/mobs/storming-vortex-rigged.glb"),
-    idle:   url("../assets/mobs/storming-vortex-idle.glb"),
-    walk:   url("../assets/mobs/storming-vortex-walking.glb"),
-    run:    url("../assets/mobs/storming-vortex-running.glb"),
-    attack: url("../assets/mobs/storming-vortex-attack.glb"),
+    base:   url("assets/mobs/storming-vortex-rigged.glb"),
+    idle:   url("assets/mobs/storming-vortex-idle.glb"),
+    walk:   url("assets/mobs/storming-vortex-walking.glb"),
+    run:    url("assets/mobs/storming-vortex-running.glb"),
+    attack: url("assets/mobs/storming-vortex-attack.glb"),
     healthBar: { color: 0x7adfff, yPos: 2.5 },
   },
   giantDwarf: {
-    base:   url("../assets/mobs/giant-dwarf-rigged.glb"),
-    idle:   url("../assets/mobs/giant-dwarf-idle.glb"),
-    walk:   url("../assets/mobs/giant-dwarf-walking.glb"),
-    run:    url("../assets/mobs/giant-dwarf-running.glb"),
-    attack: url("../assets/mobs/giant-dwarf-attack.glb"),
+    base:   url("assets/mobs/giant-dwarf-rigged.glb"),
+    idle:   url("assets/mobs/giant-dwarf-idle.glb"),
+    walk:   url("assets/mobs/giant-dwarf-walking.glb"),
+    run:    url("assets/mobs/giant-dwarf-running.glb"),
+    attack: url("assets/mobs/giant-dwarf-attack.glb"),
     healthBar: { color: 0xffd23c, yPos: 3.8 },
   },
   fireElemental: {
-    base:   url("../assets/mobs/fire-elemental-rigged.glb"),
-    idle:   url("../assets/mobs/fire-elemental-idle.glb"),
-    walk:   url("../assets/mobs/fire-elemental-walking.glb"),
-    run:    url("../assets/mobs/fire-elemental-running.glb"),
-    attack: url("../assets/mobs/fire-elemental-attack.glb"),
+    base:   url("assets/mobs/fire-elemental-rigged.glb"),
+    idle:   url("assets/mobs/fire-elemental-idle.glb"),
+    walk:   url("assets/mobs/fire-elemental-walking.glb"),
+    run:    url("assets/mobs/fire-elemental-running.glb"),
+    attack: url("assets/mobs/fire-elemental-attack.glb"),
     healthBar: { color: 0xff5a1e, yPos: 4.0 },
   },
 };

@@ -54,11 +54,14 @@ test("disconnect handling sends the host back to lobby when a match cannot conti
   assert.match(main, /inGame = false/);
 });
 
-test("generated character asset URLs resolve relative to the character module", () => {
+test("generated character asset URLs are built via the asset() helper", () => {
   const character = fs.readFileSync("src/character.js", "utf8");
   // Character-aware loader resolves rigged + walk + run GLBs per selectable
-  // character relative to the module.
-  assert.match(character, /new URL\(p, import\.meta\.url\)\.href/);
+  // character through the asset() helper (root-absolute URLs into public/,
+  // BASE_URL-prefixed) now that assets are served from public/ under Vite.
+  // (legacy source-text guard — folded into the disjoint guards in #103.)
+  assert.match(character, /import \{ asset \} from "\.\/asset-url\.js"/);
+  assert.match(character, /const url = \(p\) => asset\(p\)/);
   assert.match(character, /assets\/characters\/[\w-]+-rigged\.glb/);
   assert.match(character, /assets\/characters\/[\w-]+-walking\.glb/);
   assert.match(character, /assets\/characters\/[\w-]+-running\.glb/);

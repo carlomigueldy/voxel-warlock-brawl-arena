@@ -2,9 +2,11 @@
 // runtime keeps the build asset-free while still giving every spell, hit, death
 // and round transition its own punchy, "juicy" voice. A light reverb bus and a
 // generative ambient pad round out the immersive feel.
+import { asset } from "./asset-url.js";
+
 // Map of every generated real-audio SFX key to its file under assets/audio/sfx/.
 // See assets/audio/sfx/manifest.json for the authoritative key-to-file mapping.
-const SFX_BASE = "assets/audio/sfx/";
+const SFX_BASE = asset("assets/audio/sfx/");
 const SFX_FILES = {
   // T1
   cast: "t1-cast.mp3",

@@ -1,5 +1,5 @@
 // All DOM/UI wiring: menus, lobby, HUD, room code, invite link, QR code.
-// QRCode is loaded globally from a <script> tag (window.QRCode).
+import QRCode from "qrcode";
 import { CFG, SPELLS, SPELL_ORDER, SPELL_TEMPLATES, ITEMS, getArenaHazard } from "./config.js";
 import { spellIconSvg, itemIconSvg } from "./spell-icons.js";
 import * as social from "./social.js";
