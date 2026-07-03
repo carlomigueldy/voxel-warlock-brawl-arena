@@ -29,6 +29,10 @@ import { snapshotRef, setLocalId, resetSnapshotRef } from "../store/snapshotRef"
 import { useSessionStore } from "../store/useSessionStore";
 import { useUiStore } from "../store/useUiStore";
 import { useChatStore } from "../store/useChatStore";
+import { useRosterStore } from "../store/useRosterStore";
+import { useHudStore } from "../store/useHudStore";
+import { useDraftStore } from "../store/useDraftStore";
+import { useSocialRosterStore } from "../store/useSocialRosterStore";
 import { getUiInputs } from "./getUiInputs";
 import { onNewSnapshot } from "./onNewSnapshot";
 import { useHostLoop } from "./useHostLoop";
@@ -416,15 +420,23 @@ export function useGameSession(): GameSessionIntents {
             character: p.character || CFG.DEFAULT_CHARACTER, userId: p.userId || null,
           });
         }
-        // player list: reactive via useRosterStore, same as the host side
-        // (see startHosting's pushLobby comment). msg.config (the host's
-        // chosen arena/land/mobs settings) has NO store home yet — a joined
-        // client's MatchSetupPanel/BattlegroundHero read their OWN local
-        // useLobbyConfigStore, not the host's broadcast. This is a
+        // Sync useRosterStore immediately (legacy main.js onLobby called
+        // ui.renderPlayerList(msg.players) synchronously) so a joining
+        // client's roster renders right away instead of waiting for the
+        // first STATE snapshot. bolt/mob/meteor/item ids are always empty
+        // here — nothing spawns before the match starts. msg.config (the
+        // host's chosen arena/land/mobs settings) has NO store home yet — a
+        // joined client's MatchSetupPanel/BattlegroundHero read their OWN
+        // local useLobbyConfigStore, not the host's broadcast. This is a
         // pre-existing P5 gap (MatchSetupPanel.tsx's own header already
         // documents it as a deferred follow-up, predating this PR), not one
         // P6 introduces — flagged again here so it isn't lost now that the
         // legacy ui.renderLobbyConfig() DOM fallback is gone too.
+        useRosterStore.getState().sync({
+          playerIds: msg.players.map((p: { id: string }) => p.id),
+          boltIds: [], mobIds: [], meteorIds: [], itemIds: [],
+          meta: Object.fromEntries(snapshotRef.meta),
+        });
       },
       onStart: () => {
         ensureVoice();
@@ -522,6 +534,15 @@ export function useGameSession(): GameSessionIntents {
     socialSendRef.current = null;
     lastRosterRef.current = [];
     useChatStore.getState().clear(); // sole write since P6 (used to also dual-write ui.clearChatLog())
+    // The four snapshot-driven reactive stores also need clearing here —
+    // without this, a finished match's entities stay mounted on the
+    // always-mounted <GameCanvas/> (App.tsx), and the NEXT match's reused
+    // numeric bolt/meteor/item ids reuse the previous match's mounted
+    // entity (color/kind captured once at mount via useMemo([id])).
+    useRosterStore.getState().reset();
+    useHudStore.getState().reset();
+    useDraftStore.getState().reset();
+    useSocialRosterStore.getState().reset();
     resetSnapshotRef();
     onlineRef.current = { isOnline: false, region: null, matchResultSubmitted: false };
     localIdRef.current = null;
