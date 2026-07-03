@@ -1,7 +1,204 @@
 // Shared tunable constants and the wire protocol.
 // Keeping these in one module guarantees host and clients agree on the rules.
+import type {
+  SpellDef,
+  ItemDef,
+  CharacterDef,
+  ArenaWorld,
+  ArenaHazard,
+  ArenaLandSize,
+  Region,
+  MobType,
+  MobShrinkCapStep,
+  ObstacleTypeDef,
+  ObstacleTypeId,
+  SpellTemplate,
+  WireMsg,
+} from "./types";
 
-export const CFG = {
+// CFG is typed via a plain `interface` (below), NOT `as const` —
+// test/matchmaking.test.mjs reassigns `CFG.MATCHMAKING = {...}` wholesale
+// to stub deterministic timings, and `as const` would make the whole tree
+// (including MATCHMAKING) deeply readonly. CFG is a genuinely mutable
+// runtime object; the type reflects that.
+interface MapGenConfig {
+  PLACEMENT_RADIUS_FRAC: number;
+  PLATEAU_BASE_COUNT: number;
+  PLATEAU_SECOND_CHANCE: number;
+  PLATEAU_MIN_SEPARATION: number;
+  PLATEAU_HEIGHT_MIN: number;
+  PLATEAU_HEIGHT_MAX: number;
+  PLATEAU_W_MIN: number;
+  PLATEAU_W_MAX: number;
+  PLATEAU_D_MIN: number;
+  PLATEAU_D_MAX: number;
+  PLATEAU_CLEARANCE: number;
+  OBS_MIN_GAP: number;
+  OBS_TREE_MIN: number;
+  OBS_TREE_MAX: number;
+  OBS_STONE_MIN: number;
+  OBS_STONE_MAX: number;
+  OBS_COLUMN_MIN: number;
+  OBS_COLUMN_MAX: number;
+  OBS_DEBRIS_MIN: number;
+  OBS_DEBRIS_MAX: number;
+  OBS_WALL_MIN: number;
+  OBS_WALL_MAX: number;
+  OBS_BOULDER_MIN: number;
+  OBS_BOULDER_MAX: number;
+  OBS_DEADGIANT_MIN: number;
+  OBS_DEADGIANT_MAX: number;
+  OBS_DRAGONBONES_MIN: number;
+  OBS_DRAGONBONES_MAX: number;
+}
+
+interface RoundConfig {
+  COUNTDOWN: number;
+  GRACE: number;
+  SHRINK_START_DELAY: number;
+  SHRINK_RATE: number;
+  POINTS_FOR_WIN: number;
+  POINTS_TO_WIN_MATCH: number;
+  END_DELAY: number;
+}
+
+interface MatchmakingConfig {
+  MATCH_SIZE: number;
+  REGION_DWELL_MS: number;
+  OFFER_TIMEOUT_MS: number;
+  CHANNEL_PREFIX: string;
+}
+
+interface SocialConfig {
+  CHAT_MAX_LEN: number;
+  CHAT_RATE_MAX: number;
+  CHAT_RATE_WINDOW_MS: number;
+  TYPING_TTL_MS: number;
+  AFK_IDLE_MS: number;
+  CHAT_BUBBLE_TTL_MS: number;
+  CHAT_LOG_MAX: number;
+  CHAT_LINE_FADE_MS: number;
+  PTT_DEFAULT_KEY: string;
+}
+
+interface Cfg {
+  // --- Arena ---
+  ARENA_RADIUS: number;
+  ARENA_MIN_RADIUS: number;
+  ARENA_SHRINK_PER_SEC: number;
+  DEFAULT_ARENA_WORLD: string;
+  DEFAULT_ARENA_LAND_SIZE: string;
+  ARENA_LAND_SIZES: Record<string, ArenaLandSize>;
+  ARENA_WORLDS: ArenaWorld[];
+  DEFAULT_ARENA_HAZARD: string;
+  ARENA_HAZARDS: Record<string, ArenaHazard>;
+  VOXEL: number;
+  LAVA_Y: number;
+  PLATFORM_TOP: number;
+
+  // --- Warlock movement ---
+  MOVE_SPEED: number;
+  HAZARD_MOVE_SPEED_MUL: number;
+  HAZARD_DEATH_DELAY: number;
+  PLAYER_RADIUS: number;
+  PLAYER_HEIGHT: number;
+  FRICTION: number;
+  GRAVITY: number;
+
+  // --- Fall-stun ---
+  FALL_STUN_DURATION: number;
+  FALL_STUN_MIN_HEIGHT: number;
+
+  // --- Map generation ---
+  MAP: MapGenConfig;
+  OBSTACLE_TYPES: ObstacleTypeDef[];
+  DEFAULT_OBSTACLE_TOGGLES: Record<ObstacleTypeId, boolean>;
+
+  // --- Bolt (the core weapon) ---
+  BOLT_SPEED: number;
+  BOLT_RADIUS: number;
+  BOLT_LIFETIME: number;
+  BOLT_BASE_KNOCKBACK: number;
+  BOLT_CHARGE_GAIN: number;
+  KNOCKBACK_CHARGE_SCALE: number;
+  CHARGE_MAX: number;
+  CHARGE_DECAY: number;
+
+  // --- Health / damage ---
+  PLAYER_HP_MAX: number;
+  BOLT_BASE_DAMAGE: number;
+
+  // --- Ability slots ---
+  RUNE_SPAWN_RADIUS: number;
+  SPELL_SLOT_COUNT: number;
+  SPELL_SELECTION_TIME: number;
+  DEFAULT_SPELL_SLOT_HOTKEYS: string[];
+  DEFAULT_SPELL_LOADOUT: string[];
+
+  // --- Items / loot ---
+  ITEM_RADIUS: number;
+  ITEM_SLOT_COUNT: number;
+  ITEM_SPAWN_RADIUS: number;
+  ITEM_MAX_ACTIVE: number;
+  ITEM_SPAWN_INTERVAL: number;
+  ITEM_MOB_DROP_CHANCE: number;
+  DEFAULT_ITEM_SLOT_HOTKEYS: string[];
+  ITEM_RARITY_WEIGHTS: Record<"common" | "rare" | "unfair", number>;
+  ITEM_WORLD_RARITY: Record<"rare" | "unfair", number>;
+
+  CAST_MOVE_CANCEL: number;
+  CAST_TICK_DEFAULT: number;
+
+  // --- Rounds ---
+  ROUND: RoundConfig;
+
+  // --- Regions ---
+  REGIONS: Region[];
+  DEFAULT_REGION: string;
+  MATCHMAKING: MatchmakingConfig;
+
+  // --- Kill attribution ---
+  KILL_CREDIT_WINDOW: number;
+
+  // --- Networking ---
+  TICK_RATE: number;
+  INPUT_RATE: number;
+  PEER_PREFIX: string;
+  MAX_PLAYERS: number;
+  BOT_SKILLS: string[];
+
+  // --- Social (chat, presence, voice) ---
+  SOCIAL: SocialConfig;
+
+  // Player colors (low-poly palette) assigned by join order.
+  COLORS: number[];
+
+  // Selectable voxel-art characters.
+  CHARACTERS: CharacterDef[];
+  DEFAULT_CHARACTER: string;
+
+  // --- Performance ---
+  LIGHT_POOL_SIZE: number;
+  BURST_MAX_PARTICLES: number;
+  TRAIL_POOL_SIZE: number;
+  TRAIL_MAX_SEGMENTS: number;
+  BEAM_LIGHT_POOL_SIZE: number;
+
+  // --- Mobs ---
+  MOB_MAX_ALIVE: number;
+  MOB_MAX_CHILDREN: number;
+  MOB_SPAWN_MIN: number;
+  MOB_SPAWN_MAX: number;
+  MOB_SPAWN_INVULN: number;
+  MOB_MINION_CD: number;
+  MOB_ENTRANCE: number;
+  MOB_HP_MIN_FACTOR: number;
+  MOB_HP_PER_PLAYER: number;
+  MOB_SHRINK_CAP_STEPS: MobShrinkCapStep[];
+  MOB_TYPES: Record<string, MobType>;
+}
+
+export const CFG: Cfg = {
   // --- Arena ---
   ARENA_RADIUS: 18,          // starting platform radius (world units)
   ARENA_MIN_RADIUS: 6,       // platform never shrinks below this
@@ -434,25 +631,28 @@ export const CFG = {
 };
 
 // Resolve a selectable character by id, falling back to the default.
-export function getCharacter(id) {
-  return CFG.CHARACTERS.find((c) => c.id === id) || CFG.CHARACTERS.find((c) => c.id === CFG.DEFAULT_CHARACTER);
+// Non-null assertion: CFG.CHARACTERS always contains an entry whose id
+// matches CFG.DEFAULT_CHARACTER, so the fallback lookup never actually
+// misses — TS can't see that invariant across two independent array scans.
+export function getCharacter(id?: string): CharacterDef {
+  return (CFG.CHARACTERS.find((c) => c.id === id) || CFG.CHARACTERS.find((c) => c.id === CFG.DEFAULT_CHARACTER))!;
 }
 
-export function getArenaWorld(id) {
-  return CFG.ARENA_WORLDS.find((world) => world.id === id) || CFG.ARENA_WORLDS.find((world) => world.id === CFG.DEFAULT_ARENA_WORLD);
+export function getArenaWorld(id?: string): ArenaWorld {
+  return (CFG.ARENA_WORLDS.find((world) => world.id === id) || CFG.ARENA_WORLDS.find((world) => world.id === CFG.DEFAULT_ARENA_WORLD))!;
 }
 
-export function getArenaLandSize(id) {
-  return CFG.ARENA_LAND_SIZES[id] || CFG.ARENA_LAND_SIZES[CFG.DEFAULT_ARENA_LAND_SIZE];
+export function getArenaLandSize(id?: string): ArenaLandSize {
+  return CFG.ARENA_LAND_SIZES[id as string] || CFG.ARENA_LAND_SIZES[CFG.DEFAULT_ARENA_LAND_SIZE];
 }
 
 // Resolve the hazard theme for a world id (falls back to the default hazard).
-export function getArenaHazard(worldId) {
+export function getArenaHazard(worldId?: string): ArenaHazard {
   const world = getArenaWorld(worldId);
   return CFG.ARENA_HAZARDS[world.hazard] || CFG.ARENA_HAZARDS[CFG.DEFAULT_ARENA_HAZARD];
 }
 
-export function isOnArenaWorld(worldId, radius, x, z) {
+export function isOnArenaWorld(worldId: string | undefined, radius: number, x: number, z: number): boolean {
   const r = Math.max(CFG.ARENA_MIN_RADIUS, radius);
   const ax = Math.abs(x);
   const az = Math.abs(z);
@@ -490,7 +690,7 @@ export function isOnArenaWorld(worldId, radius, x, z) {
 //   SELF_AOE               — radius ring centered on the caster
 //   SELF_BUFF              — no reticle; casts instantly on keydown
 //   DASH_IMPACT            — directional arrow + landing-impact ring (thrust)
-export const SPELLS = {
+export const SPELLS: Record<string, SpellDef> = {
   // ---- Core projectiles ----
   fireball:  { name: "Fireball",  key: "1", cd: 0.55, kind: "projectile", proj: "fireball",  kb: 16, dmg: 12, burn: 4,  burnDur: 2, color: 0xff5a1e, sfx: "fireball",  aim: "DIRECTIONAL_PROJECTILE", desc: "Fast bolt that knocks foes back and ignites them." },
   lightning: { name: "Lightning", key: "2", cd: 4.0,  kind: "lightning",  range: 18, kb: 18, dmg: 22, chains: 2, chainRange: 7, slow: 0.6, slowDur: 1.5, color: 0x9fe6ff, sfx: "lightning", aim: "NEAREST_TARGET_LOCK", desc: "Lightning that chains and slows nearby enemies." },
@@ -534,7 +734,7 @@ export const SPELLS = {
 };
 
 // Ordering used for the on-screen ability bar.
-export const SPELL_ORDER = [
+export const SPELL_ORDER: string[] = [
   "fireball", "lightning", "boomerang", "homing", "fireSpray", "bouncer",
   "splitter", "meteor", "teleport", "thrust", "swap", "windWalk", "rush",
   "drain", "gravity", "link", "disable", "shield", "timeShift", "pocketWatch",
@@ -545,7 +745,7 @@ export const SPELL_ORDER = [
 // One-click loadout templates for the Step 6 spell draft.
 // Fireball is excluded — it is the free always-on basic and never occupies a slot.
 // The first template (Burst) is the auto-fill source on timeout / empty picks.
-export const SPELL_TEMPLATES = [
+export const SPELL_TEMPLATES: SpellTemplate[] = [
   { id: "burst",   name: "Burst",   desc: "High-damage spike kit",
     spells: ["lightning", "meteor", "fireSpray", "splitter", "homing", "drain"] },
   { id: "control", name: "Control", desc: "Lockdown & displacement",
@@ -563,7 +763,7 @@ export const ITEM_SLOT_HOTKEY_STORAGE_KEY = "vwb-item-slot-hotkeys";
 // Exactly 10 items: mix of passive stat mods and active (spell-binding) pickups.
 // Applied as persistent modifiers on each warlock via applyItems(); active items
 // grant a spell through acquireItem() and cast through the existing pipeline.
-export const ITEMS = {
+export const ITEMS: Record<string, ItemDef> = {
   vitalityCore:   { name: "Vitality Core",   kind: "maxHp",  value: 72,   shape: "orb",   color: 0xff4d6d, rarity: "common", desc: "+72 max health." },
   berserkerBlade: { name: "Berserker Blade", kind: "damage", value: 1.25, shape: "blade", color: 0xff7a2e, rarity: "common", desc: "+25% spell & bolt damage." },
   swiftBoots:     { name: "Swift Boots",     kind: "speed",  value: 1.18, shape: "boots", color: 0x4cff9c, rarity: "common", desc: "+18% move speed." },
@@ -577,7 +777,7 @@ export const ITEMS = {
 };
 
 // Message types exchanged over PeerJS data channels.
-export const MSG = {
+export const MSG: Record<string, WireMsg> = {
   // client -> host
   JOIN: "join",          // {name, character, userId, region, matchId?, queueId?}
   INPUT: "input",        // {seq, move:[x,z], aim, casts:[{id,spell,tx,tz}]}
@@ -599,13 +799,13 @@ export const MSG = {
 };
 
 // Deterministic short room code from a peer id suffix.
-export function makeRoomCode() {
+export function makeRoomCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
   let s = "";
   for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
   return s;
 }
 
-export function codeToPeerId(code) {
+export function codeToPeerId(code: string): string {
   return CFG.PEER_PREFIX + code.toUpperCase();
 }
