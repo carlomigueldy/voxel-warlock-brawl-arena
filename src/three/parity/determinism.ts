@@ -19,17 +19,16 @@ export const CAPTURE_FIXTURE: string | null = params.get("fixture");
  * (test/parity/replayDriver.ts) so both renderers see identical framing. */
 export const CAPTURE_FIXED_DT = 1 / 30;
 
-// DOM chrome that would otherwise overlay the canvas. Most of these already
-// carry the `hidden` class in index.html; #loader and #menu don't (they're
-// the first thing a real page load shows) — capture mode skips the whole
-// loader→gesture→auth/region→menu flow entirely (App.tsx's CAPTURE guard on
-// useAppBootstrap), so nothing ever un-hides them again. Hiding the full set
-// defensively costs nothing (adding `hidden` to an already-hidden element is
-// a no-op) and survives future markup changes.
-const CHROME_IDS = [
-  "loader", "menu", "onboarding", "lobby", "spell-draft",
-  "hud", "pause-menu", "conduct-modal", "social-settings", "touch-controls",
-];
+// DOM chrome that would otherwise overlay the canvas. P6 deletes the static
+// legacy DOM this list used to name (#menu, #onboarding, #lobby, ...) — only
+// #loader remains as a real element index.html still ships; capture mode
+// skips the whole loader→gesture→auth/region→menu flow entirely (App.tsx's
+// CAPTURE guard on useAppBootstrap), so nothing ever un-hides it again.
+// React's own overlays (MenuRoot, Onboarding, ...) gate on useSessionStore
+// state instead of DOM visibility and never mount during CAPTURE (App.tsx's
+// `!CAPTURE && <UiRoot/>` guard), so there is no equivalent list to hide
+// there — hideChrome() only needs #loader now.
+const CHROME_IDS = ["loader"];
 
 function hideChrome(): void {
   for (const id of CHROME_IDS) {

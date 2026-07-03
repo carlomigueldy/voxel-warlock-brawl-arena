@@ -7,6 +7,7 @@
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./Scene";
 import { CAPTURE } from "./parity/determinism";
+import "./GameCanvas.css";
 
 export function GameCanvas() {
   return (
