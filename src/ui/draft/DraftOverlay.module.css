@@ -1,0 +1,312 @@
+/* React port of src/style.css's "STEP 6 — SPELL DRAFT OVERLAY" section
+   (design §4 partition map: draft overlay -> draft/*.module.css) plus the
+   hover-glow/lock-in/all-locked rules src/draft-juice.js injected at
+   runtime via a `<style>` tag — folded in here as static CSS since React
+   owns per-card school data at render time (design §9: "stop observing the
+   DOM, no injected <style>"). var(--token) only. Rendered inside the shared
+   Modal primitive (../common/Modal), which supplies the backdrop/portal/
+   focus-trap chrome and its own .dialog { max-width: 640px } — this module
+   is imported LAST in DraftOverlay.tsx so .panel's 860px wins the cascade
+   (matching the rest of the kit's "styles import last" convention). */
+
+.eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--arcane);
+  font-weight: 700;
+  padding: 5px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(108, 76, 255, 0.1);
+}
+
+.panel {
+  max-width: 860px;
+  width: 100%;
+  padding: 28px 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 92vh;
+  overflow: hidden;
+}
+.panel.allLocked {
+  animation: djAllLocked 0.7s ease 1;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.headerLeft {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.title {
+  font-family: var(--font-display);
+  font-size: clamp(16px, 3vw, 24px);
+  color: var(--text);
+  letter-spacing: 1px;
+}
+
+.timerWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 56px;
+}
+.timerLabel {
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.timer {
+  font-family: var(--font-display);
+  font-size: clamp(22px, 4vw, 36px);
+  color: var(--rune);
+  text-shadow: 0 0 18px rgba(124, 255, 90, 0.5);
+  line-height: 1;
+  transition: color 0.3s ease;
+}
+.timerUrgent {
+  color: var(--ember);
+  text-shadow: 0 0 18px rgba(255, 90, 60, 0.65);
+  animation: timerUrgent 0.8s ease-in-out infinite;
+}
+@keyframes timerUrgent {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: left;
+  line-height: 1.5;
+}
+
+/* ---- Template quick-pick buttons ---- */
+.templates {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.tplBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+  flex: 1 1 140px;
+  max-width: 220px;
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.tplBtn:hover:not(:disabled) {
+  border-color: var(--arcane);
+  background: rgba(108, 76, 255, 0.12);
+}
+.tplBtn:focus-visible {
+  outline: 2px solid var(--arcane);
+  outline-offset: 2px;
+}
+.tplBtn:disabled { opacity: 0.45; cursor: default; }
+.tplName {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.5px;
+}
+.tplDesc {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ---- Body: slot pips + spell grid side by side ---- */
+.body {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---- Slot pips: 6 vertical cells showing your current picks ---- */
+.slots {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.slotPip {
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--slot);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+  transition: border-color 0.18s ease, background 0.18s ease;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.slotFilled {
+  border-color: var(--swatch, var(--arcane));
+  background: rgba(108, 76, 255, 0.1);
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--swatch, var(--arcane));
+}
+.slotPip.pipLock {
+  animation: djLockIn 0.42s var(--ease-spring) 1;
+}
+@keyframes djLockIn {
+  0%   { transform: scale(1); filter: brightness(1); }
+  35%  { transform: scale(1.22); filter: brightness(1.35); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+@keyframes djAllLocked {
+  0%   { box-shadow: 0 0 0 rgba(108, 76, 255, 0); }
+  45%  { box-shadow: 0 0 50px rgba(108, 76, 255, 0.6); }
+  100% { box-shadow: 0 0 18px -8px rgba(108, 76, 255, 0.45); }
+}
+
+/* ---- Spell grid ---- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 7px;
+  overflow-y: auto;
+  max-height: 320px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.spellCard {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: center;
+  padding: 9px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.spellCard:hover:not(:disabled),
+.spellCard:focus-visible {
+  border-color: var(--dj-glow, var(--arcane));
+  box-shadow: 0 0 0 1px var(--dj-glow, var(--arcane)), 0 0 22px -3px var(--dj-glow, var(--arcane));
+}
+.spellCard.isSelected {
+  border-color: var(--rune);
+  background: rgba(124, 255, 90, 0.08);
+}
+.spellCard.atCap {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+.spellCard:disabled { opacity: 0.4; cursor: default; }
+.swatch {
+  grid-row: 1 / 3;
+  grid-column: 1;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+.cardName {
+  grid-row: 1;
+  grid-column: 2;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cardCd {
+  grid-row: 1;
+  grid-column: 3;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.cardDesc {
+  grid-row: 2;
+  grid-column: 2 / 4;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ---- Ready button ---- */
+.footer {
+  display: flex;
+  justify-content: flex-end;
+}
+.readyBtn {
+  min-width: 160px;
+}
+.readyBtn.isReady {
+  background: rgba(124, 255, 90, 0.12);
+  border-color: var(--rune);
+  color: var(--rune);
+}
+
+/* ---- Responsive: narrow / touch ---- */
+@media (max-width: 580px) {
+  .body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .slots {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .slotPip {
+    flex: 1 1 80px;
+    height: 30px;
+    font-size: 10px;
+  }
+  .grid {
+    max-height: 240px;
+  }
+  .templates {
+    display: none; /* save vertical space; users can tap cards directly */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel, .panel.allLocked { animation: none !important; }
+  .timer, .timerUrgent { transition: none !important; animation: none !important; }
+  .spellCard, .tplBtn, .slotPip, .slotPip.pipLock { transition: none !important; animation: none !important; }
+}
