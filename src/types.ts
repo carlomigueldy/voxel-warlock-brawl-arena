@@ -500,6 +500,12 @@ export interface PlayerMeta {
   isBot?: boolean;
 }
 
+/** Per-peer identity metadata the host tracks on JOIN (src/net.ts `Host.playerMeta`). */
+export interface PeerMeta {
+  userId: string | null;
+  region: string | null;
+}
+
 /** Message types exchanged over PeerJS data channels (CFG.MSG values). */
 export type WireMsg =
   | "join"
