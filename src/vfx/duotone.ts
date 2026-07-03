@@ -10,12 +10,18 @@
 //     bespoke cast/impact/core builders in without every caller needing a
 //     spell-by-spell switch statement.
 //
-// This is a leaf-ish module: it imports `three`, lowpoly.js's faceted
-// builders, and config.js (for SPELLS/CFG) — nothing from voxel.js/renderer.js,
+// This is a leaf-ish module: it imports `three`, lowpoly.ts's faceted
+// builders, and config.ts (for SPELLS/CFG) — nothing from voxel.js/renderer.js,
 // so it stays reusable from any per-spell VFX group file.
+//
+// PROJECTILE_VFX/AOE_VFX/BEAM_VFX/UTILITY_VFX are deferred to their own P4
+// issues (still .js) — VFX_REGISTRY/VfxEntry below are this file's OWN typed
+// contract for getVfx() callers; Object.assign merges the untyped slices in
+// at runtime same as before (types aren't cross-checked against them, so the
+// deferred siblings staying .js doesn't weaken this file's own typing).
 import * as THREE from "three";
 import { CFG, SPELLS } from "../config.js";
-import { facetedOrb } from "../lowpoly.js";
+import { facetedOrb, type LowPolyOpts } from "../lowpoly.js";
 import { PROJECTILE_VFX } from "./projectiles.js";
 import { AOE_VFX } from "./aoe.js";
 import { BEAM_VFX } from "./beams.js";
@@ -28,7 +34,7 @@ import { UTILITY_VFX } from "./utility.js";
 // Lighter, slightly desaturated tint of `hex` — the 3D analogue of the SVG
 // icon's ~0.45-opacity secondary layer (which reads lighter/washed-out
 // against the faceted primary shape even before opacity is applied).
-export function secondaryColor(hex, opts = {}) {
+export function secondaryColor(hex: number, opts: { lift?: number; desaturate?: number } = {}): number {
   const hsl = { h: 0, s: 0, l: 0 };
   new THREE.Color(hex).getHSL(hsl);
   const lift = opts.lift ?? 0.22;
@@ -40,7 +46,7 @@ export function secondaryColor(hex, opts = {}) {
 
 // Lighten `hex` by `amt` (0..1) in HSL space, hue/saturation preserved. Used
 // for highlight facets, spark lines, and hot cores.
-export function brighten(hex, amt = 0.25) {
+export function brighten(hex: number, amt = 0.25): number {
   const hsl = { h: 0, s: 0, l: 0 };
   new THREE.Color(hex).getHSL(hsl);
   const out = new THREE.Color();
@@ -48,15 +54,31 @@ export function brighten(hex, amt = 0.25) {
   return out.getHex();
 }
 
-function _placeMesh(mesh, opts = {}) {
+/** Option bag facetedDuo draws from — geometry-mode also honors the
+ * placement fields (x/y/z/rx/ry/rz/cast); builder-mode forwards `opts`
+ * through unchanged to the caller-supplied builder function. */
+export interface FacetedDuoOpts extends LowPolyOpts {
+  emissiveIntensity?: number;
+  secondaryScale?: number;
+  secondaryOpacity?: number;
+  radius?: number;
+}
+
+function _placeMesh<T extends THREE.Object3D>(mesh: T, opts: FacetedDuoOpts = {}): T {
   mesh.position.set(opts.x ?? 0, opts.y ?? 0, opts.z ?? 0);
   mesh.rotation.set(opts.rx ?? 0, opts.ry ?? 0, opts.rz ?? 0);
   return mesh;
 }
 
+/** Feature-detected surface facetedDuo reads/writes on a primary mesh's
+ * material (Lambert-flat or Basic — never Standard, see design §0). */
+type DuotoneMaterial = THREE.Material & Partial<{ color: THREE.Color; emissive: THREE.Color; emissiveIntensity: number }>;
+
 // ---------------------------------------------------------------------------
 // facetedDuo — the reusable 3D duotone primitive
 // ---------------------------------------------------------------------------
+
+export type FacetedDuoBuilder = (color: number, opts: FacetedDuoOpts) => THREE.Mesh;
 
 // Build a duotone faceted Group: a flat-shaded emissive PRIMARY mesh + a
 // translucent, slightly larger SECONDARY accent shell (unlit, ~0.45 opacity)
@@ -66,7 +88,7 @@ function _placeMesh(mesh, opts = {}) {
 //     - a THREE.BufferGeometry to wrap directly (caller retains ownership;
 //       facetedDuo never disposes geometry it did not create itself), or
 //     - a builder function `(color, opts) -> THREE.Mesh` — typically a thin
-//       wrapper around a lowpoly.js faceted builder, e.g.
+//       wrapper around a lowpoly.ts faceted builder, e.g.
 //       `(color, opts) => facetedOrb(0.4, color, opts)`. The returned mesh's
 //       geometry is reused for the secondary shell and its material's
 //       emissiveIntensity is normalized to `opts.emissiveIntensity`.
@@ -78,20 +100,22 @@ function _placeMesh(mesh, opts = {}) {
 // Returns a THREE.Group with userData.primary / .secondary meshes, plus the
 // same recolor()/dispose() contract src/pool.js and src/voxel.js already
 // rely on for pooled/cached instances.
-export function facetedDuo(coreGeoOrBuilder, color, opts = {}) {
+export function facetedDuo(coreGeoOrBuilder: THREE.BufferGeometry | FacetedDuoBuilder, color: number, opts: FacetedDuoOpts = {}): THREE.Group {
   const emissiveIntensity = opts.emissiveIntensity ?? 1;
   const secondaryScale = opts.secondaryScale ?? 1.35;
   const secondaryOpacity = opts.secondaryOpacity ?? 0.45;
 
   const g = new THREE.Group();
-  let primary, coreGeo;
+  let primary: THREE.Mesh;
+  let coreGeo: THREE.BufferGeometry;
   const ownsGeo = typeof coreGeoOrBuilder === "function";
 
   if (ownsGeo) {
     primary = coreGeoOrBuilder(color, opts);
     coreGeo = primary.geometry;
-    if (primary.material && "emissiveIntensity" in primary.material) {
-      primary.material.emissiveIntensity = emissiveIntensity;
+    const mat = primary.material as DuotoneMaterial;
+    if (mat && "emissiveIntensity" in mat) {
+      mat.emissiveIntensity = emissiveIntensity;
     }
   } else {
     coreGeo = coreGeoOrBuilder;
@@ -119,19 +143,20 @@ export function facetedDuo(coreGeoOrBuilder, color, opts = {}) {
   g.add(secondary, primary);
   g.userData.primary = primary;
   g.userData.secondary = secondary;
-  g.userData.recolor = (newColor) => {
-    if (primary.material?.color) primary.material.color.setHex(newColor);
-    if (primary.material && "emissive" in primary.material) primary.material.emissive.setHex(newColor);
+  g.userData.recolor = (newColor: number) => {
+    const mat = primary.material as DuotoneMaterial;
+    if (mat?.color) mat.color.setHex(newColor);
+    if (mat && "emissive" in mat && mat.emissive) mat.emissive.setHex(newColor);
     secMat.color.setHex(secondaryColor(newColor));
   };
   // Only dispose resources facetedDuo actually created itself: the geometry
   // when a builder produced it (owned by this Group alone, matching
-  // lowpoly.js's per-call-fresh-geometry pattern), and both materials
+  // lowpoly.ts's per-call-fresh-geometry pattern), and both materials
   // (always instance-owned). Geometry passed in directly by the caller is
   // never disposed here — it may be a cache-owned resource (voxel.js-style)
   // that other instances still reference.
   g.userData.dispose = () => {
-    primary.material?.dispose?.();
+    (primary.material as THREE.Material | undefined)?.dispose?.();
     secMat.dispose();
     if (ownsGeo) coreGeo?.dispose?.();
   };
@@ -146,21 +171,23 @@ export function facetedDuo(coreGeoOrBuilder, color, opts = {}) {
 // NEVER dispose it, it is shared for the lifetime of the module.
 const _trailShardGeo = new THREE.OctahedronGeometry(0.5, 0);
 
+type ShardMesh = THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshLambertMaterial>;
+
 // Pre-allocated pool of shard Mesh instances, sized by CFG.TRAIL_POOL_SIZE so
 // the total GPU/JS cost of every trail streak in flight — across every
 // active projectile at once — stays bounded no matter how many bolts are
 // on screen. Materials are cache-owned per pool slot (created once, reused
 // via recolor, never disposed) — the same non-disposal contract as
 // voxel.js's _boltMatCache.
-const _shardPool = [];
-function _ensurePool() {
+const _shardPool: ShardMesh[] = [];
+function _ensurePool(): void {
   if (_shardPool.length) return;
   for (let i = 0; i < CFG.TRAIL_POOL_SIZE; i++) {
     const mat = new THREE.MeshLambertMaterial({
       color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.1, flatShading: true,
       transparent: true, opacity: 0,
     });
-    const m = new THREE.Mesh(_trailShardGeo, mat);
+    const m: ShardMesh = new THREE.Mesh(_trailShardGeo, mat);
     m.castShadow = false;
     m.receiveShadow = false;
     m.visible = false;
@@ -173,7 +200,7 @@ function _ensurePool() {
 // use (callers should skip the spawn rather than allocate — this is the
 // hard perf cap). Never builds new geometry/materials beyond the pre-sized
 // pool.
-function _acquireShard() {
+function _acquireShard(): ShardMesh | null {
   _ensurePool();
   for (const m of _shardPool) {
     if (m.userData.free) { m.userData.free = false; return m; }
@@ -183,11 +210,16 @@ function _acquireShard() {
 
 // Return a shard mesh to the pool: hides it, detaches it from its current
 // parent, and never disposes its cache-owned geometry/material.
-function _releaseShard(m) {
+function _releaseShard(m: ShardMesh | null): void {
   if (!m) return;
   m.userData.free = true;
   m.visible = false;
   if (m.parent) m.parent.remove(m);
+}
+
+export interface TrailEmitter {
+  update(dt: number): void;
+  dispose(): void;
 }
 
 // Bind a pooled, capped faceted-streak trail emitter to a projectile group.
@@ -201,7 +233,7 @@ function _releaseShard(m) {
 // pool above, so no single trail — nor all trails combined — can allocate
 // unbounded geometry/materials.
 //
-//   boltGroup — the THREE.Group being trailed; shards spawn at its current
+//   boltGroup — the THREE.Object3D being trailed; shards spawn at its current
 //               world position and are added as siblings under its parent
 //               (so they stay put as the bolt continues on).
 //   color     — base spell color; shards are tinted with secondaryColor(color)
@@ -212,17 +244,17 @@ function _releaseShard(m) {
 // Returns { update(dt), dispose() }. Call dispose() when the bolt itself is
 // released (e.g. back to src/pool.js) so its shards return to the shared
 // pool immediately instead of waiting out their fade.
-function createTrailEmitter(boltGroup, color, opts = {}) {
+function createTrailEmitter(boltGroup: THREE.Object3D, color: number, opts: { every?: number; life?: number; size?: number; maxSegments?: number } = {}): TrailEmitter {
   const everySec = opts.every ?? 0.035;
   const life = opts.life ?? 0.22;
   const size = opts.size ?? 0.16;
   const maxSegs = Math.max(1, Math.min(opts.maxSegments ?? CFG.TRAIL_MAX_SEGMENTS, CFG.TRAIL_MAX_SEGMENTS));
   const tint = secondaryColor(color);
-  const alive = []; // { mesh, t }
+  const alive: { mesh: ShardMesh; t: number }[] = [];
   const worldPos = new THREE.Vector3();
   let sinceSpawn = 0;
 
-  function _spawn(parent) {
+  function _spawn(parent: THREE.Object3D): void {
     let mesh = _acquireShard();
     if (!mesh) {
       // Global pool exhausted — recycle this emitter's own oldest shard so
@@ -234,7 +266,7 @@ function createTrailEmitter(boltGroup, color, opts = {}) {
       // Per-emitter cap reached even though the global pool had room —
       // release our own oldest to keep this trail's segment count bounded.
       const oldest = alive.shift();
-      _releaseShard(oldest.mesh);
+      if (oldest) _releaseShard(oldest.mesh);
     }
     boltGroup.getWorldPosition(worldPos);
     mesh.position.copy(worldPos);
@@ -249,7 +281,7 @@ function createTrailEmitter(boltGroup, color, opts = {}) {
   }
 
   return {
-    update(dt) {
+    update(dt: number) {
       const parent = boltGroup.parent;
       sinceSpawn += dt;
       if (parent && sinceSpawn >= everySec) {
@@ -289,20 +321,30 @@ export const TrailPool = {
 // VFX_REGISTRY / getVfx — per-spell VFX lookup with a generic fallback
 // ---------------------------------------------------------------------------
 
+/** ctx passed to cast()/impact(): mirrors renderer.js's _addEffect/_ringPulse/
+ * _burstAt so registry entries can be written without importing renderer.js
+ * directly. Left loosely typed ([key: string]: unknown) since the deferred
+ * per-spell VFX group files (still .js) each read a slightly different
+ * subset. */
+export type VfxCtx = { x: number; z: number; y?: number; color: number; [key: string]: unknown };
+
 // Populated by per-spell VFX group files (added spell-by-spell in follow-up
-// work), keyed by spellId. Each entry:
-//   {
-//     color,                          // base tint (usually SPELLS[id].color)
-//     proj?,                          // optional bolt `kind` (voxel.js buildBolt)
-//     buildCore(color) -> Group,      // faceted duotone core (idle/inventory look)
-//     cast(ctx) -> effect|null,       // one-shot cast VFX (renderer effect contract)
-//     impact(ctx) -> effect|null,     // one-shot impact/hit VFX
-//     trail?: boolean,                // whether projectiles of this spell get a TrailPool trail
-//   }
-// ctx passed to cast()/impact(): { x, z, y, color, addEffect, ringPulse, burstAt }
-// — addEffect/ringPulse/burstAt mirror renderer.js's _addEffect/_ringPulse/_burstAt
-// so registry entries can be written without importing renderer.js directly.
-export const VFX_REGISTRY = {};
+// work), keyed by spellId.
+export interface VfxEntry {
+  color: number;
+  /** optional bolt `kind` (voxel.js buildBolt) */
+  proj?: string;
+  /** faceted duotone core (idle/inventory look) */
+  buildCore: (color?: number) => THREE.Group;
+  /** one-shot cast VFX (renderer effect contract) */
+  cast: (ctx: VfxCtx) => THREE.Object3D | null;
+  /** one-shot impact/hit VFX */
+  impact: (ctx: VfxCtx) => THREE.Object3D | null;
+  /** whether projectiles of this spell get a TrailPool trail */
+  trail?: boolean;
+}
+
+export const VFX_REGISTRY: Record<string, VfxEntry> = {};
 
 // Merge every per-spell VFX group slice in. Two spellIds are intentionally
 // claimed by more than one slice, so merge order picks a deliberate winner
@@ -325,17 +367,17 @@ Object.assign(VFX_REGISTRY, PROJECTILE_VFX, UTILITY_VFX, AOE_VFX, BEAM_VFX);
 
 // Generic faceted core builder used by the getVfx() fallback for any spell
 // that has no bespoke registry entry yet.
-function _genericCoreBuilder(color, opts = {}) {
+function _genericCoreBuilder(color: number, opts: FacetedDuoOpts = {}): THREE.Mesh {
   return facetedOrb(opts.radius ?? 0.4, color, opts);
 }
 
 // Look up a spell's VFX registry entry, or synthesize a safe generic fallback
 // so every caller always gets a usable entry (color + a duotone core + inert
 // cast/impact no-ops) even before that spell has bespoke VFX authored.
-export function getVfx(spellId) {
+export function getVfx(spellId: string): VfxEntry {
   const entry = VFX_REGISTRY[spellId];
   if (entry) return entry;
-  const color = SPELLS[spellId]?.color ?? 0x8888ff;
+  const color = (SPELLS[spellId]?.color as number | undefined) ?? 0x8888ff;
   return {
     color,
     buildCore: (c = color) => facetedDuo(_genericCoreBuilder, c, {}),

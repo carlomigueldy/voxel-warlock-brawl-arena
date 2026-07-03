@@ -229,8 +229,9 @@ test("props.js builders use the shared lowpoly faceted helpers (flat-shaded)", (
   assert.doesNotMatch(props, /new THREE\.BoxGeometry/);
   assert.doesNotMatch(props, /GLTFLoader|\.glb/i);
   assert.doesNotMatch(props, /meshy/i);
-  // The faceted flat-shading recipe itself lives in lowpoly.js.
-  const lowpoly = fs.readFileSync("src/lowpoly.js", "utf8");
+  // The faceted flat-shading recipe itself lives in lowpoly.ts (P4a: ported
+  // to TypeScript — src/three/materials/palette.ts re-exports its _lit/_unlit).
+  const lowpoly = fs.readFileSync("src/lowpoly.ts", "utf8");
   assert.match(lowpoly, /flatShading: true/);
   assert.match(lowpoly, /MeshLambertMaterial/);
 });

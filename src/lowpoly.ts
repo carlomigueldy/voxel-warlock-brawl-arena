@@ -17,7 +17,46 @@ import * as THREE from "three";
 // Internal material / mesh factories
 // ---------------------------------------------------------------------------
 
-function _lit(color, opts = {}) {
+/** Shared option bag every builder below draws from (duck-typed in the
+ * original JS — each function only reads the subset it needs). */
+export interface LowPolyOpts {
+  // material (_lit/_unlit)
+  emissive?: number;
+  emissiveIntensity?: number;
+  transparent?: boolean;
+  opacity?: number;
+  wireframe?: boolean;
+  // placement (_place)
+  x?: number;
+  y?: number;
+  z?: number;
+  rx?: number;
+  ry?: number;
+  rz?: number;
+  cast?: boolean;
+  receive?: boolean;
+  scale?: number;
+  // geometry variation
+  detail?: number;
+  perturb?: number;
+  sx?: number;
+  sy?: number;
+  sz?: number;
+  spin?: boolean;
+  segments?: number;
+  heightSegments?: number;
+  widthSegments?: number;
+  depthSegments?: number;
+  openEnded?: boolean;
+  radialSegments?: number;
+  tubularSegments?: number;
+}
+
+// Exported (P4a) so src/three/materials/palette.ts can wrap the same
+// Lambert-flat/Basic recipe for R3F meshes without duplicating it — the
+// underscore names are kept as-is (matches this file's private-helper
+// convention) since palette.ts re-exports them under public names.
+export function _lit(color: number, opts: LowPolyOpts = {}): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({
     color,
     flatShading: true,
@@ -28,7 +67,7 @@ function _lit(color, opts = {}) {
   });
 }
 
-function _unlit(color, opts = {}) {
+export function _unlit(color: number, opts: LowPolyOpts = {}): THREE.MeshBasicMaterial {
   return new THREE.MeshBasicMaterial({
     color,
     transparent: opts.transparent ?? false,
@@ -37,7 +76,7 @@ function _unlit(color, opts = {}) {
   });
 }
 
-function _place(geo, mat, opts = {}) {
+function _place(geo: THREE.BufferGeometry, mat: THREE.Material, opts: LowPolyOpts = {}): THREE.Mesh {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(opts.x ?? 0, opts.y ?? 0, opts.z ?? 0);
   m.rotation.set(opts.rx ?? 0, opts.ry ?? 0, opts.rz ?? 0);
@@ -50,7 +89,7 @@ function _place(geo, mat, opts = {}) {
 // Apply small per-vertex perturbation to a geometry for organic irregularity
 // (rocks / boulders / debris). Visual-only — render meshes are built once per
 // entity, so the non-determinism just adds natural variety between instances.
-function _perturb(geo, amount = 0.12) {
+function _perturb(geo: THREE.BufferGeometry, amount = 0.12): THREE.BufferGeometry {
   const pos = geo.attributes.position;
   const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
@@ -69,7 +108,7 @@ function _perturb(geo, amount = 0.12) {
 
 // Non-uniform scale on a mesh for cheap ellipsoidal irregularity (no vertex
 // rewrite, so it stays cheap for instancing-friendly single meshes).
-function _stretch(m, sx, sy, sz) {
+function _stretch(m: THREE.Mesh, sx: number, sy: number, sz: number): THREE.Mesh {
   m.scale.set(sx, sy, sz);
   return m;
 }
@@ -84,7 +123,7 @@ function _stretch(m, sx, sy, sz) {
 //   color   – lit lambert color
 //   opts    – { detail=0, perturb=0, sx, sy, sz, emissive, emissiveIntensity,
 //               x, y, z, rx, ry, rz, cast, receive }
-export function facetedRock(radius, color, opts = {}) {
+export function facetedRock(radius: number, color: number, opts: LowPolyOpts = {}): THREE.Mesh {
   const detail = opts.detail ?? 0;
   const geo = new THREE.IcosahedronGeometry(radius, detail);
   if (opts.perturb) _perturb(geo, opts.perturb);
@@ -97,7 +136,7 @@ export function facetedRock(radius, color, opts = {}) {
 
 // Faceted crystal: octahedron (8 faces) — reads as a sharpened double-pyramid.
 // Tall by default; stretch to tune. Used for rune cores / item crystals.
-export function facetedCrystal(radius, color, opts = {}) {
+export function facetedCrystal(radius: number, color: number, opts: LowPolyOpts = {}): THREE.Mesh {
   const geo = new THREE.OctahedronGeometry(radius, opts.detail ?? 0);
   const m = _place(geo, _lit(color, opts), opts);
   _stretch(m, opts.sx ?? 0.6, opts.sy ?? 1.6, opts.sz ?? 0.6);
@@ -107,14 +146,14 @@ export function facetedCrystal(radius, color, opts = {}) {
 
 // Faceted orb: icosahedron at detail 1 (80 faces) — a faceted sphere that still
 // reads as round. Emissive by default so it glows as a projectile core / item.
-export function facetedOrb(radius, color, opts = {}) {
+export function facetedOrb(radius: number, color: number, opts: LowPolyOpts = {}): THREE.Mesh {
   const geo = new THREE.IcosahedronGeometry(radius, opts.detail ?? 1);
   return _place(geo, _lit(color, { emissive: color, emissiveIntensity: 0.9, ...opts }), opts);
 }
 
 // Faceted cone: low radialSegments (default 6) so each side is a flat facet.
 // Tree canopies, wizard hats, stalagmites, meteor tail.
-export function facetedCone(radius, height, color, opts = {}) {
+export function facetedCone(radius: number, height: number, color: number, opts: LowPolyOpts = {}): THREE.Mesh {
   const seg = opts.segments ?? 6;
   const geo = new THREE.ConeGeometry(radius, height, seg, 1, opts.openEnded ?? false);
   return _place(geo, _lit(color, opts), opts);
@@ -122,7 +161,7 @@ export function facetedCone(radius, height, color, opts = {}) {
 
 // Faceted cylinder: low radialSegments (default 6) for a hex/prismatic facet
 // look. Trunks, columns, limbs, shafts.
-export function facetedCylinder(rTop, rBottom, height, color, opts = {}) {
+export function facetedCylinder(rTop: number, rBottom: number, height: number, color: number, opts: LowPolyOpts = {}): THREE.Mesh {
   const seg = opts.segments ?? 6;
   const geo = new THREE.CylinderGeometry(rTop, rBottom, height, seg, opts.heightSegments ?? 1, opts.openEnded ?? false);
   return _place(geo, _lit(color, opts), opts);
@@ -130,7 +169,7 @@ export function facetedCylinder(rTop, rBottom, height, color, opts = {}) {
 
 // Faceted shard: a small elongated octahedron — burst particles, debris, vortex
 // blades. Cheap (8 faces) and reads sharp.
-export function facetedShard(length, color, opts = {}) {
+export function facetedShard(length: number, color: number, opts: LowPolyOpts = {}): THREE.Mesh {
   const geo = new THREE.OctahedronGeometry(0.5, 0);
   const m = _place(geo, _lit(color, opts), opts);
   _stretch(m, opts.sx ?? 0.25, opts.sy ?? length, opts.sz ?? 0.25);
@@ -139,7 +178,7 @@ export function facetedShard(length, color, opts = {}) {
 
 // Faceted slab: a box with optional per-axis segments so each face breaks into
 // flat facets (segments > 1). For walls / plateau tops / rigid masonry.
-export function facetedSlab(w, h, d, color, opts = {}) {
+export function facetedSlab(w: number, h: number, d: number, color: number, opts: LowPolyOpts = {}): THREE.Mesh {
   const ws = opts.widthSegments ?? 1;
   const hs = opts.heightSegments ?? 1;
   const ds = opts.depthSegments ?? 1;
@@ -148,7 +187,7 @@ export function facetedSlab(w, h, d, color, opts = {}) {
 }
 
 // Faceted torus knot / ring accents (rarely used; for charged item halos).
-export function facetedTorus(radius, tube, color, opts = {}) {
+export function facetedTorus(radius: number, tube: number, color: number, opts: LowPolyOpts = {}): THREE.Mesh {
   const geo = new THREE.TorusGeometry(radius, tube, opts.radialSegments ?? 6, opts.tubularSegments ?? 12);
   return _place(geo, _lit(color, opts), opts);
 }
@@ -159,7 +198,7 @@ export function facetedTorus(radius, tube, color, opts = {}) {
 
 // Faceted aura shell: icosahedron, unlit, translucent. Wraps glowing cores so
 // they read as a soft faceted halo (projectiles, runes, shields).
-export function facetedAura(radius, color, opts = {}) {
+export function facetedAura(radius: number, color: number, opts: LowPolyOpts = {}): THREE.Mesh {
   const geo = new THREE.IcosahedronGeometry(radius, opts.detail ?? 0);
   return _place(
     geo,
@@ -170,7 +209,7 @@ export function facetedAura(radius, color, opts = {}) {
 
 // Faceted cloud puff: icosahedron, unlit, translucent, non-shadowing. For
 // storm clouds / smoke where lighting would muddy the silhouette.
-export function facetedPuff(radius, color, opts = {}) {
+export function facetedPuff(radius: number, color: number, opts: LowPolyOpts = {}): THREE.Mesh {
   const geo = new THREE.IcosahedronGeometry(radius, opts.detail ?? 0);
   const m = _place(geo, _unlit(color, { transparent: true, opacity: opts.opacity ?? 0.8 }), opts);
   m.castShadow = false;
@@ -182,7 +221,7 @@ export function facetedPuff(radius, color, opts = {}) {
 // Foreground mob health bar: dark background bar + colored fill bar. Renderer
 // sets `bar.scale.x = hp/max` every frame. Shared by voxel.js's procedural mob
 // builders and mobModel.js's GLB-backed mob instances.
-export function makeMobHealthBar(color, yPos = 3.5) {
+export function makeMobHealthBar(color: number, yPos = 3.5): { group: THREE.Group; bar: THREE.Mesh } {
   const g = new THREE.Group();
   g.position.y = yPos;
   const bg = new THREE.Mesh(
