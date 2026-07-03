@@ -1,0 +1,90 @@
+/* Port of src/style.css L166-171 (.field/.field-inline/...), L2755-2771
+   (conduct/social dialogs), L2702-2743 (redesigned in-match roster) —
+   design §4 partition map rows "social chat (panel/roster/mute)" + general
+   field primitives -> pause-chat (this sibling owns the mute-list/prefs/
+   conduct surface, design §9). Shared by SocialSettingsModal.tsx +
+   ConductModal.tsx; Modal (ui/common) supplies the overlay/backdrop/panel
+   chrome + focus trap at z-index 200. */
+.dialog { max-width: 520px; text-align: left; }
+
+.title {
+  font-family: var(--font-display);
+  font-size: clamp(15px, 2.6vw, 20px);
+  color: var(--arcane);
+  text-shadow: 0 0 18px rgba(108, 76, 255, 0.5);
+  margin: 0 0 16px;
+  text-align: center;
+}
+
+.body { display: flex; flex-direction: column; gap: 16px; margin-bottom: 18px; text-align: left; }
+
+.field { display: flex; flex-direction: column; gap: 9px; }
+.fieldInline { flex-direction: row; align-items: center; justify-content: space-between; gap: 14px; }
+.fieldCopy { display: flex; flex-direction: column; gap: 2px; }
+.fieldLabel { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.fieldHint { font-size: 12px; color: rgba(154, 147, 199, 0.7); }
+
+.pttBtn { min-width: 88px; }
+.actions { display: flex; flex-direction: column; gap: 12px; }
+
+/* ---- Conduct disclaimer ---- */
+.conductBody { font-size: 14px; line-height: 1.6; color: var(--text); margin-bottom: 20px; }
+.conductBody p { margin-bottom: 10px; }
+.conductBody ul { margin: 10px 0 12px 20px; display: flex; flex-direction: column; gap: 8px; }
+.conductBody strong { color: var(--gold); }
+.conductEnter { width: 100%; }
+
+/* ---- Roster (mute list) ---- */
+.roster { display: flex; flex-direction: column; }
+.rosterRow {
+  display: grid;
+  grid-template-columns: 12px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.rosterRow + .rosterRow { border-top: 1px solid var(--line); padding-top: 7px; margin-top: 1px; }
+.chip {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+}
+.name {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.status { display: flex; gap: 3px; align-items: center; min-width: 52px; }
+.glyph { font-size: 11px; line-height: 1; opacity: 0.16; transition: opacity 0.2s ease; }
+.glyphActive { opacity: 1; }
+.speak.glyphActive { color: var(--rune); animation: rsSpeakPulse 0.9s ease-in-out infinite; }
+.typing.glyphActive { color: var(--cyan); animation: rsTypingDots 1s steps(1) infinite; }
+.afk.glyphActive { color: var(--gold); }
+.muted.glyphActive { color: var(--ember); }
+@keyframes rsSpeakPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.2); }
+}
+@keyframes rsTypingDots {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.muteBtn {
+  min-width: 44px; min-height: 44px; /* design floor: touch targets >= 44px */
+  border-radius: 6px; border: 1px solid var(--line);
+  background: transparent; color: var(--muted);
+  font-size: 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.muteBtn:hover { border-color: var(--line-strong); color: var(--text); }
+.muteBtnActive { color: var(--ember); border-color: rgba(255, 90, 60, 0.55); background: rgba(255, 90, 60, 0.12); }
+.muteBtn:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+
+.emptyRoster { font-size: 13px; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .muteBtn { transition: none; }
+  .glyph { transition: none; }
+  .speak.glyphActive, .typing.glyphActive { animation: none; }
+}

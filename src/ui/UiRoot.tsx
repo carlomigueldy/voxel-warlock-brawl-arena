@@ -22,7 +22,12 @@ import { useSessionStore } from "../store/useSessionStore";
 import { MenuRoot } from "./menu/MenuRoot";
 import { LobbyRoot } from "./lobby/LobbyRoot";
 import { Hud } from "./hud/Hud";
+import { DraftOverlay } from "./draft/DraftOverlay";
 import { TouchControls } from "./touch/TouchControls";
+import { PauseMenu } from "./pause/PauseMenu";
+import { ChatPanel } from "./chat/ChatPanel";
+import { Onboarding } from "./onboarding/Onboarding";
+import { Juice } from "./juice/Juice";
 import styles from "./UiRoot.module.css";
 
 // index.html's static legacy `#menu` markup ships `class="overlay
@@ -67,10 +72,17 @@ export function UiRoot() {
         </div>
       )}
       {screen === "game" && <Hud />}
+      {/* game overlays (render during the game screen, gate internally) */}
+      {screen === "game" && <DraftOverlay />}
       {screen === "game" && <TouchControls />}
-      {/* game overlays (#164), always-mounted overlays (#165/#166),
-          juice decoration (#168) — each sibling adds its own region here
-          per design §9's UiRoot render contract. */}
+      {/* always-mounted overlays (gate internally on their own store flags) */}
+      <Onboarding />
+      <Juice />
+      <PauseMenu />
+      <ChatPanel />
+      {/* P5 UiRoot render contract complete (design §9) — all 8 sibling
+          regions mounted: menu/lobby/hud screens + draft/touch game overlays
+          + onboarding/juice/pause/chat always-mounted overlays. */}
     </div>
   );
 }

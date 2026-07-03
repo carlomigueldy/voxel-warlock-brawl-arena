@@ -11,6 +11,8 @@ import type { Snapshot } from "../types";
 import { snapshotRef, pushSnapshot } from "../store/snapshotRef";
 import { useRosterStore, deriveRoster } from "../store/useRosterStore";
 import { useHudStore } from "../store/useHudStore";
+import { useDraftStore } from "../store/useDraftStore";
+import { useSocialRosterStore } from "../store/useSocialRosterStore";
 import { useSessionStore } from "../store/useSessionStore";
 import { getUI, getAudio, getInput } from "../services/registry";
 
@@ -56,6 +58,12 @@ export function onNewSnapshot(snap: Snapshot, localId: string | null): void {
     pushSnapshot(snap);
     useRosterStore.getState().sync(deriveRoster(snap, snapshotRef.meta));
     useHudStore.getState().publish(snap, localId, snapshotRef.meta);
+    useDraftStore.getState().publish(snap, localId);
+    // Presence-only slice (typing/afk/speaking) for the pause-chat roster's
+    // status glyphs — useRosterStore.meta/useHudStore.scoreboard have no room
+    // for these (see useSocialRosterStore.ts's header); same fan-out point,
+    // same value-gated sync() pattern as the two calls above.
+    useSocialRosterStore.getState().sync(snap.players);
     if (snap.phase !== useSessionStore.getState().phase) {
       useSessionStore.getState().setPhase(snap.phase);
     }
