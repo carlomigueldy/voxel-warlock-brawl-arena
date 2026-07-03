@@ -1499,7 +1499,12 @@
         "FEAT-V1-R3F-P1-0A",
         "FEAT-V1-R3F-P1-0B",
         "FEAT-V1-R3F-P1-0C",
-        "FEAT-V1-R3F-P1-0D"
+        "FEAT-V1-R3F-P1-0D",
+        "FEAT-V1-R3F-P2-0A",
+        "FEAT-V1-R3F-P2-0B",
+        "FEAT-V1-R3F-P2-0C",
+        "FEAT-V1-R3F-P2-0D",
+        "FEAT-V1-R3F-P2-0E"
       ],
       "acceptance_criteria": [
         "npm run dev/build/preview serve the game; no CDN runtime dependency",
@@ -1660,7 +1665,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "gameplay",
-      "status": "todo",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -1696,7 +1701,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "gameplay",
-      "status": "todo",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -1728,7 +1733,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "gameplay",
-      "status": "todo",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -1760,7 +1765,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "gameplay",
-      "status": "todo",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -1787,6 +1792,177 @@
         "keen-fluttering-pudding.md"
       ],
       "summary": "Convert core simulation to TypeScript; spells.js is text-guarded so update guard.sim readFileSync path."
+    },
+    {
+      "id": "FEAT-V1-R3F-P2-0A",
+      "title": "Convert Supabase client to TypeScript (P2a, hub)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "infra"
+      ],
+      "issue": {
+        "number": 118,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/118"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A"
+      ],
+      "acceptance_criteria": [
+        "src/supabase.js renamed to src/supabase.ts, fully typed; exports isEnabled()/getClient() preserved",
+        "typecheck + all 451 Vitest tests + build + lint green",
+        "vi.mock(\"../src/supabase.js\") in test/matchmaking.test.mjs still intercepts after the rename"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert the Supabase client to TypeScript. Type hub for P2 — auth, region, leaderboard, and matchmaking all depend on getClient()'s return type."
+    },
+    {
+      "id": "FEAT-V1-R3F-P2-0B",
+      "title": "Convert PeerJS net layer to TypeScript (P2b)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 119,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/119"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A"
+      ],
+      "acceptance_criteria": [
+        "src/net.js renamed to src/net.ts; exports sanitizeChat/makeChatRateLimiter/Host/Client preserved",
+        "test/guard.net.test.mjs readFileSync guards at L35 and L53 flipped to src/net.ts",
+        "ambient Peer/Window.Peer globals + PeerJS types declared",
+        "guard.net FakePeer tests + social.test stay green; typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert the PeerJS-based P2P networking layer to TypeScript."
+    },
+    {
+      "id": "FEAT-V1-R3F-P2-0C",
+      "title": "Convert input/audio/voice engines to TypeScript (P2c)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "audio",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui",
+        "audio"
+      ],
+      "issue": {
+        "number": 120,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/120"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A"
+      ],
+      "acceptance_criteria": [
+        "src/input.js, src/audio.js, src/voice.js renamed to .ts; InputController/AudioEngine/menuCue/VoiceChat preserved",
+        "test/guard.ui.test.mjs:10 flipped to src/input.ts; test/guard.assets.test.mjs:11 flipped to src/audio.ts",
+        "ambient browser globals (e.g. webkitAudioContext) declared per-module",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert the input, audio, and voice-chat engines to TypeScript."
+    },
+    {
+      "id": "FEAT-V1-R3F-P2-0D",
+      "title": "Convert matchmaking to TypeScript (P2d)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 121,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/121"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P2-0A"
+      ],
+      "acceptance_criteria": [
+        "src/matchmaking.js renamed to src/matchmaking.ts; regionScanOrder/flattenPresenceState/selectPair/electHiddenHost/RegionQueue preserved",
+        "test/matchmaking.test.mjs stays green, incl. its vi.mock of ../src/supabase.js",
+        "Supabase Realtime channel usage typed",
+        "new types QueueCandidate/Match/MatchOffer added to types.ts",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert region queueing, presence flattening, and hidden-host election logic to TypeScript."
+    },
+    {
+      "id": "FEAT-V1-R3F-P2-0E",
+      "title": "Convert auth/region/leaderboard to TypeScript (P2e)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 122,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/122"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P2-0A"
+      ],
+      "acceptance_criteria": [
+        "src/auth.js, src/region.js, src/leaderboard.js renamed to .ts; all exports preserved",
+        "wallet globals window.ethereum/window.solana declared",
+        "new types AppUser/MatchResultPayload/LeaderboardRow/LeaderboardMetric added to types.ts",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert account auth (incl. web3 wallet sign-in), region selection, and leaderboard submission/fetch to TypeScript."
     }
   ]
 }
