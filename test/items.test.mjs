@@ -1,16 +1,11 @@
 // Headless tests for the Step 4 lootable item system.
 // Run with: node test/items.test.mjs
+import { test } from "vitest";
 import assert from "node:assert";
 import { Simulation, PHASE } from "../src/sim.js";
 import { Bolt } from "../src/bolt.js";
 import { CFG, SPELLS, ITEMS } from "../src/config.js";
 import { spawnMob, makeMobPrng } from "../src/mob.js";
-
-let passed = 0;
-function test(name, fn) {
-  try { fn(); console.log("  ok  -", name); passed++; }
-  catch (e) { console.error("  FAIL-", name, "\n", e.message); process.exitCode = 1; }
-}
 
 function advance(sim, seconds, dt = 1 / CFG.TICK_RATE) {
   for (let t = 0; t < seconds; t += dt) sim.step(dt);
@@ -248,4 +243,3 @@ test("returnToLobby clears sim.items and resets itemSpawnTimer", () => {
   assert.strictEqual(sim.itemSpawnTimer, 0, "itemSpawnTimer must reset to 0");
 });
 
-console.log(`\n${passed} item tests passed.`);

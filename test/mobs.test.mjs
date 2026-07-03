@@ -1,17 +1,12 @@
 // Headless tests for the mob system (src/mob.js + mob integration in src/sim.js).
 // Run with: node --test test/mobs.test.mjs
 // Follows the patterns of test/sim.test.mjs and test/collision.test.mjs.
+import { test } from "vitest";
 import assert from "node:assert";
 import { Simulation, PHASE } from "../src/sim.js";
 import { Bolt } from "../src/bolt.js";
 import { CFG, SPELL_ORDER, ITEMS } from "../src/config.js";
 import { spawnMob, makeMobPrng } from "../src/mob.js";
-
-let passed = 0;
-function test(name, fn) {
-  try { fn(); console.log("  ok  -", name); passed++; }
-  catch (e) { console.error("  FAIL-", name, "\n", e.message); process.exitCode = 1; }
-}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1015,4 +1010,3 @@ test("mob bolts still never damage other mobs (A2 guard — bolt path unchanged)
   assert.strictEqual(mob.hitsRemaining, hitsBefore, "mob-owned bolt must not reduce mob hitsRemaining (A2 unchanged)");
 });
 
-console.log(`\n${passed} tests passed.`);

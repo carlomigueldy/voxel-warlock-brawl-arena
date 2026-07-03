@@ -3,6 +3,7 @@
 //
 // Tests the three query functions with hand-crafted layouts so the math can be
 // verified independently of mapgen's seeded RNG.
+import { test } from "vitest";
 import assert from "node:assert";
 import { CFG } from "../src/config.js";
 import {
@@ -12,18 +13,6 @@ import {
   onRamp,
   MapQuery,
 } from "../src/arena-query.js";
-
-let passed = 0;
-function test(name, fn) {
-  try {
-    fn();
-    console.log("  ok  -", name);
-    passed++;
-  } catch (e) {
-    console.error("  FAIL-", name, "\n", e.message);
-    process.exitCode = 1;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Shared test layout
@@ -454,5 +443,3 @@ test("MapQuery.setActiveRadius drops an off-platform plateau to base ground heig
   assert.strictEqual(q.groundHeightAt(14, 0), CFG.PLATFORM_TOP, "base ground once off-platform");
 });
 
-// ---------------------------------------------------------------------------
-console.log(`\n${passed} collision/query checks passed.`);

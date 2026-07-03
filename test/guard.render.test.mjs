@@ -1,61 +1,23 @@
+// Source guards for the rendering layer: renderer.js, renderer-util.js,
+// character.js, voxel.js, arena.js, props.js, lowpoly.js, pool.js, preview.js,
+// plus behavioral effectPos checks. Split from test/source.test.mjs (#103) by
+// which source file each guard reads.
+import { test } from "vitest";
 import assert from "node:assert";
 import fs from "node:fs";
-import { CFG, getArenaHazard } from "../src/config.js";
+import { CFG } from "../src/config.js";
 import { effectPos } from "../src/renderer-util.js";
 
-let passed = 0;
-const tests = [];
-function test(name, fn) {
-  tests.push({ name, fn });
-}
+console.log("Source guards (render) checks:");
 
-console.log("Source integration checks:");
-
-const main = fs.readFileSync("src/main.js", "utf8");
-const ui = fs.readFileSync("src/ui.js", "utf8");
-const input = fs.readFileSync("src/input.js", "utf8");
-const html = fs.readFileSync("index.html", "utf8");
 const renderer = fs.readFileSync("src/renderer.js", "utf8");
-const css = fs.readFileSync("src/style.css", "utf8");
+const character = fs.readFileSync("src/character.js", "utf8");
+const voxel = fs.readFileSync("src/voxel.js", "utf8");
+const arena = fs.readFileSync("src/arena.js", "utf8");
+const props = fs.readFileSync("src/props.js", "utf8");
 
-test("host start is gated by Simulation.startMatch result", () => {
-  assert.match(main, /if \(!sim\.startMatch\(\)\)/);
-});
-
-test("host lobby start button uses Simulation.canStartMatch", () => {
-  assert.match(main, /sim\.canStartMatch\(\)/);
-});
-
-test("late clients switch to game view from active state snapshots", () => {
-  assert.match(main, /snap\.phase !== PHASE\.LOBBY[\s\S]*ui\.showGame\(\)/);
-});
-
-test("clients ignore stale state snapshots", () => {
-  assert.match(main, /snap\.t <= latestSnapshot\.t/);
-});
-
-test("scoreboard rendering avoids interpolating player names into innerHTML", () => {
-  assert.doesNotMatch(ui, /rows\.map\([\s\S]*innerHTML/);
-});
-
-test("center messages escape dynamic player names", () => {
-  assert.match(ui, /escapeHTML/);
-  assert.match(ui, /escapeHTML\(w\)/);
-});
-
-test("network join names are sanitized as strings before slicing", () => {
-  const net = fs.readFileSync("src/net.js", "utf8");
-  assert.match(net, /sanitizeName/);
-  assert.match(net, /String\(name \?\? "warlock"\)/);
-});
-
-test("disconnect handling sends the host back to lobby when a match cannot continue", () => {
-  assert.match(main, /if \(sim\.phase === PHASE\.LOBBY\)/);
-  assert.match(main, /inGame = false/);
-});
-
+// legacy text guard — delete in P6
 test("generated character asset URLs are built via the asset() helper", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
   // Character-aware loader resolves rigged + walk + run GLBs per selectable
   // character through the asset() helper (root-absolute URLs into public/,
   // BASE_URL-prefixed) now that assets are served from public/ under Vite.
@@ -67,22 +29,22 @@ test("generated character asset URLs are built via the asset() helper", () => {
   assert.match(character, /assets\/characters\/[\w-]+-running\.glb/);
 });
 
+// legacy text guard — delete in P6
 test("character roster exposes four rigged voxel characters", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
   assert.match(character, /export const CHARACTER_ASSETS/);
   for (const id of ["ember", "frost", "storm", "moss"]) {
     assert.match(character, new RegExp(`${id}:`), `roster must include ${id}`);
   }
 });
 
+// legacy text guard — delete in P6
 test("generated character model is scaled to the simulation player height", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
   assert.match(character, /import \{ CFG \} from "\.\/config\.js";/);
   assert.match(character, /const TARGET_HEIGHT = CFG\.PLAYER_HEIGHT;/);
 });
 
+// legacy text guard — delete in P6
 test("generated character size is measured from skinned mesh geometry, not setFromObject", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
   // setFromObject mis-measures skinned meshes whose armature node carries a
   // tiny scale (0.01 here), producing a ~100x oversize. Size must come from the
   // skinned mesh geometry's own bounding box instead.
@@ -91,13 +53,13 @@ test("generated character size is measured from skinned mesh geometry, not setFr
   assert.doesNotMatch(character, /setFromObject/);
 });
 
+// legacy text guard — delete in P6
 test("generated character model is bottom aligned after scaling", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
   assert.match(character, /scene\.position\.y -= measured\.min\.y \* s/);
 });
 
+// legacy text guard — delete in P6
 test("generated character clones materials and marks identity with a hero glyph", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
   // Materials are cloned per instance (no body tint, original shading preserved);
   // player identity is shown by a glowing hero glyph.
   assert.match(character, /const wasArray = Array\.isArray\(o\.material\)/);
@@ -105,213 +67,109 @@ test("generated character clones materials and marks identity with a hero glyph"
   assert.match(character, /makeHeroGlyph/);
 });
 
+// legacy text guard — delete in P6
 test("generated character label height follows simulation player height", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
   assert.match(renderer, /CFG\.PLAYER_HEIGHT \+ 0\.55/);
 });
 
+// legacy text guard — delete in P6
 test("renderer triggers cast animations from simulation events", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
   assert.match(renderer, /archetypeForEvent/);
   // the cast trigger must be applied to the resolved caster's mesh
   assert.match(renderer, /triggerCast|playCast/);
 });
 
+// legacy text guard — delete in P6
 test("character GLB instances accept a cast archetype trigger", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
   assert.match(character, /CastAnimator/);
   assert.match(character, /triggerCast/);
 });
 
+// legacy text guard — delete in P6
 test("character rig loads per-character walk and run animation clips", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
   assert.match(character, /walk/i);
   assert.match(character, /run/i);
 });
 
+// legacy text guard — delete in P6
 test("voxel fallback warlock supports cast archetype overlays", () => {
-  const voxel = fs.readFileSync("src/voxel.js", "utf8");
   assert.match(voxel, /castArchetype|triggerCast/);
 });
 
+// legacy text guard — delete in P6
 test("renderer passes falling and time to GLB character animations", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
   const match = renderer.match(/if \(char\) \{\s*char\.update\(\{([\s\S]*?)\}\);\s*\} else/);
   assert.ok(match, "could not find GLB character update block");
   assert.match(match[1], /falling: !!e\.target\.f/);
   assert.match(match[1], /time: t/);
 });
 
-test("fireball cast events are emitted via spells.js castSpell pipeline", () => {
-  const spells = fs.readFileSync("src/spells.js", "utf8");
-  assert.match(spells, /type: "cast"[\s\S]*spell: "fireball"/);
-});
-
-test("host menu no longer exposes an all-abilities toggle (strict slots only)", () => {
-  assert.doesNotMatch(html, /id="all-abilities-toggle"/);
-  assert.doesNotMatch(ui, /allAbilitiesAtStart/);
-  assert.doesNotMatch(main, /allAbilitiesAtStart/);
-});
-
-test("menu exposes a character-select UI with cards and a live preview", () => {
-  assert.match(html, /id="char-cards"/);
-  assert.match(html, /id="char-preview"/);
-  assert.match(ui, /_buildCharacterCards/);
-  assert.match(ui, /CFG\.CHARACTERS/);
-});
-
-test("config declares four selectable characters and a default", () => {
-  assert.ok(Array.isArray(CFG.CHARACTERS) && CFG.CHARACTERS.length === 4, "expected 4 selectable characters");
-  const ids = CFG.CHARACTERS.map((c) => c.id).sort();
-  assert.deepStrictEqual(ids, ["ember", "frost", "moss", "storm"]);
-  assert.ok(CFG.CHARACTERS.some((c) => c.id === CFG.DEFAULT_CHARACTER), "default character must be in the roster");
-});
-
+// legacy text guard — delete in P6
 test("character ids match the loadable GLB roster", () => {
-  const character = fs.readFileSync("src/character.js", "utf8");
   for (const c of CFG.CHARACTERS) {
     assert.match(character, new RegExp(`${c.id}:`), `character.js must define assets for ${c.id}`);
   }
 });
 
-test("selected character is networked from client to host on join", () => {
-  const net = fs.readFileSync("src/net.js", "utf8");
-  assert.match(net, /type: MSG\.JOIN[\s\S]*name: this\.name[\s\S]*character: this\.character/);
-  assert.match(net, /conn\._character/);
-});
-
-test("host carries each player's character in lobby meta", () => {
-  assert.match(main, /character: getCharacter\(character\)\.id/);
-  assert.match(main, /character: m\.character \|\| CFG\.DEFAULT_CHARACTER/);
-});
-
+// legacy text guard — delete in P6
 test("renderer builds each player's mesh from their selected character", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
   assert.match(renderer, /buildCharacterInstance\(color, character\)/);
   assert.match(renderer, /characterReady\(character\)/);
 });
 
+// legacy text guard — delete in P6
 test("live character preview module exists and spins the model", () => {
   const preview = fs.readFileSync("src/preview.js", "utf8");
   assert.match(preview, /turntable\.rotation\.y \+=/);
   assert.match(preview, /buildCharacterInstance/);
 });
 
-test("ability bar renders spell slots from snapshot spellSlots array", () => {
-  assert.match(ui, /me\?\.spellSlots/);
-  assert.match(ui, /slot\.classList\.toggle\("locked"/);
-});
-
-test("rune mode ability bar renders six spell slots", () => {
-  assert.match(ui, /CFG\.SPELL_SLOT_COUNT/);
-  assert.match(ui, /spellSlots/);
-  assert.match(ui, /empty/);
-});
-
-test("spell slot hotkeys are configurable and persisted locally", () => {
-  assert.match(input, /SPELL_SLOT_HOTKEY_STORAGE_KEY/);
-  assert.match(input, /localStorage\.setItem\(SPELL_SLOT_HOTKEY_STORAGE_KEY/);
-  assert.match(input, /setSpellSlotHotkey/);
-  assert.match(ui, /hotkey-picker/);
-});
-
-test("host lobby exposes bot count and difficulty controls", () => {
-  assert.match(html, /id="bot-count"/);
-  assert.match(html, /id="bot-skill"/);
-  assert.match(ui, /getBotSettings/);
-  assert.match(main, /sim\.setBotRoster/);
-});
-
-test("host menu exposes arena world and land size controls", () => {
-  assert.match(html, /id="arena-world"/);
-  assert.match(html, /id="land-size"/);
-  assert.match(ui, /getArenaSettings/);
-  assert.match(main, /arenaWorld: options\.arenaWorld/);
-  assert.match(main, /landSize: options\.landSize/);
-});
-
+// legacy text guard — delete in P6
 test("renderer applies arena world from snapshots", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
   assert.match(renderer, /snapshot\.arenaWorld/);
   assert.match(renderer, /setWorld/);
 });
 
-test("every arena world declares a distinct hazard theme", () => {
-  const config = fs.readFileSync("src/config.js", "utf8");
-  assert.ok(CFG.ARENA_HAZARDS && typeof CFG.ARENA_HAZARDS === "object", "CFG.ARENA_HAZARDS must exist");
-  const ids = new Set();
-  for (const world of CFG.ARENA_WORLDS) {
-    const hazard = CFG.ARENA_HAZARDS[world.hazard];
-    assert.ok(world.hazard, `world ${world.id} must reference a hazard`);
-    assert.ok(hazard, `world ${world.id} references unknown hazard ${world.hazard}`);
-    assert.ok(Number.isFinite(hazard.color), `hazard ${world.hazard} needs a color`);
-    assert.ok(typeof hazard.name === "string" && hazard.name.length, `hazard ${world.hazard} needs a name`);
-    assert.ok(typeof hazard.style === "string" && hazard.style.length, `hazard ${world.hazard} needs an animation style`);
-    ids.add(world.hazard);
-  }
-  assert.strictEqual(ids.size, CFG.ARENA_WORLDS.length, "each world should have its own hazard theme");
-  assert.ok(typeof CFG.getArenaHazard === "function" || true);
-});
-
-test("config resolves a hazard for each world and falls back safely", () => {
-  const fallback = getArenaHazard("circle");
-  assert.ok(fallback && Number.isFinite(fallback.color));
-  const unknown = getArenaHazard("does-not-exist");
-  assert.ok(unknown && Number.isFinite(unknown.color), "unknown world must still resolve a hazard");
-});
-
+// legacy text guard — delete in P6
 test("voxel hazard builder is theme-driven, not hardcoded lava", () => {
-  const voxel = fs.readFileSync("src/voxel.js", "utf8");
   assert.match(voxel, /export function buildHazard/);
   assert.match(voxel, /export function animateHazard/);
 });
 
+// legacy text guard — delete in P6
 test("arena rebuilds the hazard when the world changes", () => {
-  const arena = fs.readFileSync("src/arena.js", "utf8");
   assert.match(arena, /buildHazard/);
   assert.match(arena, /animateHazard/);
   // setWorld path must refresh the hazard, not just the platform
   assert.match(arena, /_buildHazard|rebuildHazard|this\.hazard\s*=/);
 });
 
+// legacy text guard — delete in P6
 test("renderer tints ambient glow and fog from the active hazard theme", () => {
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
   assert.match(renderer, /hazard/i);
 });
 
-test("every hazard declares ambient detail props for immersion", () => {
-  for (const id in CFG.ARENA_HAZARDS) {
-    const hazard = CFG.ARENA_HAZARDS[id];
-    assert.ok(hazard.detail && typeof hazard.detail === "object", `hazard ${id} needs a detail descriptor`);
-    assert.ok(typeof hazard.detail.kind === "string" && hazard.detail.kind.length, `hazard ${id} detail needs a kind`);
-    assert.ok(Number.isInteger(hazard.detail.count) && hazard.detail.count > 0, `hazard ${id} detail needs a positive count`);
-    assert.ok(Number.isFinite(hazard.detail.color), `hazard ${id} detail needs a color`);
-  }
-  const kinds = new Set(Object.values(CFG.ARENA_HAZARDS).map((h) => h.detail.kind));
-  assert.ok(kinds.size >= 4, "hazards should use a variety of detail prop kinds");
-});
-
+// legacy text guard — delete in P6
 test("voxel exposes a theme-driven hazard detail builder and animator", () => {
-  const voxel = fs.readFileSync("src/voxel.js", "utf8");
   assert.match(voxel, /export function buildHazardDetails/);
   assert.match(voxel, /export function animateHazardDetails/);
 });
 
+// legacy text guard — delete in P6
 test("arena builds, animates, and disposes hazard detail props", () => {
-  const arena = fs.readFileSync("src/arena.js", "utf8");
   assert.match(arena, /buildHazardDetails/);
   assert.match(arena, /animateHazardDetails/);
   // The detail group must be disposed when the hazard is rebuilt (no leaks).
   assert.match(arena, /this\.details/);
 });
 
-test("projectile clash events trigger dedicated VFX and SFX", () => {
-  const audio = fs.readFileSync("src/audio.js", "utf8");
+// legacy text guard — delete in P6
+test("projectile clash events trigger dedicated VFX and SFX (renderer half)", () => {
   assert.match(renderer, /case "projectileClash"/);
   assert.match(renderer, /projectileClash/);
-  assert.match(audio, /case "projectileClash"/);
 });
 
+// legacy text guard — delete in P6
 test("renderer builds projectiles and runes procedurally (no Meshy GLB loading)", () => {
   // Non-character assets are rebuilt procedurally from Three.js geometry — the
   // renderer must not declare or load any Meshy GLB for projectiles or runes.
@@ -321,18 +179,14 @@ test("renderer builds projectiles and runes procedurally (no Meshy GLB loading)"
   assert.doesNotMatch(renderer, /assets\/meshy\//);
 });
 
+// legacy text guard — delete in P6
 test("renderer builds bolts and runes via the procedural voxel builders", () => {
   assert.match(renderer, /acquireBolt\(b\.c, b\.k \|\| "fireball"\)/);
   assert.match(renderer, /buildRune\(r\.c \|\| 0xffffff\)/);
   assert.match(fs.readFileSync("src/pool.js", "utf8"), /buildBolt\(color, kind\)/);
 });
 
-test("loader preloads only character GLBs (no Meshy fetch priming)", () => {
-  const loader = fs.readFileSync("src/loader.js", "utf8");
-  assert.doesNotMatch(loader, /MESHY_ASSETS|meshy|assets\/meshy\//);
-  assert.match(loader, /loadCharacterTemplate/);
-});
-
+// legacy text guard — delete in P6
 test("renderer labels ability runes with spell names", () => {
   assert.match(renderer, /import \{ CFG, SPELLS[^}]*\} from "\.\/config\.js";/);
   assert.match(renderer, /SPELLS\[r\.spell\]\?\.name/);
@@ -346,8 +200,8 @@ test("renderer labels ability runes with spell names", () => {
 
 // --- Phase 5: rendering map elevation + obstacle props + stun VFX ---
 
+// legacy text guard — delete in P6
 test("voxel exports buildPlateau and buildRamp for map elevation rendering", () => {
-  const voxel = fs.readFileSync("src/voxel.js", "utf8");
   assert.match(voxel, /export function buildPlateau/);
   assert.match(voxel, /export function buildRamp/);
   // Both builders follow buildPlatform's world top/side palette convention.
@@ -355,8 +209,8 @@ test("voxel exports buildPlateau and buildRamp for map elevation rendering", () 
   assert.match(voxel, /world\.side/);
 });
 
+// legacy text guard — delete in P6
 test("props.js exports PROP_BUILDERS registry with all eight obstacle types", () => {
-  const props = fs.readFileSync("src/props.js", "utf8");
   assert.match(props, /export const PROP_BUILDERS/);
   for (const type of ["tree", "stone", "column", "debris", "wall", "boulder", "deadGiant", "dragonBones"]) {
     assert.match(props, new RegExp(type), `PROP_BUILDERS must include ${type}`);
@@ -366,8 +220,8 @@ test("props.js exports PROP_BUILDERS registry with all eight obstacle types", ()
   assert.doesNotMatch(props, /meshy/i);
 });
 
+// legacy text guard — delete in P6
 test("props.js builders use the shared lowpoly faceted helpers (flat-shaded)", () => {
-  const props = fs.readFileSync("src/props.js", "utf8");
   // Props are rebuilt procedurally from stylized low-poly faceted geometry that
   // lives in the shared lowpoly.js module — no inline BoxGeometry/MeshLambertMaterial.
   assert.match(props, /from "\.\/lowpoly\.js"/);
@@ -381,8 +235,8 @@ test("props.js builders use the shared lowpoly faceted helpers (flat-shaded)", (
   assert.match(lowpoly, /MeshLambertMaterial/);
 });
 
+// legacy text guard — delete in P6
 test("voxel.js rebuilds non-character assets via lowpoly faceted helpers", () => {
-  const voxel = fs.readFileSync("src/voxel.js", "utf8");
   assert.match(voxel, /from "\.\/lowpoly\.js"/);
   assert.match(voxel, /facetedRock|facetedCylinder|facetedCone|facetedShard/);
   // The character fallback (buildWarlock) stays on the box recipe — it is
@@ -390,6 +244,7 @@ test("voxel.js rebuilds non-character assets via lowpoly faceted helpers", () =>
   assert.match(voxel, /export function buildWarlock/);
 });
 
+// legacy text guard — delete in P6
 test("renderer imports map elevation builders and PROP_BUILDERS from new modules", () => {
   assert.match(renderer, /buildPlateau/);
   assert.match(renderer, /buildRamp/);
@@ -397,6 +252,7 @@ test("renderer imports map elevation builders and PROP_BUILDERS from new modules
   assert.match(renderer, /from "\.\/props\.js"/);
 });
 
+// legacy text guard — delete in P6
 test("renderer rebuilds map layout meshes when snapshot mapV changes", () => {
   assert.match(renderer, /snapshot\.mapV/);
   assert.match(renderer, /_mapVersion/);
@@ -405,6 +261,7 @@ test("renderer rebuilds map layout meshes when snapshot mapV changes", () => {
   assert.match(renderer, /dispose/);
 });
 
+// legacy text guard — delete in P6
 test("renderer instantiates plateaus, ramps and obstacle props from the layout", () => {
   assert.match(renderer, /buildPlateau\(pl/);
   assert.match(renderer, /buildRamp\(ramp/);
@@ -413,11 +270,13 @@ test("renderer instantiates plateaus, ramps and obstacle props from the layout",
   assert.match(renderer, /ob\.rot/);
 });
 
+// legacy text guard — delete in P6
 test("renderer clears map meshes on reset", () => {
   assert.match(renderer, /_rebuildMapMeshes\(null/);
   assert.match(renderer, /_mapVersion = -1/);
 });
 
+// legacy text guard — delete in P6
 test("renderer shows stun VFX keyed off the snapshot st field", () => {
   // `st` is the snapshot field for stunned-remaining-seconds (mirrors `hz`).
   assert.match(renderer, /ps\.st/);
@@ -429,36 +288,14 @@ test("renderer shows stun VFX keyed off the snapshot st field", () => {
 
 // --- Step 4: lootable items ---
 
-test("config declares ITEM_SLOT_COUNT of 4", () => {
-  assert.strictEqual(CFG.ITEM_SLOT_COUNT, 4, "ITEM_SLOT_COUNT must be 4");
-});
-
-test("index.html contains item-bar element", () => {
-  assert.match(html, /id="item-bar"/, "index.html must have #item-bar");
-});
-
+// legacy text guard — delete in P6
 test("renderer imports and calls buildItemDrop", () => {
   assert.match(renderer, /buildItemDrop/, "renderer must import/call buildItemDrop");
 });
 
-// --- Step 8: A1 regression guard — syncLocalSpellSlots in both loops ---
-
-test("syncLocalSpellSlots (or setSpellSlots) is called inside both host and client rAF loops in main.js", () => {
-  // The host loop already had syncLocalSpellSlots; the client loop got it in Step 8 (A1 fix).
-  // We search for the function name appearing at least twice in the file so either loop can
-  // use it (the function itself counts as one occurrence; each call-site is another).
-  const matches = main.match(/syncLocalSpellSlots/g) || [];
-  assert.ok(matches.length >= 3,
-    `syncLocalSpellSlots must appear at least 3 times in main.js (definition + host call + client call); found ${matches.length}`);
-  // Additionally confirm the client loop block specifically contains it.
-  // The client loop is identified by the clientLoop function definition.
-  const clientLoopBlock = main.match(/function clientLoop[\s\S]*?requestAnimationFrame\(clientLoop\)/)?.[0] || "";
-  assert.match(clientLoopBlock, /syncLocalSpellSlots/,
-    "syncLocalSpellSlots must appear inside the clientLoop function body");
-});
-
 // --- Bug-1 regression: death-freeze root cause ---
 
+// legacy text guard — delete in P6
 test("death handler delegates to effectPos(deadMesh) and does not read .position directly", () => {
   // The call site must use effectPos — the helper owns the .group.position access.
   assert.match(renderer, /effectPos\(deadMesh\)/,
@@ -467,6 +304,7 @@ test("death handler delegates to effectPos(deadMesh) and does not read .position
     "renderer must not read .position directly off the mesh entry");
 });
 
+// legacy text guard — delete in P6
 test("effectPos helper in renderer-util uses .group.position (not bare .position)", () => {
   const util = fs.readFileSync("src/renderer-util.js", "utf8");
   assert.match(util, /group\.position/,
@@ -498,210 +336,10 @@ test("effectPos returns white when entry exists but color is missing (undefined)
     "color must fall back to 0xffffff when entry.color is undefined");
 });
 
+// legacy text guard — delete in P6
 test("link and pocketwatch handlers also read position through .group", () => {
   assert.doesNotMatch(renderer, /(aMesh|bMesh|pwMesh)\.position\./);
 });
-
-test("hostLoop survives a throwing frame (try/catch wraps body, rAF stays outside)", () => {
-  assert.match(main, /function hostLoop[\s\S]*?try \{[\s\S]*?catch[\s\S]*?requestAnimationFrame\(hostLoop\)/);
-});
-
-test("clientLoop survives a throwing frame (try/catch wraps body, rAF stays outside)", () => {
-  assert.match(main, /function clientLoop[\s\S]*?try \{[\s\S]*?catch[\s\S]*?requestAnimationFrame\(clientLoop\)/);
-});
-
-test("quick match flow no longer imports hosted open_rooms helpers", () => {
-  assert.doesNotMatch(main, /quickMatch as qmatch/);
-  assert.doesNotMatch(main, /publishRoom/);
-  assert.doesNotMatch(main, /heartbeat/);
-  assert.doesNotMatch(main, /listRooms/);
-  assert.doesNotMatch(main, /subscribeRooms/);
-  assert.doesNotMatch(main, /closeRoom/);
-});
-
-test("online screen uses queue status instead of hosted room browser or host-online controls", () => {
-  assert.match(html, /id="online-queue-status"/);
-  assert.match(html, /id="btn-cancel-queue"/);
-  assert.doesNotMatch(html, /id="btn-host-online"/);
-  assert.doesNotMatch(html, /id="rooms-list"/);
-  assert.doesNotMatch(ui, /renderRooms\(/);
-});
-
-test("client join payload includes matchmaking metadata when supplied", async () => {
-  const originalPeer = globalThis.Peer;
-  class FakeConn {
-    constructor(peer) {
-      this.peer = peer;
-      this.handlers = {};
-      this.sent = [];
-      this.open = true;
-    }
-    on(event, cb) { this.handlers[event] = cb; }
-    send(msg) { this.sent.push(msg); }
-    close() { this.open = false; this.handlers.close?.(); }
-  }
-  class FakePeer {
-    constructor(idOrOpts) {
-      this.id = typeof idOrOpts === "string" ? idOrOpts : "client-peer";
-      this.handlers = {};
-      queueMicrotask(() => this.handlers.open?.(this.id));
-    }
-    on(event, cb) { this.handlers[event] = cb; }
-    connect(hostId) {
-      this.hostId = hostId;
-      this.conn = new FakeConn(hostId);
-      queueMicrotask(() => this.conn.handlers.open?.());
-      return this.conn;
-    }
-    destroy() {}
-  }
-  globalThis.Peer = FakePeer;
-  try {
-    const { Client } = await import(`../src/net.js?client-meta=${Date.now()}-${Math.random()}`);
-    const client = new Client({
-      name: "Mage",
-      code: "ABCDEF",
-      character: "ember",
-      userId: "user-1",
-      region: "sea",
-      matchmaking: { matchId: "match-1", queueId: "queue-1" },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.ok(client.conn.sent.length > 0, "client should send a join payload");
-    assert.strictEqual(client.conn.sent[0].matchId, "match-1");
-    assert.strictEqual(client.conn.sent[0].queueId, "queue-1");
-  } finally {
-    globalThis.Peer = originalPeer;
-  }
-});
-
-test("hidden host rejects mismatched matchmaking joins while LAN hosts still accept normal joins", async () => {
-  const originalPeer = globalThis.Peer;
-  class FakePeer {
-    constructor(idOrOpts) {
-      this.id = typeof idOrOpts === "string" ? idOrOpts : "host-peer";
-      this.handlers = {};
-      queueMicrotask(() => this.handlers.open?.(this.id));
-    }
-    on(event, cb) { this.handlers[event] = cb; }
-    destroy() {}
-  }
-  class FakeConn {
-    constructor(peer = "remote-peer") {
-      this.peer = peer;
-      this.handlers = {};
-      this.sent = [];
-      this.open = true;
-    }
-    on(event, cb) { this.handlers[event] = cb; }
-    send(msg) { this.sent.push(msg); }
-    close() { this.open = false; this.handlers.close?.(); }
-  }
-  globalThis.Peer = FakePeer;
-  try {
-    const { Host } = await import(`../src/net.js?host-meta=${Date.now()}-${Math.random()}`);
-    const rejected = [];
-    const hiddenHost = new Host({
-      name: "Host",
-      matchmaking: { matchId: "match-1", allowedQueueIds: ["queue-guest"] },
-      onPlayerJoin: (...args) => rejected.push(args),
-    });
-    const mismatchConn = new FakeConn("peer-a");
-    hiddenHost._onConn(mismatchConn);
-    mismatchConn.handlers.open?.();
-    hiddenHost._onData(mismatchConn, {
-      type: "join",
-      name: "Guest",
-      character: "ember",
-      matchId: "wrong-match",
-      queueId: "wrong-queue",
-    });
-    assert.strictEqual(rejected.length, 0, "hidden host must reject mismatched joins");
-    assert.ok(mismatchConn.sent.some((msg) => msg.matchmakingRejected), "client-visible rejection payload expected");
-
-    const accepted = [];
-    const lanHost = new Host({
-      name: "LAN Host",
-      onPlayerJoin: (...args) => accepted.push(args),
-    });
-    const okConn = new FakeConn("peer-b");
-    lanHost._onConn(okConn);
-    okConn.handlers.open?.();
-    lanHost._onData(okConn, {
-      type: "join",
-      name: "Guest",
-      character: "ember",
-    });
-    assert.strictEqual(accepted.length, 1, "LAN/private host should still accept normal joins");
-    assert.ok(okConn.sent.some((msg) => msg.type === "welcome"), "accepted join should still receive WELCOME");
-  } finally {
-    globalThis.Peer = originalPeer;
-  }
-});
-
-test("client terminal join errors are not overwritten by the follow-up close event", async () => {
-  const originalPeer = globalThis.Peer;
-  class FakeConn {
-    constructor(peer) {
-      this.peer = peer;
-      this.handlers = {};
-      this.sent = [];
-      this.open = true;
-    }
-    on(event, cb) { this.handlers[event] = cb; }
-    send(msg) { this.sent.push(msg); }
-    close() { this.open = false; this.handlers.close?.(); }
-  }
-  class FakePeer {
-    constructor(idOrOpts) {
-      this.id = typeof idOrOpts === "string" ? idOrOpts : "client-peer";
-      this.handlers = {};
-      queueMicrotask(() => this.handlers.open?.(this.id));
-    }
-    on(event, cb) { this.handlers[event] = cb; }
-    connect(hostId) {
-      this.conn = new FakeConn(hostId);
-      queueMicrotask(() => this.conn.handlers.open?.());
-      return this.conn;
-    }
-    destroy() {}
-  }
-  globalThis.Peer = FakePeer;
-  try {
-    const events = [];
-    const { Client } = await import(`../src/net.js?terminal-error=${Date.now()}-${Math.random()}`);
-    const client = new Client({
-      name: "Mage",
-      code: "ABCDEF",
-      character: "ember",
-      onError: (err) => events.push(err.type),
-      onClose: () => events.push("close"),
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    client._onData({ type: "welcome", matchmakingRejected: true });
-    client.conn.close();
-
-    assert.deepStrictEqual(events, ["matchmaking-rejected"],
-      "rejection status should not be overwritten by the close that follows it");
-  } finally {
-    globalThis.Peer = originalPeer;
-  }
-});
-
-test("matchmaking host errors cancel the active queue and return to queue status", () => {
-  assert.match(main, /onHostError:/);
-  assert.match(main, /cancelRegionQueue\(\{ clearStatus: false \}\)/);
-});
-
-// --- Bug-2 regression: unstyled item bar ---
-
-test("item bar has a positioned CSS rule with pointer-events auto", () => {
-  assert.match(css, /#item-bar\s*\{[\s\S]*?position:\s*fixed[\s\S]*?pointer-events:\s*auto/);
-});
-
-const voxel = fs.readFileSync("src/voxel.js", "utf8");
 
 function sourceWithoutComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
@@ -719,6 +357,7 @@ function builderBody(src, name) {
   return sourceWithoutComments(src.slice(open, i));
 }
 
+// legacy text guard — delete in P6
 test("voxel.js itself stays free of GLTFLoader/GLB literals (mob GLB loading is isolated to mobModel.js)", () => {
   const code = sourceWithoutComments(voxel);
   assert.doesNotMatch(code, /GLTFLoader/);
@@ -726,19 +365,13 @@ test("voxel.js itself stays free of GLTFLoader/GLB literals (mob GLB loading is 
   assert.doesNotMatch(code, /\.glb\b/i);
 });
 
+// legacy text guard — delete in P6
 test("minion builder stays procedural (no GLB/Meshy asset loading)", () => {
   const b = builderBody(voxel, "buildMinion");
   assert.doesNotMatch(b, /GLTFLoader|\.glb\b/i);
 });
 
-test("mobModel.js is the sole owner of GLB loading for the 4 big mobs", () => {
-  const mobModel = fs.readFileSync("src/mobModel.js", "utf8");
-  assert.match(mobModel, /GLTFLoader/);
-  assert.match(mobModel, /assets\/mobs\//);
-  const renderer = fs.readFileSync("src/renderer.js", "utf8");
-  assert.doesNotMatch(renderer, /GLTFLoader/);
-});
-
+// legacy text guard — delete in P6
 test("stone giant gains stratified plates, shoulder boulders, knuckles and spine crystals", () => {
   const b = builderBody(voxel, "buildStoneGiant");
   assert.match(b, /accents/, "stone giant must expose an accents group");
@@ -751,6 +384,7 @@ test("stone giant gains stratified plates, shoulder boulders, knuckles and spine
     "stone giant needs more faceted rock detail (head + fists + shoulders)");
 });
 
+// legacy text guard — delete in P6
 test("storming vortex gains more shards, extra ring and arc crystals", () => {
   const b = builderBody(voxel, "buildStormingVortex");
   assert.match(b, /i < 12/, "inner shard ring must have >=12 shards");
@@ -759,6 +393,7 @@ test("storming vortex gains more shards, extra ring and arc crystals", () => {
   assert.match(b, /facetedCrystal/, "vortex arc crystals use facetedCrystal");
 });
 
+// legacy text guard — delete in P6
 test("giant dwarf gains helmet horns, pauldrons, beard braids and boots/gauntlets", () => {
   const b = builderBody(voxel, "buildGiantDwarf");
   assert.match(b, /horn/i, "dwarf needs helmet horns");
@@ -769,6 +404,7 @@ test("giant dwarf gains helmet horns, pauldrons, beard braids and boots/gauntlet
     "dwarf needs helmet top + two horns (>=3 cones)");
 });
 
+// legacy text guard — delete in P6
 test("fire elemental gains layered flame crown, core shell, more motes and tendrils", () => {
   const b = builderBody(voxel, "buildFireElemental");
   assert.match(b, /crown/i, "elemental needs a layered flame crown");
@@ -778,6 +414,7 @@ test("fire elemental gains layered flame crown, core shell, more motes and tendr
     "flame crown needs a ring of cones plus a central tongue");
 });
 
+// legacy text guard — delete in P6
 test("minion gains robe panels, a staff/lantern and a better hat/face", () => {
   const b = builderBody(voxel, "buildMinion");
   assert.match(b, /robe|panel/i, "minion needs robe panels");
@@ -785,6 +422,7 @@ test("minion gains robe panels, a staff/lantern and a better hat/face", () => {
   assert.match(b, /facetedOrb|glowBox|emissive/, "minion staff/lantern needs a glow accent");
 });
 
+// legacy text guard — delete in P6
 test("animateMob drives newly named secondary accent groups without gameplay change", () => {
   const b = builderBody(voxel, "animateMob");
   assert.match(b, /accents|arcCrystals|arcs/,
@@ -800,26 +438,23 @@ function countHiResCylinders(body) {
   return (body.match(/facetedCylinder\([^;]*segments:\s*(8|10|12)\b/g) || []).length;
 }
 
+// legacy text guard — delete in P6
 test("stone giant limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
   const b = builderBody(voxel, "buildStoneGiant");
   assert.ok(countHiResCylinders(b) >= 4,
     "stone giant arms + legs must use >=8-segment faceted cylinders");
 });
 
+// legacy text guard — delete in P6
 test("giant dwarf limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
   const b = builderBody(voxel, "buildGiantDwarf");
   assert.ok(countHiResCylinders(b) >= 4,
     "giant dwarf arms + legs must use >=8-segment faceted cylinders");
 });
 
+// legacy text guard — delete in P6
 test("fire elemental limbs are higher-resolution prisms (>=8-gon), not 6-sided", () => {
   const b = builderBody(voxel, "buildFireElemental");
   assert.ok(countHiResCylinders(b) >= 2,
     "fire elemental tendril arms must use >=8-segment faceted cylinders");
 });
-
-for (const { name, fn } of tests) {
-  try { await fn(); console.log("  ok  -", name); passed++; }
-  catch (e) { console.error("  FAIL-", name, "\n", e.message); process.exitCode = 1; }
-}
-console.log(`\n${passed} source checks passed.`);
