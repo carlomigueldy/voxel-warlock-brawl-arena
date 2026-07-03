@@ -1504,7 +1504,13 @@
         "FEAT-V1-R3F-P2-0B",
         "FEAT-V1-R3F-P2-0C",
         "FEAT-V1-R3F-P2-0D",
-        "FEAT-V1-R3F-P2-0E"
+        "FEAT-V1-R3F-P2-0E",
+        "FEAT-V1-R3F-P3-0A",
+        "FEAT-V1-R3F-P3-0B",
+        "FEAT-V1-R3F-P3-0C",
+        "FEAT-V1-R3F-P3-0D",
+        "FEAT-V1-R3F-P3-0E",
+        "FEAT-V1-R3F-P3-0F"
       ],
       "acceptance_criteria": [
         "npm run dev/build/preview serve the game; no CDN runtime dependency",
@@ -1799,7 +1805,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "infra",
-      "status": "review",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -1832,7 +1838,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "multiplayer",
-      "status": "review",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -1866,7 +1872,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "audio",
-      "status": "todo",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -1901,7 +1907,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "multiplayer",
-      "status": "review",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -1936,7 +1942,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "multiplayer",
-      "status": "review",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -1963,6 +1969,226 @@
         "keen-fluttering-pudding.md"
       ],
       "summary": "Convert account auth (incl. web3 wallet sign-in), region selection, and leaderboard submission/fetch to TypeScript."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0A",
+      "title": "React shell + Zustand store contract (P3a, bottleneck)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui",
+        "infra"
+      ],
+      "issue": {
+        "number": 129,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/129"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P2-0A",
+        "FEAT-V1-R3F-P2-0B",
+        "FEAT-V1-R3F-P2-0C",
+        "FEAT-V1-R3F-P2-0D",
+        "FEAT-V1-R3F-P2-0E"
+      ],
+      "acceptance_criteria": [
+        "react/react-dom/zustand deps + @vitejs/plugin-react wired; three/addons alias + COOP/COEP headers preserved verbatim",
+        "snapshotRef.ts (non-reactive) + aimBridge.ts added; InputRenderer exported from input.ts",
+        "five Zustand stores added: session/roster/hud/ui/settings (settings mirrors the 8 exact legacy vwb-* keys, NO persist middleware)",
+        "services/registry.ts, fixedTimestep.ts, main.tsx/App.tsx, config/flags.ts, LegacyRendererBridge/LegacyUiBridge/wireLegacyUiToStores, loop-hook skeletons added",
+        "React shell loads behind ?shell=react selector; main.js stays the DEFAULT entry (non-breaking); ?shell=react&renderer=legacy&ui=legacy boots and is 100% playable",
+        "store render-count probe proves ZERO per-frame re-render",
+        "accumulator replay-parity test vs golden main.js passes",
+        "typecheck + 451+ tests + build + lint all green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Stand up the React shell and the frozen store contract every other P3 sub-issue builds on: three-tier store split (non-reactive snapshotRef, value-gated roster, throttled HUD), service registry, fixed-timestep accumulator, and legacy bridges. Bottleneck; checkpoint #2 store-contract freeze."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0B",
+      "title": "Port game loop + session hooks to React (P3b)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "gameplay",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 130,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/130"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "useGameSession ports startHosting/startJoining verbatim, incl. matchmaking host-timeout and online-match teardown",
+        "useHostLoop/useClientLoop wired to the P3a accumulator",
+        "onNewSnapshot fan-out ports pushSnapshot + roster/hud/session store updates",
+        "wireLegacyUiToStores core intents routed to the session hook",
+        "?shell=react is 100% playable via legacy renderer/ui flags",
+        "replay-parity test vs golden main.js hostLoop/clientLoop passes",
+        "typecheck + tests + build + lint all green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the full game session lifecycle (host/join, matchmaking timeout, accumulator loops, snapshot fan-out) onto the P3a store/loop contract. Review tier: Opus (parity-critical)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0C",
+      "title": "Port net/chat/voice wiring to React hook (P3c)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 131,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/131"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "Host/Client construction + callbacks ported into a net hook consuming the service registry",
+        "snapshotRef.meta mutated on onReady/onPlayerJoin/onPlayerLeave/client onLobby/syncBotMeta",
+        "client snapshot staleness gate ported verbatim before pushSnapshot",
+        "chat/roster/voice senders wired + showChatBubble port",
+        "guard tests + full suite green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port Host/Client peer construction and callbacks, chat/roster/voice wiring, and the snapshot staleness gate onto the P3a hook seam."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0D",
+      "title": "Port audio engine wiring to React hook (P3d)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "audio",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "audio"
+      ],
+      "issue": {
+        "number": 132,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/132"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "useAudio hook resolves the AudioEngine singleton via the service registry",
+        "playTransitionAudio dedupe logic ported verbatim",
+        "audio.resume() gated on first pointerdown/keydown interaction",
+        "music start/stop wired to session/phase transitions",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the AudioEngine singleton wiring (transition SFX dedupe, first-interaction resume, music) into a useAudio hook via the service registry."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0E",
+      "title": "Port input controller wiring to React hook (P3e)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 133,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/133"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "InputController constructed once via the service registry and attached to aimBridge",
+        "hook subscribes to useSettingsStore and mirrors hotkeys/pttKey into the live InputController",
+        "ESC-pause and Enter-to-open-chat keydown handling ported verbatim",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the InputController wiring into a useInput hook: registry-backed construction, aimBridge attachment, settings-store hotkey/PTT mirroring, ESC-pause/Enter-chat keydown."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0F",
+      "title": "Port auth + matchmaking wiring to React hook (P3f)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 134,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/134"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "auth intents route to useUiStore.authView",
+        "RegionQueue lifecycle (start/cancel/timeout) wired for online matchmaking",
+        "leaderboard fetch wired to useUiStore.leaderboard",
+        "region selection persists via the canonical region.ts helper",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port auth/matchmaking/leaderboard wiring into a hook: auth intents to useUiStore.authView, RegionQueue lifecycle, leaderboard fetch, region persistence."
     }
   ]
 }
