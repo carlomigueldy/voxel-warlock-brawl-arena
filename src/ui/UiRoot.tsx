@@ -1,9 +1,12 @@
 // The P5 React UI root — mounted at App.tsx:150 behind `?ui=react` (design
-// §1/§Scope). This PR (p5a) is infrastructure only: a minimal placeholder
-// shell that proves the seam, the CSS token/fx system, and the shared
-// primitive kit all wire up correctly. The real menu/lobby/HUD/draft/pause
-// surfaces are the sibling PRs (#161-#168) — they replace this component's
-// body, not its mount point or the imports below.
+// §1/§Scope). p5a stood up the seam, the CSS token/fx system, and the
+// shared primitive kit; this is the design §9 UiRoot render contract each
+// sibling PR (#161-#168) adds its own `screen==="..."` / overlay-flag branch
+// to — a pass-through host div, not a styled shell. Most regions (MenuRoot,
+// Hud, ...) manage their own full-viewport positioning; LobbyRoot is the
+// exception — its `.scene` is `min-height:100%` and relies on the
+// `.screenLayer` full-viewport parent below (a follow-up will make it
+// self-position for symmetry — see the shared-shell consolidation note).
 //
 // Global CSS imports live here (not main.tsx) so `?ui=legacy` never even
 // evaluates this module — tokens.css/global.css/fx.css only ship once
@@ -13,24 +16,39 @@
 import "../styles/tokens.css";
 import "../styles/global.css";
 import "../styles/fx.css";
+import { useEffect } from "react";
 import { CAPTURE } from "../three/parity/determinism";
 import { useSessionStore } from "../store/useSessionStore";
-import { Panel } from "./common";
+import { MenuRoot } from "./menu/MenuRoot";
 import { LobbyRoot } from "./lobby/LobbyRoot";
 import styles from "./UiRoot.module.css";
 
-// screen-gated mount point (design §9's UiRoot render contract) — added by
-// p5-lobby-qr (#162), the first sibling to replace part of p5a's
-// placeholder body. Each screen/overlay sibling (#161 menu, #163 HUD, ...)
-// adds its own `{screen === "x" && <XRoot/>}` line alongside the ones below
-// rather than re-deriving this `screen` subscription; the placeholder Panel
-// narrows to "not yet covered" screens so ?ui=react never goes blank.
+// index.html's static legacy `#menu` markup ships `class="overlay
+// menu-cinematic"` (visible by default; `#lobby`/`#hud` already default to
+// `class="... hidden"`). Under `?ui=legacy` ui.js's own showMenu() owns
+// toggling it. Under `?ui=react`, `<LegacyUiBridge>` (and so `new UI()`)
+// never MOUNTS, but `getUI()` is still a page-lifetime singleton other
+// frozen code paths reach into regardless of UI_MODE — notably App.tsx's
+// own `useAppBootstrap()` unconditionally calls `ui.showMenu()` right
+// before `useSessionStore.setScreen("menu")` (design §3 point 2's "harmless
+// no-op" dual-write — harmless for state, but showMenu() also strips the
+// `hidden` class from this very-visible static DOM). Without re-asserting
+// `hidden` here, the legacy menu bleeds through under the React one on
+// every transition back to the menu (boot-check glitch: doubled title/
+// copy). Keying the effect on `screen` re-hides it right after each such
+// call, in the same commit `screen` flips to "menu" — a targeted DOM
+// fixup responding to known frozen call sites, not a MutationObserver.
+// (Follow-up: a subscription-based useHideLegacyOverlay covering
+// #menu/#lobby/#hud closes the quick-match-failure edge #171 review flagged.)
+function useHideLegacyMenuDom(screen: string): void {
+  useEffect(() => {
+    if (screen === "menu") document.getElementById("menu")?.classList.add("hidden");
+  }, [screen]);
+}
+
 export function UiRoot() {
-  // Hook first, early return after (Rules of Hooks) — CAPTURE is a
-  // module-load-time constant so this branch is invariant for a given
-  // mounted instance either way, but keeping the call unconditional avoids
-  // relying on that invariant.
   const screen = useSessionStore((s) => s.screen);
+  useHideLegacyMenuDom(screen);
 
   // Mirrors App.tsx's own `!CAPTURE` guard (design §1) — belt-and-suspenders
   // so UiRoot is inert under `?capture=1` even if ever rendered outside that
@@ -38,23 +56,17 @@ export function UiRoot() {
   // directly).
   if (CAPTURE) return null;
 
-  // p5a's `.shell` was sized for the placeholder only (a small out-of-the-way
-  // corner badge — see UiRoot.module.css's header). A real, full-viewport
-  // screen needs `.screenLayer` instead (position:fixed;inset:0, high enough
-  // z-index to sit above the legacy .overlay elements) or it renders
-  // squeezed into that corner box. Swap wrappers based on whether a real
-  // screen is mounted; extend the `screen === "x"` list below as more
-  // siblings land instead of re-deriving this split.
-  const hasScreen = screen === "lobby";
-
   return (
-    <div className={hasScreen ? styles.screenLayer : styles.shell} data-testid="ui-root">
-      {screen === "lobby" && <LobbyRoot />}
-      {!hasScreen && (
-        <Panel compact role="status" aria-live="polite">
-          <p className={styles.badge}>React UI scaffold (?ui=react) — menus/HUD land in follow-up PRs</p>
-        </Panel>
+    <div data-testid="ui-root">
+      {screen === "menu" && <MenuRoot />}
+      {screen === "lobby" && (
+        <div className={styles.screenLayer}>
+          <LobbyRoot />
+        </div>
       )}
+      {/* screen==="game" -> Hud (#163, merging next); game overlays
+          (#164/#167), always-mounted overlays (#165/#166), juice decoration
+          (#168) — each sibling adds its own region here per design §9. */}
     </div>
   );
 }
