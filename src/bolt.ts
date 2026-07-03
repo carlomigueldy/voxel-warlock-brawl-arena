@@ -3,13 +3,109 @@
 // the handbook needs (fireball, boomerang, homing, bouncer, splitter, meteor
 // shards, fire-spray pellets) so the renderer can treat them uniformly.
 import { CFG } from "./config.js";
+import type { BoltSnap } from "./types";
+
+/** Options bag accepted by the Bolt constructor (per-projectile-kind tunables). */
+export interface BoltOptions {
+  proj?: string;
+  speed?: number;
+  kb?: number;
+  dmg?: number;
+  range?: number;
+  turn?: number;
+  bounces?: number;
+  splitDist?: number;
+  shards?: number;
+  life?: number;
+  slow?: number;
+  slowDur?: number;
+  burn?: number;
+  burnDur?: number;
+  curse?: number;
+  curseDur?: number;
+  groundY?: number;
+}
+
+/** Minimal player-like shape Bolt/step() reads/writes — Player itself isn't
+ * converted to TS yet (see src/player.js), so this is a narrow structural
+ * interface rather than an import of the real class. */
+export interface BoltPlayerLike {
+  id: string;
+  x: number;
+  z: number;
+  alive: boolean;
+  falling: boolean;
+  groundY?: number;
+  applyHit(vx: number, vz: number, kb: number): boolean;
+  applyDamage(dmg: number, byId: string): void;
+}
+
+/** Minimal arena-like shape Bolt/step() reads. */
+export interface BoltArenaLike {
+  radius: number;
+  isOnPlatform(x: number, z: number): boolean;
+  obstaclesBlockingRay?(x1: number, z1: number, y1: number, x2: number, z2: number, y2: number): boolean;
+}
+
+export interface BoltStepOptions {
+  movementOnly?: boolean;
+  skipMove?: boolean;
+}
+
+export interface BoltStepResult {
+  hit: string | null;
+  split?: boolean;
+  blocked?: boolean;
+  landed?: boolean;
+}
 
 let _id = 1;
-export function _resetBoltIds() { _id = 1; } // test helper
+export function _resetBoltIds(): void { _id = 1; } // test helper
 
 export class Bolt {
+  id: number;
+  ownerId: string;
+  x: number;
+  z: number;
+  prevX: number;
+  prevZ: number;
+  y: number;
+  coverEnabled: boolean;
+  dir: number;
+  proj: string;
+  speed: number;
+  vx: number;
+  vz: number;
+  life: number;
+  color: number;
+  kb: number;
+  dmg: number;
+  dead: boolean;
+  slow: number;
+  slowDur: number;
+  burn: number;
+  burnDur: number;
+  curse: number;
+  curseDur: number;
+  range: number;
+  turn: number;
+  bounces: number;
+  splitDist: number;
+  shards: number;
+  distance: number;
+  returning: boolean;
+  _origX: number;
+  _origZ: number;
+  _splitDone: boolean;
+  _spawn: Bolt[];
+  _hitSet: Set<string>;
+  mesh: unknown;
+  /** Set by disable-spell projectiles (disable duration in seconds);
+   * snapshot() special-cases this kind and sim.js reads it on hit. */
+  disable?: number;
+
   // opts: { proj, kb, color, range, turn, bounces, splitDist, shards, life }
-  constructor(ownerId, x, z, dir, color, opts = {}) {
+  constructor(ownerId: string, x: number, z: number, dir: number, color: number, opts: BoltOptions = {}) {
     this.id = _id++;
     this.ownerId = ownerId;
     this.x = x;
@@ -60,7 +156,7 @@ export class Bolt {
   }
 
   // Returns: { hit: victimId|null, split: bool } and queues children in _spawn.
-  step(dt, players, arena, options = {}) {
+  step(dt: number, players: BoltPlayerLike[], arena: BoltArenaLike, options: BoltStepOptions = {}): BoltStepResult {
     this._spawn = [];
     const movementOnly = !!options.movementOnly;
     const skipMove = !!options.skipMove;
@@ -193,8 +289,8 @@ export class Bolt {
     return { hit: null };
   }
 
-  _nearestTarget(players) {
-    let best = null, bestD = Infinity;
+  _nearestTarget(players: BoltPlayerLike[]): BoltPlayerLike | null {
+    let best: BoltPlayerLike | null = null, bestD = Infinity;
     for (const p of players) {
       if (p.id === this.ownerId || !p.alive || p.falling) continue;
       const d = (p.x - this.x) ** 2 + (p.z - this.z) ** 2;
@@ -203,7 +299,7 @@ export class Bolt {
     return best;
   }
 
-  snapshot() {
+  snapshot(): BoltSnap {
     return {
       id: this.id,
       o: this.ownerId,

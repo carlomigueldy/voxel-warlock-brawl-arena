@@ -10,11 +10,12 @@
 //   spawnMob(id,type,x,z,parentId?) → factory
 
 import { CFG } from "./config.js";
+import type { MobSnap, MobChannelSnap } from "./types";
 
 // ── Seeded PRNG (Mulberry32) ─ same pattern as bot.js:14-32 ─────────────────
 // Never use Math.random() in mob logic so simulations are always reproducible.
 
-function idSeed(id) {
+function idSeed(id: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i);
@@ -23,7 +24,7 @@ function idSeed(id) {
   return h >>> 0;
 }
 
-function makePrng(seed) {
+function makePrng(seed: number): () => number {
   let s = seed >>> 0;
   return function next() {
     s += 0x6d2b79f5;
@@ -39,7 +40,7 @@ function makePrng(seed) {
  * sim.js stores this as `this._mobRand` and reseeds it each round via
  * `this._mobRand = makeMobPrng(matchSeed)`.
  */
-export function makeMobPrng(seed) {
+export function makeMobPrng(seed: number): () => number {
   return makePrng(seed >>> 0);
 }
 
@@ -63,7 +64,14 @@ export function makeMobPrng(seed) {
  * Caller (sim.stepMobs) checks `mob.y <= CFG.LAVA_Y` after this returns while
  * mob.falling is true and calls killMob(mob, "lava") accordingly.
  */
-export function stepMobPhysics(mob, dt, arena) {
+export interface MobArenaLike {
+  isOnPlatform(x: number, z: number): boolean;
+  groundHeightAt?(x: number, z: number): number;
+  blocksMovement?(x: number, z: number, y: number): boolean;
+  onRamp?(x: number, z: number): boolean;
+}
+
+export function stepMobPhysics(mob: Mob, dt: number, arena: MobArenaLike): void {
   // ── Falling path (off the edge, plummeting toward lava) ─────────────────
   if (mob.falling) {
     mob.vy -= CFG.GRAVITY * dt;
@@ -159,8 +167,55 @@ export function stepMobPhysics(mob, dt, arena) {
   }
 }
 
+/** Active telegraphed-ability channel state (src/sim.js `_startMobChannel`). */
+export interface MobChannel {
+  ability: string;
+  t: number;
+  targetId: string;
+  tx: number;
+  tz: number;
+  r: number;
+}
+
 // ── Mob ───────────────────────────────────────────────────────────────────────
 export class Mob {
+  id: string;
+  type: string;
+  x: number;
+  z: number;
+  y: number;
+  vx: number;
+  vz: number;
+  vy: number;
+  groundY: number;
+  aim: number;
+  maxHits: number;
+  hitsRemaining: number;
+  alive: boolean;
+  falling: boolean;
+  _hazardTime: number;
+  targetId: string | null;
+  meleeCd: number;
+  rangedCd: number;
+  abilityCd: number;
+  minionCd: number;
+  parentId: string | null;
+  childCount: number;
+  spawnInvuln: number;
+  entering: number;
+  _moveX: number;
+  _moveZ: number;
+  channel: MobChannel | null;
+  /** Practice-mode passive dummy target flag — set post-construction by
+   * sim.spawnDummyMob(); never attacks (see the `mob.passive` guard in
+   * sim.stepMobs()). */
+  passive?: boolean;
+  /** Set post-construction by sim.js for player-summoned minions so
+   * MobBrain excludes the summoning player from targeting. */
+  ownerPlayerId?: string;
+  /** Attached by spawnMob() factory below. */
+  _brain?: MobBrain;
+
   /**
    * @param {string}      id       Unique mob id, e.g. "mob:1" (assigned by sim)
    * @param {string}      type     Key of CFG.MOB_TYPES
@@ -168,7 +223,7 @@ export class Mob {
    * @param {number}      z        Spawn Z (world units)
    * @param {string|null} parentId Set for minions; null for big mobs
    */
-  constructor(id, type, x, z, parentId = null) {
+  constructor(id: string, type: string, x: number, z: number, parentId: string | null = null) {
     const typeCfg = CFG.MOB_TYPES[type];
     if (!typeCfg) throw new Error(`Unknown mob type: "${type}"`);
 
@@ -224,7 +279,7 @@ export class Mob {
    * Serialisable snapshot consumed by renderer.apply() and sim snapshot().
    * Matches the shape specified in the plan §8.
    */
-  snapshot() {
+  snapshot(): MobSnap {
     return {
       id:    this.id,
       type:  this.type,
@@ -266,8 +321,30 @@ export class Mob {
  *   { kind: "ability", target }             trigger signature ability
  *   { kind: "spawnMinion", x, z }           spawn a minion at (x,z)
  */
+
+/** Minimal player-like shape MobBrain reads — Player itself isn't converted
+ * to TS yet (see src/player.js), so this is a narrow structural interface
+ * rather than an import of the real class. */
+export interface MobBrainPlayerLike {
+  id: string;
+  x: number;
+  z: number;
+  alive: boolean;
+  falling: boolean;
+}
+
+export type MobBrainAction =
+  | { kind: "idle" }
+  | { kind: "move" }
+  | { kind: "melee"; target: MobBrainPlayerLike }
+  | { kind: "ranged"; target: MobBrainPlayerLike }
+  | { kind: "ability"; target: MobBrainPlayerLike }
+  | { kind: "spawnMinion"; x: number; z: number };
+
 export class MobBrain {
-  constructor(mobId) {
+  _rand: () => number;
+
+  constructor(mobId: string) {
     // Each brain gets its own reproducible PRNG so per-mob stochastic decisions
     // (e.g. minion placement angle) don't corrupt the shared sim._mobRand.
     this._rand = makePrng(idSeed("brain:" + mobId));
@@ -281,7 +358,7 @@ export class MobBrain {
    * @param {number}   dt      Elapsed seconds this tick
    * @returns {object}         Action descriptor (see shapes above)
    */
-  think(mob, players, dt) {
+  think(mob: Mob, players: MobBrainPlayerLike[], dt: number): MobBrainAction {
     if (!mob.alive) return { kind: "idle" };
 
     const typeCfg = CFG.MOB_TYPES[mob.type];
@@ -326,15 +403,15 @@ export class MobBrain {
       return { kind: "idle" };
     }
 
-    let nearest = null, nearestDist = Infinity;
+    let nearest: MobBrainPlayerLike | null = null, nearestDist = Infinity;
     for (const p of targets) {
       const d = Math.hypot(p.x - mob.x, p.z - mob.z);
       if (d < nearestDist) { nearestDist = d; nearest = p; }
     }
 
-    mob.targetId = nearest.id;
-    const dx = nearest.x - mob.x;
-    const dz = nearest.z - mob.z;
+    mob.targetId = nearest!.id;
+    const dx = nearest!.x - mob.x;
+    const dz = nearest!.z - mob.z;
     mob.aim = Math.atan2(dz, dx);
 
     // ── Movement intent: walk toward target, stop at contact radius ───────
@@ -353,7 +430,7 @@ export class MobBrain {
     // ── Signature ability (highest combat priority) ───────────────────────
     if (typeCfg.abilityEvery != null && mob.abilityCd <= 0 && nearestDist < 20) {
       mob.abilityCd = typeCfg.abilityEvery;
-      return { kind: "ability", target: nearest };
+      return { kind: "ability", target: nearest! };
     }
 
     // ── Minion spawn ──────────────────────────────────────────────────────
@@ -374,9 +451,10 @@ export class MobBrain {
     // ── Ranged attack ─────────────────────────────────────────────────────
     if (typeCfg.attack === "ranged" &&
         mob.rangedCd <= 0 &&
+        typeCfg.rangedRange !== undefined &&
         nearestDist <= typeCfg.rangedRange) {
-      mob.rangedCd = typeCfg.rangedEvery;
-      return { kind: "ranged", target: nearest };
+      mob.rangedCd = typeCfg.rangedEvery!;
+      return { kind: "ranged", target: nearest! };
     }
 
     // ── Melee attack ──────────────────────────────────────────────────────
@@ -384,7 +462,7 @@ export class MobBrain {
     // contact, matching how player melee/push interactions work.
     if (mob.meleeCd <= 0 && nearestDist <= contactR + 0.5) {
       mob.meleeCd = typeCfg.meleeEvery;
-      return { kind: "melee", target: nearest };
+      return { kind: "melee", target: nearest! };
     }
 
     return { kind: "move" };
@@ -405,7 +483,7 @@ export class MobBrain {
  * @param {string|null} parentId Parent mob id for minions, null otherwise
  * @returns {Mob}
  */
-export function spawnMob(id, type, x, z, parentId = null) {
+export function spawnMob(id: string, type: string, x: number, z: number, parentId: string | null = null): Mob {
   const mob = new Mob(id, type, x, z, parentId);
   mob._brain = new MobBrain(id);
   return mob;
