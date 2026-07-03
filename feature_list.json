@@ -1521,7 +1521,16 @@
         "FEAT-V1-R3F-P4-0H",
         "FEAT-V1-R3F-P4-0I",
         "FEAT-V1-R3F-P4-0J",
-        "FEAT-V1-R3F-P4-0K"
+        "FEAT-V1-R3F-P4-0K",
+        "FEAT-V1-R3F-P5-0A",
+        "FEAT-V1-R3F-P5-0B",
+        "FEAT-V1-R3F-P5-0C",
+        "FEAT-V1-R3F-P5-0D",
+        "FEAT-V1-R3F-P5-0E",
+        "FEAT-V1-R3F-P5-0F",
+        "FEAT-V1-R3F-P5-0G",
+        "FEAT-V1-R3F-P5-0H",
+        "FEAT-V1-R3F-P5-0I"
       ],
       "acceptance_criteria": [
         "npm run dev/build/preview serve the game; no CDN runtime dependency",
@@ -2607,6 +2616,351 @@
         "keen-fluttering-pudding.md"
       ],
       "summary": "Wire the VFX event pipeline (three/vfx/EffectsLayer+eventToEffects.ts, three/fx/builders.ts) integrating every prior P4 sub-issue's entityRegistry triggers and shake channel. Checkpoint #3 — VFX-parity sign-off; integrates last."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0A",
+      "title": "React UI shell + CSS system + shared primitives (P5a bottleneck)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 160,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/160"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "<UiRoot> replaces the null branch at App.tsx:150; no other App.tsx restructuring (design invariant)",
+        "UiRoot no-ops under ?capture=1, mirroring the existing !CAPTURE guard",
+        "styles/tokens.css is a verbatim port of the :root block (style.css L6-38, 18 custom properties)",
+        "styles/global.css and styles/fx.css match the partition map in the approved P5 design",
+        "shared primitive kit (Button, Panel, Modal, SegmentedControl, Toggle, CharacterCard, Slider, Icon) ships as CSS Modules using var(--token) only",
+        "hooks/useFx.ts exposes the same FX.flash/vignette/aberration/shake/burst/onStage/emitStage API as legacy src/fx.js, gated on prefers-reduced-motion",
+        "useLobbyConfigStore and useSocialPrefsStore exist; useGameSession reads them via a single new getUiInputs() adapter (the only additive edit to useGameSession in this issue)",
+        "menu-nav sub-screen state and draft overlay state are modeled and documented so siblings can build against a stable contract",
+        "design decision write-up reviewed and approved by an Opus reviewer before siblings are unblocked",
+        "responsive 320-1440px, :focus-visible on every interactive primitive, prefers-reduced-motion honored — design floor baseline for all P5 work",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Stand up <UiRoot> at the App.tsx:150 seam, port the CSS token/global/FX layers and shared primitive kit, port fx.js to hooks/useFx.ts, and add the P3a-additive store extensions (useLobbyConfigStore, useSocialPrefsStore, getUiInputs() adapter) that unblock the 8 sibling P5 sub-issues. P5 bottleneck — every other P5 sub-issue forks from this."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0B",
+      "title": "main menu, spine nav, character select, settings, auth (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 161,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/161"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "spine nav covers all 6 sub-screens (online/private/characters/leaderboards/account/tutorial) with identical topology to legacy",
+        "character-select cards render live preview and selection persists via useSettingsStore",
+        "settings screen exposes configurable spell-slot/item-slot hotkeys that persist through useSettingsStore",
+        "online screen shows only queue status - no room browser",
+        "region selector and leaderboard screen (metric+scope) wired to their store fields",
+        "auth forms (guest/sign-in/sign-up/eth/sol/sign-out/upgrade) each dispatch the matching intent with no dropped/added behavior vs legacy",
+        "RTL tests replace the corresponding legacy guard.ui.test.mjs assertions for menu-owned surfaces",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React main menu: spine navigation, character-select with live preview, settings/hotkeys, region + leaderboard screens, and the auth forms, wiring the majority of the 37 legacy ui.js intent handlers."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0C",
+      "title": "lobby, room code/QR, player list, arena/bot config (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 162,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/162"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "room code renders and a QR code (via qrcode) encodes the join link/code",
+        "join-by-code form dispatches the join(name, code, char?) intent",
+        "player list reflects useRosterStore.meta live as players join/leave",
+        "bot count/skill controls write useLobbyConfigStore",
+        "arena world/land size/mobs-enabled/obstacle-toggle controls write useLobbyConfigStore",
+        "obstacle toggle state persists through the existing vwb-map-objects single-writer path",
+        "RTL tests replace the corresponding legacy guard.ui.test.mjs assertions for lobby-owned surfaces",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React lobby: room-code/QR join flow, live player list, bot count/skill controls, and arena world/land/mobs/obstacle controls writing useLobbyConfigStore, preserving the vwb-map-objects persistence path."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0D",
+      "title": "in-game HUD (round/timer/cooldowns/scoreboard) (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 163,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/163"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "HUD subscribes to useHudStore.hud exclusively for per-frame data; no snapshotRef reads in HUD components",
+        "scoreboard player names are rendered as text content, never innerHTML-interpolated",
+        "center match message uses the same escaping discipline as legacy escapeHTML(w)",
+        "no select-all-abilities toggle exists in the ability bar",
+        "ability bar reads spellSlots and applies a locked state matching legacy semantics",
+        "rune mode shows exactly SPELL_SLOT_COUNT (6) slots",
+        "item bar is present, reflects items from the HUD snapshot, and is positioned with pointer-events:auto without blocking the viewport",
+        "cooldown display matches cooldowns from the HUD snapshot exactly",
+        "RTL tests replace the corresponding legacy guard.ui.test.mjs assertions",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React in-game HUD (round/timer/vitals/ability bar/item bar/cooldowns/scoreboard) subscribing to useHudStore.hud only, never snapshotRef per-frame, preserving the guard.ui XSS/lock/slot-count/item-bar assertions."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0E",
+      "title": "spell/item draft overlay + draft-juice (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 164,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/164"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "draft overlay renders picks, timer, ready state, and template selection matching legacy behavior",
+        "pick/ban/ready actions dispatch the draft(action) intent with no dropped/added behavior vs legacy",
+        "draft-juice is ported to React and degrades to instant transitions under prefers-reduced-motion",
+        "draft overlay is keyboard-operable with a modal focus-trap while open",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR",
+        "escalate review to Opus if the store/animation-timing interaction proves complex"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React spell/item draft overlay and port draft-juice (pick/ready/timer animations), dispatching the draft(action) intent against the ephemeral draft state established by P5a."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0F",
+      "title": "onboarding flow (name/character/goal/hotkeys) (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 165,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/165"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A",
+        "#91"
+      ],
+      "acceptance_criteria": [
+        "onboarding steps (name, character, goal, hotkeys) match legacy content and ordering",
+        "vwb-onboarded-v1 is read/written through useSettingsStore, matching the existing persistence contract",
+        "Escape (or an explicit Cancel control) closes/dismisses onboarding at any step (fixes #91)",
+        "touch users have a visible, reachable skip control at every step (fixes #91)",
+        "each onboarding step is a focus-trapped modal/panel with correct tab order",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React onboarding flow (name/character/goal/hotkeys) with vwb-onboarded-v1 persisted via useSettingsStore; also fixes open issue #91 (Escape/cancel + touch skip)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0G",
+      "title": "pause menu + chat panel + social settings (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 166,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/166"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "pause menu resume/leave-match controls dispatch resume()/leaveMatch() intents with identical downstream effect to legacy",
+        "chat panel open/close state syncs with useUiStore.chatOpen; send/typing dispatch sendChat(text)/sendTyping(v)",
+        "mute list UI dispatches toggleMute(peerId)/clearMutes(peerIds) and persists through the existing vwb-mute-list single-writer path",
+        "social prefs dispatch socialPrefs(...) and persist through the existing vwb-social-prefs single-writer path",
+        "conduct-notice dismissal persists through the existing vwb-social-conduct-v1 single-writer path",
+        "pause menu and chat/social panels are modal focus-trapped while open",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React pause menu and social chat panel (mute list, social prefs, conduct dismissal), preserving the existing vwb-mute-list/vwb-social-prefs/vwb-social-conduct-v1 single-writer persistence paths."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0H",
+      "title": "touch/mobile controls + nav-feel (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 167,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/167"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "touch movement, aim, and ability controls dispatch the same intents as their legacy touch equivalents",
+        "all touch tap targets are at least 44px",
+        "touch nav-feel matches legacy behavior and degrades under prefers-reduced-motion",
+        "emulated-touch parity verified via Playwright device emulation against the legacy DOM controls",
+        "responsive 320-1440px, :focus-visible where applicable, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React touch/mobile control layer (movement/aim/ability tap targets) and port legacy nav-feel touch handling, verified against emulated-touch parity."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0I",
+      "title": "screen transitions, gamepad, credits juice (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "todo",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 168,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/168"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "screen transitions (panelIn/titleDrop/fadeDown) reproduce legacy timing/easing via the ported styles/fx.css keyframes",
+        "menu nav-feel and gamepad input feel are ported as hooks/components reading store state, with no MutationObserver or injected <style> elements",
+        "credits screen content and behavior match legacy",
+        "prefers-reduced-motion degrades all transition/particle animation to instant; menuCue audio is never silenced by the reduced-motion path",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the remaining legacy juice (screen transitions, nav-feel, gamepad, credits) from src/legacy/juice.ts into React hooks/components that read store state directly instead of observing the DOM."
     }
   ]
 }
