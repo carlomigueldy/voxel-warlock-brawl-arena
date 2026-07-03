@@ -1,0 +1,80 @@
+/* Juice decorations — screen-transition round card, the nav-feel Back
+   affordance, and the gamepad toast/focus-ring (design §9a #168). Every
+   piece here self-positions fixed, same convention as MenuRoot/Hud. */
+
+.roundCard {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--arcane) 55%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+  animation: roundCard 1400ms var(--ease-spring) both;
+}
+.roundCardText {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 8vw, 72px);
+  color: #ffffff;
+  letter-spacing: 0.14em;
+  text-shadow: 0 0 26px var(--arcane), 0 4px 0 rgba(0, 0, 0, 0.55);
+}
+@keyframes roundCard {
+  0% { opacity: 0; transform: scale(0.82); }
+  14% { opacity: 1; transform: scale(1); }
+  86% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.06); }
+}
+
+.backButton {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 9px;
+  font-family: var(--font-body, inherit);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: rgba(20, 14, 30, 0.72);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: opacity 0.18s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.backButton:hover { background: rgba(255, 90, 60, 0.14); border-color: var(--ember); }
+.backButton:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+.backButton:active { transform: scale(0.96); }
+
+.gamepadToast {
+  position: fixed;
+  left: 50%;
+  bottom: 7%;
+  transform: translate(-50%, 0);
+  z-index: 9999;
+  background: var(--panel);
+  color: var(--ember);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow-panel);
+  pointer-events: none;
+}
+
+/* Thicker focus ring while navigating by gamepad — port of gamepad.js's
+   injected `html.gamepad-active :focus-visible` rule. A whole-selector
+   :global() block, not scoped to this module, since it targets <html>. */
+:global(html.gamepad-active :focus-visible) {
+  outline: 3px solid var(--ember);
+  outline-offset: 3px;
+}

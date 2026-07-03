@@ -1,0 +1,86 @@
+/* Credits — port of src/credits.js's injected styles (design §9a #168).
+   Content is static/hardcoded here exactly as it was in legacy (no CMS/JSON
+   source there either). */
+.trigger {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-family: var(--font-body, inherit);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: rgba(20, 14, 30, 0.72);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: opacity 0.18s ease, border-color 0.15s ease;
+}
+.trigger:hover { opacity: 0.85; border-color: var(--gold); }
+.trigger:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+.wrap {
+  position: relative;
+  height: clamp(280px, 52vh, 460px);
+  max-width: 480px;
+  overflow: hidden;
+  border-radius: 16px;
+  box-shadow: var(--shadow-panel);
+}
+
+.scroll {
+  position: relative;
+  padding: 16px 8px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  align-items: center;
+  text-align: center;
+  animation: creditsScroll 32s linear infinite;
+  will-change: transform;
+}
+.wrap:hover .scroll { animation-play-state: paused; }
+
+@keyframes creditsScroll {
+  from { transform: translateY(100%); }
+  to { transform: translateY(-100%); }
+}
+
+.section { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.h {
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 3px;
+  color: var(--gold);
+  text-shadow: 0 0 14px rgba(255, 210, 60, 0.4);
+}
+.body {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+  max-width: 380px;
+}
+.link {
+  color: var(--gold);
+  text-decoration: none;
+  font-weight: 700;
+  transition: opacity 0.18s ease;
+}
+.link:hover { opacity: 0.85; text-decoration: underline; }
+.link:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; border-radius: 3px; }
+
+/* The 32s auto-scroll is the whole point of the "wrap" being non-interactive;
+   under reduced motion it's neutralized (global.css's catch-all alone would
+   just strand the animation on its single, near-instant frame — see
+   Credits.tsx's comment), so content must become manually scrollable instead. */
+@media (prefers-reduced-motion: reduce) {
+  .wrap { overflow-y: auto; }
+  .scroll { animation: none !important; transform: none !important; }
+}
