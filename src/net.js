@@ -5,8 +5,26 @@
 // - A CLIENT creates an anonymous Peer, connects to the host's id, sends INPUT,
 //   and renders the STATE it receives.
 //
-// PeerJS is loaded globally from a <script> tag (window.Peer).
+// PeerJS ships via npm now (no more CDN <script> tag) but is intentionally
+// NOT a static `import Peer from "peerjs"` here: peerjs's bundled entry point
+// reads `navigator` at module-evaluation time and throws when merely imported
+// under plain Node — and this module is statically imported by
+// test/social.test.mjs (and dynamically re-imported by the Peer-mocking tests
+// in test/source.test.mjs, which swap in a FakePeer via globalThis.Peer) under
+// `npm test`. The dynamic import below only ever runs in a real browser.
 import { CFG, MSG, makeRoomCode, codeToPeerId } from "./config.js";
+
+// Kick off the browser-only peerjs load as soon as this module is imported (the
+// menu's asset-loading gate gives it ample time to finish before any Host/Client
+// is ever constructed). `_peerReady` lets _initPeer defer construction on the
+// vanishingly rare chance a user reaches Host/Join before the module resolves,
+// so `new Peer(...)` can never fire against an undefined global.
+let _peerReady = null;
+if (typeof window !== "undefined" && !window.Peer) {
+  _peerReady = import("peerjs").then((mod) => {
+    window.Peer = mod.default;
+  });
+}
 
 function sanitizeName(name) {
   return String(name ?? "warlock").trim().slice(0, 14) || "warlock";
@@ -64,6 +82,11 @@ export class Host {
   }
 
   _initPeer(attempt = 0) {
+    // Defer until the browser-only peerjs import has populated the global.
+    if (typeof Peer === "undefined" && _peerReady) {
+      _peerReady.then(() => this._initPeer(attempt));
+      return;
+    }
     this.peer = new Peer(this.peerId, PEER_OPTS);
 
     this.peer.on("open", (id) => {
@@ -218,6 +241,11 @@ export class Client {
   }
 
   _initPeer() {
+    // Defer until the browser-only peerjs import has populated the global.
+    if (typeof Peer === "undefined" && _peerReady) {
+      _peerReady.then(() => this._initPeer());
+      return;
+    }
     this.peer = new Peer(PEER_OPTS);
     this.peer.on("open", () => {
       this.conn = this.peer.connect(this.hostId, { reliable: false });

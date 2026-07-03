@@ -3,33 +3,34 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { CFG } from "./config.js";
 import { CastAnimator, locomotionState, ReactionAnimator } from "./animations.js";
+import { asset } from "./asset-url.js";
 
 // Each selectable character is a rigged warlock model rendered with its original
 // shading (smoothed normals and baked maps intact). A glowing hero glyph marks
 // each instance; there is no body tint — original model colors are preserved.
 // The skeletons share the same bone layout, so CastAnimator overlays (animations.js)
 // apply uniformly.
-const url = (p) => new URL(p, import.meta.url).href;
+const url = (p) => asset(p);
 export const CHARACTER_ASSETS = {
   ember: {
-    base: url("../assets/characters/ember-warlock-rigged.glb"),
-    walk: url("../assets/characters/ember-warlock-walking.glb"),
-    run: url("../assets/characters/ember-warlock-running.glb"),
+    base: url("assets/characters/ember-warlock-rigged.glb"),
+    walk: url("assets/characters/ember-warlock-walking.glb"),
+    run: url("assets/characters/ember-warlock-running.glb"),
   },
   frost: {
-    base: url("../assets/characters/frost-mage-rigged.glb"),
-    walk: url("../assets/characters/frost-mage-walking.glb"),
-    run: url("../assets/characters/frost-mage-running.glb"),
+    base: url("assets/characters/frost-mage-rigged.glb"),
+    walk: url("assets/characters/frost-mage-walking.glb"),
+    run: url("assets/characters/frost-mage-running.glb"),
   },
   storm: {
-    base: url("../assets/characters/storm-shaman-rigged.glb"),
-    walk: url("../assets/characters/storm-shaman-walking.glb"),
-    run: url("../assets/characters/storm-shaman-running.glb"),
+    base: url("assets/characters/storm-shaman-rigged.glb"),
+    walk: url("assets/characters/storm-shaman-walking.glb"),
+    run: url("assets/characters/storm-shaman-running.glb"),
   },
   moss: {
-    base: url("../assets/characters/moss-necromancer-rigged.glb"),
-    walk: url("../assets/characters/moss-necromancer-walking.glb"),
-    run: url("../assets/characters/moss-necromancer-running.glb"),
+    base: url("assets/characters/moss-necromancer-rigged.glb"),
+    walk: url("assets/characters/moss-necromancer-walking.glb"),
+    run: url("assets/characters/moss-necromancer-running.glb"),
   },
 };
 
@@ -51,7 +52,7 @@ function extraClipAssets(characterId) {
   if (!slug) return {};
   const out = {};
   for (const name of EXTRA_CLIP_NAMES) {
-    out[name] = url(`../assets/characters/${slug}-${name}.glb`);
+    out[name] = url(`assets/characters/${slug}-${name}.glb`);
   }
   return out;
 }

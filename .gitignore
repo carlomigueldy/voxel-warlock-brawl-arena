@@ -1,10 +1,13 @@
 .opencode/
 .DS_Store
 node_modules/
+dist/
+.vite/
 .vercel/
 .vercel
 .env
 .env.local
 .env*
+!.env.example
 supabase/.temp/
 .mcp.json
