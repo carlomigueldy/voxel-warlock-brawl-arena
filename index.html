@@ -104,6 +104,10 @@
 <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
+  <!-- React root (?shell=react only) — a SEPARATE subtree from the legacy DOM
+       below; see src/legacy/LegacyRendererBridge.tsx / LegacyUiBridge.tsx for
+       the ownership split (React never portals into the legacy subtree). -->
+  <div id="root"></div>
   <canvas id="game-canvas"></canvas>
 
   <!-- ===== Loading Screen ===== -->
@@ -791,13 +795,23 @@
     <button id="fire-btn">FIRE</button>
   </div>
 
-  <script type="module" src="./src/main.js"></script>
-  <!-- ===== Wave-2 juice & feel modules (import FX from ./src/fx.js) ===== -->
-  <script type="module" src="./src/screens.js"></script>
-  <script type="module" src="./src/draft-juice.js"></script>
-  <script type="module" src="./src/nav-feel.js"></script>
-  <script type="module" src="./src/onboarding.js"></script>
-  <script type="module" src="./src/gamepad.js"></script>
-  <script type="module" src="./src/credits.js"></script>
+  <!-- Entry bootstrap: ?shell=react loads the new React/Zustand shell
+       (src/main.tsx); everything else (the default, no-param path) loads the
+       legacy entry exactly as before — main.js + the 6 juice modules, in the
+       same order, so the default path stays byte-identical in behavior. -->
+  <script type="module">
+    if (new URLSearchParams(location.search).get("shell") === "react") {
+      import("./src/main.tsx");
+    } else {
+      await import("./src/main.js");
+      // ===== Wave-2 juice & feel modules (import FX from ./src/fx.js) =====
+      await import("./src/screens.js");
+      await import("./src/draft-juice.js");
+      await import("./src/nav-feel.js");
+      await import("./src/onboarding.js");
+      await import("./src/gamepad.js");
+      await import("./src/credits.js");
+    }
+  </script>
 </body>
 </html>

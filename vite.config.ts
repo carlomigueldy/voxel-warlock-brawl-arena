@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
 
 const COOP_COEP = {
   "Cross-Origin-Opener-Policy": "same-origin",
@@ -7,6 +8,7 @@ const COOP_COEP = {
 };
 
 export default defineConfig({
+  plugins: [react()],
   resolve: {
     alias: {
       "three/addons/": fileURLToPath(new URL("./node_modules/three/examples/jsm/", import.meta.url)),
