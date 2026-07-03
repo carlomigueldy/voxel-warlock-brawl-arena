@@ -16,6 +16,51 @@ import { facetedOrb, facetedRock, facetedShard, facetedPuff } from "../lowpoly.j
 import { secondaryColor, brighten, facetedDuo, TrailPool } from "./duotone.js";
 
 // ---------------------------------------------------------------------------
+// Local types
+// ---------------------------------------------------------------------------
+
+// ctx passed to cast()/impact() — the subset of the (future p4-vfx-events)
+// EventFxCtx every builder below actually reads. Kept local rather than
+// importing duotone.ts's intentionally-loose VfxCtx (design §5): that type's
+// `[key: string]: unknown` catch-all can't type-check calling ctx.addEffect/
+// ctx.ringPulse directly, and the PROJECTILE_VFX merge into VFX_REGISTRY
+// (duotone.ts) doesn't require structural assignability either way.
+export interface ProjectileFxCtx {
+  x: number;
+  z: number;
+  y?: number;
+  color: number;
+  addEffect(effect: THREE.Object3D | null): void;
+  ringPulse(x: number, z: number, radius: number, color: number): THREE.Object3D;
+}
+
+interface ShardBurstOpts {
+  count?: number;
+  speed?: number;
+  life?: number;
+  size?: number;
+  lift?: number;
+  arc?: number;
+  arcStart?: number;
+  secondary?: boolean;
+}
+
+interface TrailOpts {
+  every?: number;
+  life?: number;
+  size?: number;
+}
+
+export interface ProjectileVfxEntry {
+  color: number;
+  proj: string | null;
+  trail: boolean;
+  buildCore: (color: number) => THREE.Group;
+  cast: (ctx: ProjectileFxCtx) => THREE.Object3D | null;
+  impact: (ctx: ProjectileFxCtx) => THREE.Object3D | null;
+}
+
+// ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
 
@@ -25,7 +70,7 @@ import { secondaryColor, brighten, facetedDuo, TrailPool } from "./duotone.js";
 // (this is a bespoke, low-count accent burst, not the generic voxel.js
 // buildBurst); geometry/material are per-instance and disposed with the
 // effect, matching buildBurst/buildMeteor's disposal convention.
-function _shardBurst(x, y, z, color, opts = {}) {
+function _shardBurst(x: number, y: number, z: number, color: number, opts: ShardBurstOpts = {}): THREE.Group {
   const count = Math.min(opts.count ?? 6, CFG.BURST_MAX_PARTICLES);
   const speed = opts.speed ?? 5;
   const life = opts.life ?? 0.4;
@@ -36,7 +81,7 @@ function _shardBurst(x, y, z, color, opts = {}) {
   const tint = opts.secondary ? secondaryColor(color) : color;
   const geo = new THREE.OctahedronGeometry(0.5, 0);
   const g = new THREE.Group();
-  const parts = [];
+  const parts: { mesh: THREE.Mesh; v: THREE.Vector3 }[] = [];
   for (let i = 0; i < count; i++) {
     const mat = new THREE.MeshLambertMaterial({
       color: tint, emissive: color, emissiveIntensity: 0.9, flatShading: true, transparent: true,
@@ -54,14 +99,14 @@ function _shardBurst(x, y, z, color, opts = {}) {
   g.userData.t = 0;
   g.userData.life = life;
   g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k = g.userData.t / life;
     for (const p of parts) {
       p.mesh.position.addScaledVector(p.v, dt);
       p.v.y -= 10 * dt;
       p.v.multiplyScalar(1 - 1.2 * dt);
-      p.mesh.material.opacity = Math.max(0, 1 - k);
+      (p.mesh.material as THREE.MeshLambertMaterial).opacity = Math.max(0, 1 - k);
       p.mesh.scale.setScalar(Math.max(0.05, size * (1 - k * 0.7)));
     }
     if (k >= 1) g.userData.done = true;
@@ -71,7 +116,7 @@ function _shardBurst(x, y, z, color, opts = {}) {
   // src/voxel.js buildBurst's disposal contract.
   g.userData.dispose = () => {
     geo.dispose();
-    for (const p of parts) p.mesh.material.dispose();
+    for (const p of parts) (p.mesh.material as THREE.Material).dispose();
   };
   return g;
 }
@@ -80,10 +125,10 @@ function _shardBurst(x, y, z, color, opts = {}) {
 // from the core's own update() so callers of buildCore() get a self-ticking
 // trail for free once the core group is parented into the scene and moved
 // each frame. Mutates and returns `group`.
-function _withTrail(group, color, opts = {}) {
+function _withTrail(group: THREE.Group, color: number, opts: TrailOpts = {}): THREE.Group {
   const emitter = TrailPool.createEmitter(group, color, opts);
   const prevUpdate = group.userData.update;
-  group.userData.update = (dt) => {
+  group.userData.update = (dt: number) => {
     if (prevUpdate) prevUpdate(dt);
     emitter.update(dt);
   };
@@ -94,7 +139,7 @@ function _withTrail(group, color, opts = {}) {
   };
   // Flush-only hook: releases this emitter's currently-alive shards back to
   // the shared TrailPool WITHOUT running the core's material/geometry
-  // dispose() chain above. src/pool.js's releaseBolt() (and
+  // dispose() chain above. src/pool.ts's releaseBolt() (and
   // src/renderer.js's reset()) call this on every despawn/recycle of a
   // pooled bolt Group — the group itself is reused via acquireBolt(), so it
   // must never be disposed, but its in-flight trail shards are NOT children
@@ -115,14 +160,14 @@ function _withTrail(group, color, opts = {}) {
 // two curved flame wisps).
 // ---------------------------------------------------------------------------
 
-function _fireballCore(color) {
+function _fireballCore(color: number): THREE.Group {
   const core = facetedDuo((c, o) => facetedOrb(0.24, c, o), color, { emissiveIntensity: 1.1 });
   const spikeColor = brighten(color, 0.12);
   const spikeMat = new THREE.MeshLambertMaterial({
     color: spikeColor, emissive: spikeColor, emissiveIntensity: 1.0, flatShading: true,
   });
   const spikeCount = 6;
-  const spikes = [];
+  const spikes: THREE.Mesh[] = [];
   for (let i = 0; i < spikeCount; i++) {
     const a = (i / spikeCount) * Math.PI * 2;
     const dir = new THREE.Vector3(Math.cos(a), i % 2 === 0 ? 0.35 : -0.35, Math.sin(a)).normalize();
@@ -135,7 +180,7 @@ function _fireballCore(color) {
   }
   const prevDispose = core.userData.dispose;
   core.userData.dispose = () => { spikeMat.dispose(); prevDispose(); };
-  core.userData.recolor = (newColor) => {
+  core.userData.recolor = (newColor: number) => {
     const tint = brighten(newColor, 0.12);
     spikeMat.color.setHex(tint);
     spikeMat.emissive.setHex(tint);
@@ -146,7 +191,7 @@ function _fireballCore(color) {
   return _withTrail(core, color);
 }
 
-function _fireballImpact(ctx) {
+function _fireballImpact(ctx: ProjectileFxCtx): THREE.Group {
   const burst = _shardBurst(ctx.x, ctx.y ?? 1, ctx.z, ctx.color, { count: 8, speed: 6, life: 0.45, size: 0.22 });
   ctx.addEffect(ctx.ringPulse(ctx.x, ctx.z, 1.6, ctx.color));
   return burst;
@@ -160,7 +205,7 @@ function _fireballImpact(ctx) {
 // A flattened zigzag prism echoing the SVG bolt polygon
 // (12,2 -> 6,13 -> 10.5,13 -> 8,22 -> 18,9 -> 12.5,9), rebuilt in local space
 // and extruded to a thin faceted prism.
-function _lightningBoltGeo() {
+function _lightningBoltGeo(): THREE.ExtrudeGeometry {
   const shape = new THREE.Shape();
   shape.moveTo(0, 1.0);
   shape.lineTo(-0.42, -0.05);
@@ -174,7 +219,7 @@ function _lightningBoltGeo() {
   return geo;
 }
 
-function _lightningCore(color) {
+function _lightningCore(color: number): THREE.Group {
   // Builder-mode facetedDuo: the extrude geometry is freshly built per call
   // (not a shared cache like voxel.js's bolt geo cache), so it must be
   // builder-owned so facetedDuo's dispose() actually frees it.
@@ -190,11 +235,11 @@ function _lightningCore(color) {
   return _withTrail(core, color, { every: 0.02, life: 0.16, size: 0.14 });
 }
 
-function _lightningCast(ctx) {
+function _lightningCast(ctx: ProjectileFxCtx): THREE.Group {
   return _shardBurst(ctx.x, ctx.y ?? 1.4, ctx.z, ctx.color, { count: 5, speed: 4, life: 0.25, size: 0.12, secondary: true });
 }
 
-function _lightningImpact(ctx) {
+function _lightningImpact(ctx: ProjectileFxCtx): THREE.Group {
   const burst = _shardBurst(ctx.x, ctx.y ?? 1, ctx.z, ctx.color, { count: 6, speed: 7, life: 0.3, size: 0.16, secondary: true });
   ctx.addEffect(ctx.ringPulse(ctx.x, ctx.z, 1.2, ctx.color));
   return burst;
@@ -204,7 +249,7 @@ function _lightningImpact(ctx) {
 // boomerang — bent arc / cross-blades (icon: chevron blade + curved return arc).
 // ---------------------------------------------------------------------------
 
-function _boomerangCore(color) {
+function _boomerangCore(color: number): THREE.Group {
   const core = facetedDuo((c, o) => facetedOrb(0.22, c, o), color, { emissiveIntensity: 1.1 });
   const bladeColor = brighten(color, 0.08);
   const bladeMat = new THREE.MeshLambertMaterial({
@@ -220,7 +265,7 @@ function _boomerangCore(color) {
   core.add(blade1, blade2);
   const prevDispose = core.userData.dispose;
   core.userData.dispose = () => { bladeGeo.dispose(); bladeMat.dispose(); prevDispose(); };
-  core.userData.recolor = (newColor) => {
+  core.userData.recolor = (newColor: number) => {
     const tint = brighten(newColor, 0.08);
     bladeMat.color.setHex(tint);
     bladeMat.emissive.setHex(tint);
@@ -231,7 +276,7 @@ function _boomerangCore(color) {
   return _withTrail(core, color);
 }
 
-function _boomerangImpact(ctx) {
+function _boomerangImpact(ctx: ProjectileFxCtx): THREE.Group {
   const burst = _shardBurst(ctx.x, ctx.y ?? 1, ctx.z, ctx.color, { count: 7, speed: 6, life: 0.4, size: 0.2, arc: Math.PI * 1.4 });
   ctx.addEffect(ctx.ringPulse(ctx.x, ctx.z, 1.4, ctx.color));
   return burst;
@@ -242,7 +287,7 @@ function _boomerangImpact(ctx) {
 // arrow + orbiting targeting ring).
 // ---------------------------------------------------------------------------
 
-function _homingCore(color) {
+function _homingCore(color: number): THREE.Group {
   const core = facetedDuo((c, o) => {
     const geo = new THREE.DodecahedronGeometry(0.26, 0);
     return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
@@ -258,7 +303,7 @@ function _homingCore(color) {
   core.add(ring);
   const prevDispose = core.userData.dispose;
   core.userData.dispose = () => { ringGeo.dispose(); ringMat.dispose(); prevDispose(); };
-  core.userData.recolor = (newColor) => {
+  core.userData.recolor = (newColor: number) => {
     ringMat.color.setHex(secondaryColor(newColor));
     core.userData.primary.material.color.setHex(newColor);
     core.userData.primary.material.emissive.setHex(newColor);
@@ -266,14 +311,14 @@ function _homingCore(color) {
   };
   const withTrail = _withTrail(core, color, { every: 0.04, life: 0.24, size: 0.14 });
   const prevUpdate = withTrail.userData.update;
-  withTrail.userData.update = (dt) => {
+  withTrail.userData.update = (dt: number) => {
     ring.rotation.z += dt * 6;
     prevUpdate(dt);
   };
   return withTrail;
 }
 
-function _homingImpact(ctx) {
+function _homingImpact(ctx: ProjectileFxCtx): THREE.Group {
   const burst = _shardBurst(ctx.x, ctx.y ?? 1, ctx.z, ctx.color, { count: 6, speed: 5, life: 0.5, size: 0.18, secondary: true });
   ctx.addEffect(ctx.ringPulse(ctx.x, ctx.z, 1.5, ctx.color));
   return burst;
@@ -284,7 +329,7 @@ function _homingImpact(ctx) {
 // fanned around a shared base).
 // ---------------------------------------------------------------------------
 
-function _firesprayCore(color) {
+function _firesprayCore(color: number): THREE.Group {
   const core = facetedDuo((c, o) => facetedOrb(0.16, c, o), color, { emissiveIntensity: 1.05 });
   const tongueColor = brighten(color, 0.1);
   const tongueMat = new THREE.MeshLambertMaterial({
@@ -297,7 +342,7 @@ function _firesprayCore(color) {
   }
   const prevDispose = core.userData.dispose;
   core.userData.dispose = () => { tongueMat.dispose(); prevDispose(); };
-  core.userData.recolor = (newColor) => {
+  core.userData.recolor = (newColor: number) => {
     const tint = brighten(newColor, 0.1);
     tongueMat.color.setHex(tint);
     tongueMat.emissive.setHex(tint);
@@ -308,11 +353,11 @@ function _firesprayCore(color) {
   return _withTrail(core, color, { every: 0.05, life: 0.18, size: 0.12 });
 }
 
-function _firesprayCast(ctx) {
+function _firesprayCast(ctx: ProjectileFxCtx): THREE.Group {
   return _shardBurst(ctx.x, ctx.y ?? 1.2, ctx.z, ctx.color, { count: 5, speed: 5, life: 0.3, size: 0.16, arc: Math.PI * 0.9 });
 }
 
-function _firesprayImpact(ctx) {
+function _firesprayImpact(ctx: ProjectileFxCtx): THREE.Group {
   return _shardBurst(ctx.x, ctx.y ?? 1, ctx.z, ctx.color, { count: 5, speed: 5, life: 0.35, size: 0.16 });
 }
 
@@ -321,7 +366,7 @@ function _firesprayImpact(ctx) {
 // polyline ricochet path + corner brackets).
 // ---------------------------------------------------------------------------
 
-function _bouncerCore(color) {
+function _bouncerCore(color: number): THREE.Group {
   const core = facetedDuo((c, o) => facetedOrb(0.3, c, o), color, { emissiveIntensity: 1.1, secondaryScale: 1.4 });
   // Thin zigzag streak (ricochet-path accent) riding the surface, unlit.
   const pts = [
@@ -336,7 +381,7 @@ function _bouncerCore(color) {
   core.add(line);
   const prevDispose = core.userData.dispose;
   core.userData.dispose = () => { lineGeo.dispose(); lineMat.dispose(); prevDispose(); };
-  core.userData.recolor = (newColor) => {
+  core.userData.recolor = (newColor: number) => {
     lineMat.color.setHex(brighten(newColor, 0.2));
     core.userData.primary.material.color.setHex(newColor);
     core.userData.primary.material.emissive.setHex(newColor);
@@ -345,7 +390,7 @@ function _bouncerCore(color) {
   return _withTrail(core, color);
 }
 
-function _bouncerImpact(ctx) {
+function _bouncerImpact(ctx: ProjectileFxCtx): THREE.Group {
   const burst = _shardBurst(ctx.x, ctx.y ?? 1, ctx.z, ctx.color, { count: 6, speed: 8, life: 0.35, size: 0.18, secondary: true });
   ctx.addEffect(ctx.ringPulse(ctx.x, ctx.z, 1.3, ctx.color));
   return burst;
@@ -358,7 +403,7 @@ function _bouncerImpact(ctx) {
 
 const SPLITTER_SHARDS = 5;
 
-function _splitterCore(color) {
+function _splitterCore(color: number): THREE.Group {
   const core = facetedDuo((c, o) => facetedOrb(0.14, c, o), color, { emissiveIntensity: 1.1 });
   const wedgeColor = brighten(color, 0.1);
   const wedgeGeo = new THREE.TetrahedronGeometry(0.24, 0);
@@ -374,7 +419,7 @@ function _splitterCore(color) {
   }
   const prevDispose = core.userData.dispose;
   core.userData.dispose = () => { wedgeGeo.dispose(); wedgeMat.dispose(); prevDispose(); };
-  core.userData.recolor = (newColor) => {
+  core.userData.recolor = (newColor: number) => {
     const tint = brighten(newColor, 0.1);
     wedgeMat.color.setHex(tint);
     wedgeMat.emissive.setHex(tint);
@@ -388,7 +433,7 @@ function _splitterCore(color) {
 // Splits into five piercing shards on impact — the impact burst deliberately
 // mirrors that gameplay fact by flinging exactly SPLITTER_SHARDS wedges
 // outward on an even radial fan.
-function _splitterImpact(ctx) {
+function _splitterImpact(ctx: ProjectileFxCtx): THREE.Group {
   const burst = _shardBurst(ctx.x, ctx.y ?? 1, ctx.z, ctx.color, {
     count: SPLITTER_SHARDS, speed: 9, life: 0.5, size: 0.2, arc: Math.PI * 2,
   });
@@ -401,7 +446,7 @@ function _splitterImpact(ctx) {
 // a small ground-impact star).
 // ---------------------------------------------------------------------------
 
-function _meteorCore(color) {
+function _meteorCore(color: number): THREE.Group {
   const rockColor = 0x552211;
   const core = facetedDuo((c, o) => facetedRock(0.5, rockColor, {
     detail: 1, perturb: 0.16, sx: 1.4, sy: 1.4, sz: 1.4,
@@ -413,22 +458,24 @@ function _meteorCore(color) {
   core.add(ember);
   const prevDispose = core.userData.dispose;
   core.userData.dispose = () => {
-    ember.geometry.dispose(); ember.material.dispose(); prevDispose();
+    (ember.geometry as THREE.BufferGeometry).dispose();
+    (ember.material as THREE.Material).dispose();
+    prevDispose();
   };
-  core.userData.recolor = (newColor) => {
-    ember.material.color.setHex(brighten(newColor, 0.15));
+  core.userData.recolor = (newColor: number) => {
+    (ember.material as THREE.MeshBasicMaterial).color.setHex(brighten(newColor, 0.15));
     core.userData.primary.material.emissive.setHex(newColor);
     core.userData.secondary.material.color.setHex(secondaryColor(newColor));
   };
   return core; // falls vertically — no horizontal TrailPool streak trail
 }
 
-function _meteorCast(ctx) {
+function _meteorCast(ctx: ProjectileFxCtx): THREE.Group {
   // Small upward ember flare at the caller's feet (windup telegraph accent).
   return _shardBurst(ctx.x, ctx.y ?? 0.4, ctx.z, ctx.color, { count: 4, speed: 3, life: 0.35, size: 0.14, lift: 1.4 });
 }
 
-function _meteorImpact(ctx) {
+function _meteorImpact(ctx: ProjectileFxCtx): THREE.Group {
   const burst = _shardBurst(ctx.x, ctx.y ?? 0.5, ctx.z, ctx.color, { count: 9, speed: 9, life: 0.7, size: 0.28, lift: 0.8 });
   ctx.addEffect(ctx.ringPulse(ctx.x, ctx.z, 2.6, ctx.color));
   return burst;
@@ -438,7 +485,7 @@ function _meteorImpact(ctx) {
 // Registry slice
 // ---------------------------------------------------------------------------
 
-export const PROJECTILE_VFX = {
+export const PROJECTILE_VFX: Record<string, ProjectileVfxEntry> = {
   fireball: {
     color: 0xff5a1e, proj: "fireball", trail: true,
     buildCore: _fireballCore, cast: () => null, impact: _fireballImpact,

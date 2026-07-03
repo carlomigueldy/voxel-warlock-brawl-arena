@@ -12,12 +12,13 @@
 //     position/rotation/visible=true)
 //   releaseBolt(group)                          (hides + returns the group to
 //     its kind pool; NEVER disposes shared geometry/materials)
+import type { Group } from "three";
 import { buildBolt } from "./voxel.js";
 
 // kind -> Group[] of currently-free (released) bolt groups.
-const _free = new Map();
+const _free = new Map<string, Group[]>();
 
-function _poolFor(kind) {
+function _poolFor(kind: string): Group[] {
   let arr = _free.get(kind);
   if (!arr) {
     arr = [];
@@ -29,11 +30,16 @@ function _poolFor(kind) {
 // Acquire a bolt Group of the given kind, recolored to `color`. Reuses a
 // pooled (previously released) group when available; otherwise builds a new
 // one via buildBolt(). Resets position/rotation and makes it visible.
-export function acquireBolt(color, kind = "fireball") {
+export function acquireBolt(color: number, kind = "fireball"): Group {
   const pool = _poolFor(kind);
-  let g = pool.pop();
+  let g: Group | undefined = pool.pop();
   if (!g) {
-    g = buildBolt(color, kind);
+    // buildBolt is imported from voxel.js (still .js until #140 lands
+    // voxel.ts) — its inferred return type isn't concrete enough for TS to
+    // narrow `g` past this assignment, so assert the always-Group contract
+    // documented at its call sites instead of restructuring this
+    // otherwise-value-identical port.
+    g = buildBolt(color, kind) as Group;
   } else if (g.userData.recolor) {
     g.userData.recolor(color);
   }
@@ -44,7 +50,7 @@ export function acquireBolt(color, kind = "fireball") {
 }
 
 // Release a bolt Group back to its kind's pool. Flushes any live TrailPool
-// trail shards (src/vfx/projectiles.js's _withTrail attaches
+// trail shards (src/vfx/projectiles.ts's _withTrail attaches
 // userData.flushTrail on registry-routed cores; a no-op for legacy bolts
 // with no trail), hides the group, detaches it from its current parent (if
 // any), and never disposes shared geometry/materials (those are cache-owned
@@ -53,7 +59,7 @@ export function acquireBolt(color, kind = "fireball") {
 // its userData.update(dt) stops being ticked, so any shards left alive would
 // otherwise freeze in place and permanently hold their slot in the shared,
 // capped TrailPool.
-export function releaseBolt(group) {
+export function releaseBolt(group: Group | null | undefined): void {
   if (!group) return;
   group.userData.flushTrail?.();
   group.visible = false;

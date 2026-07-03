@@ -1,7 +1,18 @@
-// P4-137: stub, implemented in #142. Scene.tsx references this layer so the
-// R3F scaffold compiles and renders an empty scene before pooled projectile
-// rendering lands; #142 replaces this file's contents only (no other file
-// needs to change to wire the real layer in).
-export function BoltsLayer(): null {
-  return null;
+// Maps the live bolt id set (useRosterStore.boltIds — spawn/despawn only,
+// design §3) to one keyed <BoltEntity> per traveling projectile. Motion,
+// spin, and pooled-trail ticking all live in <BoltEntity>'s own useFrame;
+// this layer only ever re-renders when a bolt spawns or despawns, mirroring
+// <PlayersLayer>'s pattern for the entity kinds that DO interpolate.
+import { useRosterStore } from "../../store/useRosterStore";
+import { BoltEntity } from "./BoltEntity";
+
+export function BoltsLayer() {
+  const boltIds = useRosterStore((s) => s.boltIds);
+  return (
+    <>
+      {boltIds.map((id) => (
+        <BoltEntity key={id} id={id} />
+      ))}
+    </>
+  );
 }

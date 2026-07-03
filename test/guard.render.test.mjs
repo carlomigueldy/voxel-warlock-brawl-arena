@@ -1,5 +1,5 @@
 // Source guards for the rendering layer: renderer.js, renderer-util.js,
-// character.js, voxel.js, arena.js, props.js, lowpoly.js, pool.js, preview.js,
+// character.js, voxel.js, arena.js, props.js, lowpoly.js, pool.ts, preview.js,
 // plus behavioral effectPos checks. Split from test/source.test.mjs (#103) by
 // which source file each guard reads.
 import { test } from "vitest";
@@ -184,7 +184,7 @@ test("renderer builds projectiles and runes procedurally (no Meshy GLB loading)"
 test("renderer builds bolts and runes via the procedural voxel builders", () => {
   assert.match(renderer, /acquireBolt\(b\.c, b\.k \|\| "fireball"\)/);
   assert.match(renderer, /buildRune\(r\.c \|\| 0xffffff\)/);
-  assert.match(fs.readFileSync("src/pool.js", "utf8"), /buildBolt\(color, kind\)/);
+  assert.match(fs.readFileSync("src/pool.ts", "utf8"), /buildBolt\(color, kind\)/);
 });
 
 // legacy text guard — delete in P6
