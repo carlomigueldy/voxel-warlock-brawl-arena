@@ -3,7 +3,7 @@
 // shared primitive kit; this is the design §9 UiRoot render contract each
 // sibling PR (#161-#168) adds its own `screen==="..."` / overlay-flag branch
 // to — a pass-through host div, not a styled shell. Most regions (MenuRoot,
-// Hud, ...) manage their own full-viewport positioning; LobbyRoot is the
+// Hud) manage their own full-viewport positioning; LobbyRoot is the
 // exception — its `.scene` is `min-height:100%` and relies on the
 // `.screenLayer` full-viewport parent below (a follow-up will make it
 // self-position for symmetry — see the shared-shell consolidation note).
@@ -21,6 +21,7 @@ import { CAPTURE } from "../three/parity/determinism";
 import { useSessionStore } from "../store/useSessionStore";
 import { MenuRoot } from "./menu/MenuRoot";
 import { LobbyRoot } from "./lobby/LobbyRoot";
+import { Hud } from "./hud/Hud";
 import styles from "./UiRoot.module.css";
 
 // index.html's static legacy `#menu` markup ships `class="overlay
@@ -64,9 +65,10 @@ export function UiRoot() {
           <LobbyRoot />
         </div>
       )}
-      {/* screen==="game" -> Hud (#163, merging next); game overlays
-          (#164/#167), always-mounted overlays (#165/#166), juice decoration
-          (#168) — each sibling adds its own region here per design §9. */}
+      {screen === "game" && <Hud />}
+      {/* game overlays (#164/#167), always-mounted overlays (#165/#166),
+          juice decoration (#168) — each sibling adds its own region here
+          per design §9's UiRoot render contract. */}
     </div>
   );
 }
