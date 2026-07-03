@@ -59,7 +59,7 @@
 
 .toggleBtn {
   align-self: flex-start;
-  width: 40px; height: 40px;
+  min-width: 44px; min-height: 44px; /* design floor: touch targets >= 44px */
   border-radius: 50%;
   border: 1px solid var(--line-strong);
   background: rgba(13, 11, 26, 0.7);

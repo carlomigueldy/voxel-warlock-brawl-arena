@@ -70,8 +70,7 @@
 }
 
 .muteBtn {
-  width: 28px; height: 28px;
-  min-height: 0;
+  min-width: 44px; min-height: 44px; /* design floor: touch targets >= 44px */
   border-radius: 6px; border: 1px solid var(--line);
   background: transparent; color: var(--muted);
   font-size: 12px; cursor: pointer;
