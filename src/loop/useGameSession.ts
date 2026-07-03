@@ -26,6 +26,7 @@ import { getUI, getAudio, getInput, getRenderer } from "../services/registry";
 import { snapshotRef, setLocalId, resetSnapshotRef } from "../store/snapshotRef";
 import { useSessionStore } from "../store/useSessionStore";
 import { useUiStore } from "../store/useUiStore";
+import { useChatStore } from "../store/useChatStore";
 import { getUiInputs } from "./getUiInputs";
 import { onNewSnapshot } from "./onNewSnapshot";
 import { useHostLoop } from "./useHostLoop";
@@ -121,7 +122,14 @@ export function useGameSession(): GameSessionIntents {
     const ui = getUI();
     const meta = snapshotRef.meta.get(relay.fromId);
     const color = CFG.COLORS[(meta?.colorIndex ?? 0) % CFG.COLORS.length];
-    ui.addChatLine(meta?.name || "warlock", relay.text, color, relay.fromId === localIdRef.current);
+    const isSelf = relay.fromId === localIdRef.current;
+    ui.addChatLine(meta?.name || "warlock", relay.text, color, isSelf);
+    // Additive store half of the same dual-write every other field in this
+    // file already does (menuStatus/lobbyStatus/queue/paused/chatOpen -> both
+    // a store AND a legacy ui.* call) — chat had only the legacy-DOM half
+    // until now, leaving ?ui=react with no source of truth to render chat
+    // history from (see useChatStore.ts's header).
+    useChatStore.getState().addMessage({ name: meta?.name || "warlock", text: relay.text, color, isSelf });
     if (getUiInputs().socialPrefs.showBubbles) getRendererMaybe()?.showChatBubble(relay.fromId, relay.text, color);
   };
 
@@ -518,6 +526,7 @@ export function useGameSession(): GameSessionIntents {
     lastRosterRef.current = [];
     ui.closeChat();
     ui.clearChatLog();
+    useChatStore.getState().clear(); // additive store half of clearChatLog(), see applyChat() above
     resetSnapshotRef();
     onlineRef.current = { isOnline: false, region: null, matchResultSubmitted: false };
     localIdRef.current = null;
