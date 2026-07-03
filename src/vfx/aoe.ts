@@ -45,8 +45,82 @@
 // CFG.BURST_MAX_PARTICLES, matching voxel.js's buildBurst cap.
 import * as THREE from "three";
 import { CFG, SPELLS } from "../config.js";
-import { facetedOrb, facetedCrystal, facetedShard, facetedCone, facetedRock } from "../lowpoly.js";
+import { facetedOrb, facetedCrystal, facetedShard, facetedCone, facetedRock, type LowPolyOpts } from "../lowpoly.js";
 import { facetedDuo, secondaryColor, brighten } from "./duotone.js";
+
+// ---------------------------------------------------------------------------
+// Local types
+// ---------------------------------------------------------------------------
+
+// ctx passed to cast()/impact() — the subset of the (future p4-vfx-events)
+// EventFxCtx every builder below actually reads. Kept local rather than
+// importing duotone.ts's intentionally-loose VfxCtx (design §5): that type's
+// `[key: string]: unknown` catch-all can't type-check calling ctx.addEffect/
+// ctx.ringPulse directly, and the AOE_VFX merge into VFX_REGISTRY
+// (duotone.ts) doesn't require structural assignability either way.
+export interface AoeFxCtx {
+  x: number;
+  z: number;
+  y?: number;
+  color: number;
+  /** point-target radius (gravity well/vacuum channel/... spell-specific) */
+  radius?: number;
+  /** facing angle in radians (push's directional cone) */
+  angle?: number;
+  /** cone half-spread in radians (push's directional cone) */
+  spread?: number;
+  addEffect(effect: THREE.Object3D | null): void;
+  ringPulse(x: number, z: number, radius: number, color: number): THREE.Object3D;
+}
+
+interface DuoRingOpts {
+  life?: number;
+  thickness?: number;
+  grow?: number;
+  y?: number;
+  opacity?: number;
+}
+
+interface DuoShardBurstOpts {
+  count?: number;
+  speed?: number;
+  life?: number;
+  y?: number;
+  size?: number;
+  inward?: boolean;
+  startRadius?: number;
+}
+
+interface ZigzagBurstOpts {
+  y?: number;
+  life?: number;
+  arms?: number;
+  segments?: number;
+  reach?: number;
+}
+
+interface ReticleCollapseOpts {
+  y?: number;
+  life?: number;
+  startRadius?: number;
+}
+
+interface ConeWaveOpts {
+  life?: number;
+  y?: number;
+  speed?: number;
+  spread?: number;
+  angle?: number;
+}
+
+/** Option bag the _coreBuilders below draw from — LowPolyOpts plus the
+ * positional-shape-size fields each builder reads before spreading the rest
+ * of `opts` into the underlying faceted* call. */
+interface CoreBuilderOpts extends LowPolyOpts {
+  radius?: number;
+  length?: number;
+  height?: number;
+}
 
 // ---------------------------------------------------------------------------
 // Base tints — pulled from config.js SPELLS so this file stays in sync with
@@ -77,7 +151,7 @@ const _RING_SEGMENTS = 12;
 // convention). `opts.grow` (world units) is how much the ring's radius
 // changes over its life — positive expands outward (a shockwave), negative
 // contracts toward the center (a "collapsing inward" telegraph).
-function _duoRing(x, z, radius, color, opts = {}) {
+function _duoRing(x: number, z: number, radius: number, color: number, opts: DuoRingOpts = {}): THREE.Group {
   const life = opts.life ?? 0.55;
   const thickness = opts.thickness ?? 0.4;
   const grow = opts.grow ?? radius * 1.6;
@@ -107,7 +181,7 @@ function _duoRing(x, z, radius, color, opts = {}) {
   g.userData.t = 0;
   g.userData.life = life;
   g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k = Math.min(1, g.userData.t / life);
     const scale = Math.max(0.01, 1 + k * (grow / r0));
@@ -131,7 +205,7 @@ function _duoRing(x, z, radius, color, opts = {}) {
 // reverses the burst into an implosion — shards start at `opts.startRadius`
 // and fly toward the center instead of outward (used for vacuum/gravity's
 // pull-then-release beats).
-function _duoShardBurst(x, z, color, opts = {}) {
+function _duoShardBurst(x: number, z: number, color: number, opts: DuoShardBurstOpts = {}): THREE.Group {
   const count = Math.min(opts.count ?? 16, CFG.BURST_MAX_PARTICLES);
   const speed = opts.speed ?? 9;
   const life = opts.life ?? 0.5;
@@ -143,7 +217,7 @@ function _duoShardBurst(x, z, color, opts = {}) {
 
   const g = new THREE.Group();
   const shardGeo = new THREE.OctahedronGeometry(0.5, 0);
-  const parts = [];
+  const parts: THREE.Mesh[] = [];
   for (let i = 0; i < count; i++) {
     const primaryTone = i % 2 === 0;
     const tint = primaryTone ? color : secColor;
@@ -171,7 +245,7 @@ function _duoShardBurst(x, z, color, opts = {}) {
   g.userData.t = 0;
   g.userData.life = life;
   g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k = g.userData.t / life;
     for (const m of parts) {
@@ -180,7 +254,7 @@ function _duoShardBurst(x, z, color, opts = {}) {
       m.userData.v.multiplyScalar(1 - 1.4 * dt);
       m.rotation.x += dt * 6; m.rotation.y += dt * 5;
       const fadeK = Math.min(1, inward ? k * 1.6 : k);
-      m.material.opacity = Math.max(0, m.userData.baseOpacity * (1 - fadeK));
+      (m.material as THREE.MeshLambertMaterial).opacity = Math.max(0, m.userData.baseOpacity * (1 - fadeK));
       const factor = Math.max(0.1, 1 - k * 0.35);
       const bs = m.userData.baseScale;
       m.scale.set(bs.x * factor, bs.y * factor, bs.z * factor);
@@ -189,7 +263,7 @@ function _duoShardBurst(x, z, color, opts = {}) {
   };
   g.userData.dispose = () => {
     shardGeo.dispose();
-    for (const m of parts) m.material.dispose();
+    for (const m of parts) (m.material as THREE.Material).dispose();
   };
   return g;
 }
@@ -198,7 +272,7 @@ function _duoShardBurst(x, z, color, opts = {}) {
 // analogue of stun's SVG icon (two lightning-bolt zigzags meeting at the hit
 // point). Each streak is a short chain of thin elongated octahedron shards,
 // alternating duotone tint, that flash in and fade out.
-function _zigzagBurst(x, z, color, opts = {}) {
+function _zigzagBurst(x: number, z: number, color: number, opts: ZigzagBurstOpts = {}): THREE.Group {
   const y = opts.y ?? 1.1;
   const life = opts.life ?? 0.45;
   const arms = Math.min(opts.arms ?? 2, 3);
@@ -208,7 +282,7 @@ function _zigzagBurst(x, z, color, opts = {}) {
 
   const g = new THREE.Group();
   const shardGeo = new THREE.OctahedronGeometry(0.5, 0);
-  const parts = [];
+  const parts: THREE.Mesh[] = [];
   const forward = new THREE.Vector3(0, 0, 1);
   for (let a = 0; a < arms; a++) {
     const baseAngle = (a / arms) * Math.PI * 2 + Math.random() * 0.6;
@@ -240,16 +314,16 @@ function _zigzagBurst(x, z, color, opts = {}) {
   g.userData.t = 0;
   g.userData.life = life;
   g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k = g.userData.t / life;
     const flash = k < 0.25 ? k / 0.25 : 1 - (k - 0.25) / 0.75;
-    for (const m of parts) m.material.opacity = Math.max(0, m.userData.baseOpacity * flash);
+    for (const m of parts) (m.material as THREE.MeshLambertMaterial).opacity = Math.max(0, m.userData.baseOpacity * flash);
     if (k >= 1) g.userData.done = true;
   };
   g.userData.dispose = () => {
     shardGeo.dispose();
-    for (const m of parts) m.material.dispose();
+    for (const m of parts) (m.material as THREE.Material).dispose();
   };
   return g;
 }
@@ -258,7 +332,7 @@ function _zigzagBurst(x, z, color, opts = {}) {
 // (secondary tint) drawing in toward a central brightening diamond core
 // (primary tint) — echoes target's SVG icon (ring + diamond + four corner
 // brackets).
-function _reticleCollapse(x, z, color, opts = {}) {
+function _reticleCollapse(x: number, z: number, color: number, opts: ReticleCollapseOpts = {}): THREE.Group {
   const y = opts.y ?? 1.2;
   const life = opts.life ?? 0.4;
   const startRadius = opts.startRadius ?? 3.2;
@@ -266,7 +340,7 @@ function _reticleCollapse(x, z, color, opts = {}) {
 
   const g = new THREE.Group();
   const shardGeo = new THREE.OctahedronGeometry(0.5, 0);
-  const corners = [];
+  const corners: THREE.Mesh[] = [];
   const dirs = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
   for (const [dx, dz] of dirs) {
     const mat = new THREE.MeshLambertMaterial({
@@ -292,13 +366,13 @@ function _reticleCollapse(x, z, color, opts = {}) {
   g.userData.t = 0;
   g.userData.life = life;
   g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k = Math.min(1, g.userData.t / life);
     const r = startRadius * (1 - k);
     for (const m of corners) {
       m.position.copy(m.userData.dir).multiplyScalar(r);
-      m.material.opacity = 0.7 * (1 - k * 0.3);
+      (m.material as THREE.MeshLambertMaterial).opacity = 0.7 * (1 - k * 0.3);
     }
     coreMat.opacity = k;
     core.scale.setScalar(0.2 + k * 0.15);
@@ -307,7 +381,7 @@ function _reticleCollapse(x, z, color, opts = {}) {
   g.userData.dispose = () => {
     shardGeo.dispose();
     coreMat.dispose();
-    for (const m of corners) m.material.dispose();
+    for (const m of corners) (m.material as THREE.Material).dispose();
   };
   return g;
 }
@@ -317,7 +391,7 @@ function _reticleCollapse(x, z, color, opts = {}) {
 // Falls back to a full radial nova (4 evenly spaced arcs) when `opts.angle`
 // is omitted, since the base ctx contract does not guarantee a facing
 // direction — used as-is by disable's radiating "slash tick" impact.
-function _coneWave(x, z, color, opts = {}) {
+function _coneWave(x: number, z: number, color: number, opts: ConeWaveOpts = {}): THREE.Group {
   const life = opts.life ?? 0.35;
   const y = opts.y ?? 0.9;
   const speed = opts.speed ?? 14;
@@ -328,7 +402,7 @@ function _coneWave(x, z, color, opts = {}) {
 
   const g = new THREE.Group();
   const shardGeo = new THREE.OctahedronGeometry(0.5, 0);
-  const parts = [];
+  const parts: THREE.Mesh[] = [];
   const arcCount = hasAngle ? 3 : 4;
   const perArc = 3;
   for (let arc = 0; arc < arcCount; arc++) {
@@ -358,18 +432,18 @@ function _coneWave(x, z, color, opts = {}) {
   g.userData.t = 0;
   g.userData.life = life;
   g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k = g.userData.t / life;
     for (const m of parts) {
       m.position.addScaledVector(m.userData.v, dt);
-      m.material.opacity = Math.max(0, m.userData.baseOpacity * (1 - k));
+      (m.material as THREE.MeshLambertMaterial).opacity = Math.max(0, m.userData.baseOpacity * (1 - k));
     }
     if (k >= 1) g.userData.done = true;
   };
   g.userData.dispose = () => {
     shardGeo.dispose();
-    for (const m of parts) m.material.dispose();
+    for (const m of parts) (m.material as THREE.Material).dispose();
   };
   return g;
 }
@@ -380,7 +454,7 @@ function _coneWave(x, z, color, opts = {}) {
 // `(color, opts) -> THREE.Mesh` builder in the facetedDuo builder-mode
 // contract (its geometry is then owned/disposed by the returned Group).
 // ---------------------------------------------------------------------------
-const _coreBuilders = {
+const _coreBuilders: Record<string, (c: number, o?: CoreBuilderOpts) => THREE.Mesh> = {
   meteor:  (c, o = {}) => facetedRock(o.radius ?? 0.42, c, { detail: 0, perturb: 0.2, emissive: c, emissiveIntensity: 0.7, ...o }),
   explode: (c, o = {}) => facetedCrystal(o.radius ?? 0.4, c, { emissive: c, sx: 0.85, sy: 0.85, sz: 0.85, ...o }),
   gravity: (c, o = {}) => facetedOrb(o.radius ?? 0.32, c, o),
@@ -397,7 +471,14 @@ const _coreBuilders = {
 // `Object.assign(VFX_REGISTRY, AOE_VFX)`) alongside sibling per-spell VFX
 // modules to complete the registry.
 // ---------------------------------------------------------------------------
-export const AOE_VFX = {
+export interface AoeVfxEntry {
+  color: number;
+  buildCore: (color?: number) => THREE.Group;
+  cast: (ctx: AoeFxCtx) => THREE.Object3D | null;
+  impact: (ctx: AoeFxCtx) => THREE.Object3D | null;
+}
+
+export const AOE_VFX: Record<string, AoeVfxEntry> = {
   meteor: {
     color: METEOR_COLOR,
     buildCore: (c = METEOR_COLOR) => facetedDuo(_coreBuilders.meteor, c, { secondaryScale: 1.35, secondaryOpacity: 0.4 }),
@@ -433,7 +514,7 @@ export const AOE_VFX = {
       // point over the spell's castTime, echoing the icon's tight radial
       // starburst gathering energy before it erupts.
       ctx.addEffect(_duoRing(ctx.x, ctx.z, 2.6, ctx.color, {
-        grow: -2.3, life: SPELLS.explode?.castTime ?? 0.45, thickness: 0.25, opacity: 0.6,
+        grow: -2.3, life: (SPELLS.explode?.castTime as number | undefined) ?? 0.45, thickness: 0.25, opacity: 0.6,
       }));
       return null;
     },
