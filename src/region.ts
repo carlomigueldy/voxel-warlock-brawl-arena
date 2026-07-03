@@ -9,7 +9,7 @@ export const REGIONS = CFG.REGIONS;
 const STORAGE_KEY = 'vwb-region';
 
 // Returns the active region id. Never throws.
-export async function getRegion() {
+export async function getRegion(): Promise<string> {
   // 1. LocalStorage override takes precedence.
   try {
     const override = localStorage.getItem(STORAGE_KEY);
@@ -21,7 +21,7 @@ export async function getRegion() {
   // 2. Ask the Supabase geo edge function for the closest region.
   if (isEnabled()) {
     try {
-      const client = getClient();
+      const client = getClient()!;
       const { data } = await client.functions.invoke('geo');
       if (data && typeof data.region === 'string') return data.region;
     } catch {
@@ -34,7 +34,7 @@ export async function getRegion() {
 }
 
 // Persist a region override to localStorage.
-export function setRegion(id) {
+export function setRegion(id: string): void {
   try {
     localStorage.setItem(STORAGE_KEY, id);
   } catch {
@@ -43,7 +43,7 @@ export function setRegion(id) {
 }
 
 // Returns the human-readable label for a region id, or the id itself as fallback.
-export function getRegionLabel(id) {
+export function getRegionLabel(id: string): string {
   const region = CFG.REGIONS.find((r) => r.id === id);
   return region ? region.label : id;
 }

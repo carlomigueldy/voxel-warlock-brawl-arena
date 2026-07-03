@@ -1936,7 +1936,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "multiplayer",
-      "status": "todo",
+      "status": "review",
       "priority": "P1",
       "labels": [
         "sub-issue",

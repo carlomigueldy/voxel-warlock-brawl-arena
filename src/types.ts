@@ -556,3 +556,40 @@ export interface MatchOffer {
   fromQueueId: string;
   toQueueId: string;
 }
+// ─── Account services (src/auth.ts / src/leaderboard.ts) ───────────────────
+
+/** App-shape user (src/auth.ts mapUser()); the return of the auth functions. */
+export interface AppUser {
+  id: string;
+  email: string | null;
+  username: string;
+  isGuest: boolean;
+}
+
+/** Per-player result the client submits to src/leaderboard.ts submitMatchResult(). */
+export interface MatchResultPayload {
+  region: string;
+  map: string;
+  roundCount: number;
+  players: {
+    userId: string | null;
+    username: string;
+    kills: number;
+    deaths: number;
+    roundWins: number;
+    won: boolean;
+  }[];
+}
+
+/** A row from the Supabase `leaderboard` view (src/leaderboard.ts fetchLeaderboard()). */
+export interface LeaderboardRow {
+  wins: number;
+  kd: number;
+  round_wins: number;
+  rating: number;
+  region: string;
+  [column: string]: unknown;
+}
+
+/** Public sort metric name accepted by fetchLeaderboard(), mapped to the DB column. */
+export type LeaderboardMetric = "wins" | "kd" | "roundWins" | "rating";

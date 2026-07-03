@@ -1,9 +1,10 @@
 // Leaderboard: submit match results via edge function, fetch from the view.
 // All functions no-op gracefully when Supabase is not configured.
 import { isEnabled, getClient } from './supabase.js';
+import type { MatchResultPayload, LeaderboardRow, LeaderboardMetric } from './types';
 
 // Map from the public metric name to the DB column name.
-const METRIC_COLUMN = {
+const METRIC_COLUMN: Record<LeaderboardMetric, string> = {
   wins:      'wins',
   kd:        'kd',
   roundWins: 'round_wins',
@@ -21,7 +22,7 @@ const METRIC_COLUMN = {
 // ranked winner to compute deltas; recording only loser-side stats would produce
 // one-sided, unbalanced rating changes.  Mixed-lobby results where a guest/bot
 // wins are silently skipped.
-export async function submitMatchResult(payload) {
+export async function submitMatchResult(payload: MatchResultPayload): Promise<unknown> {
   if (!isEnabled()) return null;
   const authenticated = (payload?.players || []).filter((p) => p.userId);
   if (!authenticated.length) return null;
@@ -44,7 +45,7 @@ export async function submitMatchResult(payload) {
         won:        p.won,
       })),
     };
-    const { data, error } = await getClient().functions.invoke('submit-match', { body });
+    const { data, error } = await getClient()!.functions.invoke('submit-match', { body });
     if (error) throw error;
     return data;
   } catch {
@@ -56,11 +57,11 @@ export async function submitMatchResult(payload) {
 // metric: 'wins' | 'kd' | 'roundWins' | 'rating'
 // region: string or null for global
 // limit: default 100
-export async function fetchLeaderboard({ region = null, metric = 'wins', limit = 100 } = {}) {
+export async function fetchLeaderboard({ region = null, metric = 'wins', limit = 100 }: { region?: string | null; metric?: LeaderboardMetric; limit?: number } = {}): Promise<LeaderboardRow[]> {
   if (!isEnabled()) return [];
   try {
     const col = METRIC_COLUMN[metric] || 'wins';
-    let query = getClient()
+    let query = getClient()!
       .from('leaderboard')
       .select('*')
       .order(col, { ascending: false })
