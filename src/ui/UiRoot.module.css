@@ -19,3 +19,27 @@
   color: var(--muted);
   max-width: 280px;
 }
+
+/* Full-viewport wrapper for a real mounted screen (LobbyRoot and the
+   siblings that follow it) — p5a's .shell above is sized for the
+   placeholder only. Mirrors src/style.css's shared `.overlay` (fixed,
+   inset:0, the same ember-field ambient gradient) rather than composing it
+   directly, since a screen needs `.overlay`'s OWN overrides that #lobby/
+   #menu apply on top of it (padding:0, stretch instead of centered,
+   overflow-y:auto) — see style.css L423-428's "#lobby stops using the
+   shared bounded .panel box" note, which applies here too. z-index sits
+   above the legacy .overlay elements (10) — see the finding in this PR's
+   description: App.tsx's bootstrap calls ui.showMenu() unconditionally, so
+   the legacy #menu DOM is not actually inert under ?ui=react today; sitting
+   above it is a belt-and-suspenders guard until that's fixed upstream —
+   and below Modal's onboarding/dialog tiers (150/200, see Modal.module.css). */
+.screenLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow-y: auto;
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgba(108, 76, 255, 0.28), transparent 55%),
+    radial-gradient(90% 80% at 50% 120%, rgba(255, 90, 60, 0.16), transparent 60%),
+    radial-gradient(circle at 50% 40%, rgba(13, 11, 26, 0.6), rgba(7, 6, 16, 0.96));
+}

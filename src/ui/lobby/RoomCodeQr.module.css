@@ -1,0 +1,97 @@
+/* Port of src/style.css L446-477/659-668 (.lobby-hud-rail room banner, the
+   copy/QR actions, .room-code, .qr) — design §4 partition: lobby -> lobby
+   module. var(--token) only. */
+.room {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.bannerLabel {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+.code {
+  font-family: var(--font-display);
+  font-size: clamp(16px, 2.4vw, 22px);
+  letter-spacing: 6px;
+  color: var(--gold);
+  background: var(--slot);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 10px 16px;
+  text-align: center;
+  text-shadow: 0 0 14px rgba(255, 210, 60, 0.5);
+  box-shadow: var(--bezel), 0 0 20px -6px rgba(255, 210, 60, 0.35);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.btnSm {
+  padding: 9px 14px;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  min-height: 44px; /* design floor: touch targets >= 44px */
+}
+.qrPop {
+  position: relative;
+}
+.qrPop > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  padding: 9px 14px;
+  min-height: 44px; /* design floor: touch targets >= 44px */
+  display: inline-flex;
+  align-items: center;
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  transition: background 0.18s, box-shadow 0.18s, color 0.18s, border-color 0.18s;
+}
+.qrPop > summary::-webkit-details-marker { display: none; }
+.qrPop > summary::marker { content: ""; }
+.qrPop > summary:hover { background: rgba(108, 76, 255, 0.18); box-shadow: var(--glow-arcane); }
+.qrPop > summary:focus-visible { outline: 2px solid var(--arcane); outline-offset: 3px; }
+.qrPop[open] > summary { color: var(--gold); border-color: var(--gold); }
+.qr {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  background: #fff;
+  padding: 10px;
+  border-radius: 12px;
+  width: fit-content;
+  box-shadow: 0 0 24px -6px rgba(108, 76, 255, 0.6);
+  animation: fadeDown 0.22s ease both;
+}
+.qr canvas { display: block; }
+.hint {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qrPop > summary { transition: none; }
+  .qr { animation: none; }
+}
