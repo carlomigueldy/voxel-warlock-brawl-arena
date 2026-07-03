@@ -23,6 +23,7 @@ import { MenuRoot } from "./menu/MenuRoot";
 import { LobbyRoot } from "./lobby/LobbyRoot";
 import { Hud } from "./hud/Hud";
 import { DraftOverlay } from "./draft/DraftOverlay";
+import { TouchControls } from "./touch/TouchControls";
 import { PauseMenu } from "./pause/PauseMenu";
 import { ChatPanel } from "./chat/ChatPanel";
 import { Onboarding } from "./onboarding/Onboarding";
@@ -71,14 +72,17 @@ export function UiRoot() {
         </div>
       )}
       {screen === "game" && <Hud />}
+      {/* game overlays (render during the game screen, gate internally) */}
       {screen === "game" && <DraftOverlay />}
+      {screen === "game" && <TouchControls />}
       {/* always-mounted overlays (gate internally on their own store flags) */}
       <Onboarding />
       <Juice />
       <PauseMenu />
       <ChatPanel />
-      {/* remaining Wave-2 region: game overlay #167 touch adds its line here
-          per design §9's UiRoot render contract. */}
+      {/* P5 UiRoot render contract complete (design §9) — all 8 sibling
+          regions mounted: menu/lobby/hud screens + draft/touch game overlays
+          + onboarding/juice/pause/chat always-mounted overlays. */}
     </div>
   );
 }

@@ -2896,7 +2896,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "ui",
-      "status": "todo",
+      "status": "review",
       "priority": "P2",
       "labels": [
         "sub-issue",
