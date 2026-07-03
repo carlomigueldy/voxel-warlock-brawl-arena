@@ -5,6 +5,7 @@
 // to add their own branch, not touch this file's structure.
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { RENDERER, UI_MODE } from "./config/flags";
+import { CAPTURE } from "./three/parity/determinism";
 import { getAudio, getUI } from "./services/registry";
 import { useSessionStore } from "./store/useSessionStore";
 import { useSettingsStore } from "./store/useSettingsStore";
@@ -34,6 +35,12 @@ const GameCanvas = lazy(() => import("./three/GameCanvas").then((m) => ({ defaul
 function useAppBootstrap(): void {
   const ranRef = useRef(false);
   useEffect(() => {
+    // ?capture=1: the parity harness drives the renderer directly via
+    // window.__parity (test/parity/replayDriver.ts, wired from main.tsx) —
+    // skip the loader→user-gesture→auth/region→menu flow entirely so a
+    // capture page load never blocks on a network call or a synthetic
+    // Playwright click (design §7 / issue #138).
+    if (CAPTURE) return;
     if (ranRef.current) return;
     ranRef.current = true;
 
@@ -127,7 +134,10 @@ export default function App() {
   useAppBootstrap();
   return (
     <>
-      <GameSession />
+      {/* ?capture=1: no net/sim during capture — the parity harness pushes
+          fixture snapshots straight into snapshotRef (design §7), so the
+          host/client loop this mounts must not also run. */}
+      {!CAPTURE && <GameSession />}
       {RENDERER === "r3f" ? (
         <Suspense fallback={null}>
           <GameCanvas />
@@ -135,7 +145,9 @@ export default function App() {
       ) : (
         <LegacyRendererBridge />
       )}
-      {UI_MODE === "react" ? null /* P5: <UiRoot/> */ : <LegacyUiBridge />}
+      {/* ?capture=1: the HUD/menu/onboarding DOM is force-hidden anyway
+          (determinism.ts's hideChrome) and has nothing to wire — skip it. */}
+      {!CAPTURE && (UI_MODE === "react" ? null /* P5: <UiRoot/> */ : <LegacyUiBridge />)}
     </>
   );
 }
