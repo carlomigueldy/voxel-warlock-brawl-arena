@@ -22,6 +22,7 @@ import { useSessionStore } from "../store/useSessionStore";
 import { MenuRoot } from "./menu/MenuRoot";
 import { LobbyRoot } from "./lobby/LobbyRoot";
 import { Hud } from "./hud/Hud";
+import { TouchControls } from "./touch/TouchControls";
 import styles from "./UiRoot.module.css";
 
 // index.html's static legacy `#menu` markup ships `class="overlay
@@ -66,7 +67,8 @@ export function UiRoot() {
         </div>
       )}
       {screen === "game" && <Hud />}
-      {/* game overlays (#164/#167), always-mounted overlays (#165/#166),
+      {screen === "game" && <TouchControls />}
+      {/* game overlays (#164), always-mounted overlays (#165/#166),
           juice decoration (#168) — each sibling adds its own region here
           per design §9's UiRoot render contract. */}
     </div>

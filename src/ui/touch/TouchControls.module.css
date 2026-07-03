@@ -1,0 +1,141 @@
+/* Port of src/style.css's "Touch" block (L1039-1054) — design §9
+   #167 p5-touch. `.touchControls`/`.joystick`/`.joystickKnob`/`.fireBtn`
+   mirror `#touch-controls`/`#joystick`/`#joystick-knob`/`#fire-btn` almost
+   value-for-value (var(--token) only, per design §4/§7). `.abilityStrip`
+   and friends are this PR's own addition (TouchControls.tsx's header
+   comment explains why) — new chrome, not a legacy port, so it borrows the
+   ability-bar's own token vocabulary (--line-strong bezel, --rune ready
+   glow) rather than inventing a new palette. */
+.touchControls {
+  position: fixed;
+  inset: 0;
+  z-index: 6; /* matches Hud.module.css's .abilityBar/.itemBar (6) */
+  pointer-events: none;
+}
+
+.joystick {
+  position: absolute;
+  bottom: 40px;
+  left: 40px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(108, 76, 255, 0.18); /* --arcane tint, same literal legacy uses (no alpha-token exists) */
+  border: 2px solid var(--line-strong);
+  pointer-events: auto;
+  touch-action: none; /* suppress browser pan/zoom so drag never scrolls the page */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.joystickKnob {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(108, 76, 255, 0.6); /* --arcane tint, matches legacy's #joystick-knob */
+  pointer-events: none; /* drag target is the outer .joystick, never the knob itself */
+}
+
+.fireBtn {
+  position: absolute;
+  bottom: 50px;
+  right: 40px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: var(--ember);
+  pointer-events: auto;
+  touch-action: manipulation;
+  font-size: 18px;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 8px 24px -8px rgba(255, 90, 60, 0.8), var(--bezel);
+}
+.fireBtn:active {
+  filter: brightness(0.92);
+}
+
+.abilityStrip {
+  position: absolute;
+  right: 20px;
+  bottom: 165px;
+  display: flex;
+  flex-wrap: wrap-reverse;
+  gap: 8px;
+  justify-content: flex-end;
+  max-width: 45vw;
+  pointer-events: auto;
+}
+
+.abilityBtn {
+  width: 48px;
+  height: 48px;
+  min-width: 44px; /* design §7 floor: touch targets >=44px */
+  min-height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(30, 25, 58, 0.92), rgba(15, 12, 34, 0.92));
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--bezel);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.abilityBtn:active {
+  transform: scale(0.94);
+}
+.abilityBtnActive {
+  border-color: var(--rune);
+  box-shadow: var(--bezel), 0 0 10px rgba(124, 255, 90, 0.4);
+}
+.abilityIcon {
+  width: 24px;
+  height: 24px;
+  display: block;
+  color: var(--text);
+}
+.abilityIcon svg {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 400px) {
+  .joystick {
+    width: 96px;
+    height: 96px;
+    left: 20px;
+    bottom: 24px;
+  }
+  .joystickKnob {
+    width: 42px;
+    height: 42px;
+  }
+  .fireBtn {
+    width: 80px;
+    height: 80px;
+    right: 20px;
+    bottom: 30px;
+    font-size: 15px;
+  }
+  .abilityStrip {
+    right: 12px;
+    bottom: 120px;
+    max-width: 55vw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fireBtn,
+  .abilityBtn {
+    transition: none;
+  }
+  .abilityBtn:active {
+    transform: none;
+  }
+}
