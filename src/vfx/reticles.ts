@@ -41,6 +41,27 @@ import * as THREE from "three";
 import { CFG, SPELLS } from "../config.js";
 import { secondaryColor } from "./duotone.js";
 
+// SPELLS entries carry per-kind tunables (range, radius, cone, spread,
+// shockRadius, ...) via SpellDef's index signature (typed `unknown` — see
+// the doc comment above SpellDef in types.ts). Reticle builders are a
+// consumer of those dynamic tunables, so they read them through this
+// widened alias rather than sprinkling `as` casts on every access — same
+// convention as spells.ts's SpellTunables.
+type SpellTunables = Record<string, any>;
+
+// The single state shape every archetype's userData.update() accepts — see
+// the file-header doc comment above. Every field is optional; builders fall
+// back sensibly when absent (matching the VFX_REGISTRY ctx contract).
+export interface ReticleUpdateState {
+  point?: { x: number; z: number } | null;
+  casterX?: number;
+  casterZ?: number;
+  casterAim?: number;
+  range?: number;
+  radius?: number;
+  target?: { x: number; z: number } | null;
+}
+
 const _RING_SEGMENTS = 16;
 
 // ---------------------------------------------------------------------------
@@ -59,8 +80,8 @@ const _beamGeo = new THREE.BoxGeometry(1, 1, 1); // tether connector, scaled to 
 // is baked into the vertices), so it is cached per rounded half-angle in a
 // small, bounded Map — the same "build once, key by a small discrete
 // parameter, never dispose" discipline as _boltGeoCache (keyed by bolt kind).
-const _wedgeGeoCache = new Map();
-function _wedgeGeo(halfAngle) {
+const _wedgeGeoCache = new Map<number, { prim: THREE.RingGeometry; sec: THREE.RingGeometry }>();
+function _wedgeGeo(halfAngle: number): { prim: THREE.RingGeometry; sec: THREE.RingGeometry } {
   const key = Math.round(Math.max(0.05, halfAngle) * 1000);
   let entry = _wedgeGeoCache.get(key);
   if (!entry) {
@@ -77,12 +98,12 @@ function _wedgeGeo(halfAngle) {
 // Clamp a world point (px,pz) to at most `range` units from (cx,cz). Mirrors
 // the clamp idiom used throughout src/spells.js (meteor/teleport/gravity/...):
 // dx,dz,d=hypot; rescale onto the range circle when d exceeds it.
-function _clampToRange(cx, cz, px, pz, range) {
-  if (!Number.isFinite(range) || range <= 0) return { x: px, z: pz };
+function _clampToRange(cx: number, cz: number, px: number, pz: number, range?: number): { x: number; z: number } {
+  if (!Number.isFinite(range) || (range as number) <= 0) return { x: px, z: pz };
   const dx = px - cx, dz = pz - cz;
   const d = Math.hypot(dx, dz);
-  if (d <= range || d < 1e-6) return { x: px, z: pz };
-  const k = range / d;
+  if (d <= (range as number) || d < 1e-6) return { x: px, z: pz };
+  const k = (range as number) / d;
   return { x: cx + dx * k, z: cz + dz * k };
 }
 
@@ -90,12 +111,30 @@ function _clampToRange(cx, cz, px, pz, range) {
 // Shared build helpers
 // ---------------------------------------------------------------------------
 
+interface DuoGroundShapeOpts {
+  scale?: number;
+  opacity?: number;
+  y?: number;
+}
+
+interface DuoGroundShape {
+  primary: THREE.Mesh;
+  secondary: THREE.Mesh;
+  recolor: (c: number) => void;
+  dispose: () => void;
+}
+
 // A duotone ground-plane shape (primary opaque + secondary translucent,
 // both unlit) from a shared pair of unit geometries, scaled to `opts.scale`.
 // `opts.scale` maps 1:1 to world radius since the unit geometries have
 // radius 1. Returns { primary, secondary, recolor, dispose } — callers wrap
 // these into a Group and forward recolor/dispose.
-function _buildDuoGroundShape(primGeo, secGeo, color, opts = {}) {
+function _buildDuoGroundShape(
+  primGeo: THREE.BufferGeometry,
+  secGeo: THREE.BufferGeometry,
+  color: number,
+  opts: DuoGroundShapeOpts = {},
+): DuoGroundShape {
   const scale = opts.scale ?? 1;
   const opacity = opts.opacity ?? 0.7;
   const y = opts.y ?? 0.05;
@@ -118,20 +157,25 @@ function _buildDuoGroundShape(primGeo, secGeo, color, opts = {}) {
 
   return {
     primary, secondary,
-    recolor: (c) => { primMat.color.setHex(c); secMat.color.setHex(secondaryColor(c)); },
+    recolor: (c: number) => { primMat.color.setHex(c); secMat.color.setHex(secondaryColor(c)); },
     dispose: () => { primMat.dispose(); secMat.dispose(); },
   };
+}
+
+interface BracketOpts {
+  size?: number;
+  y?: number;
 }
 
 // Four faceted corner-bracket shards around a bright core — the static
 // (non-collapsing) 3D echo of aoe.js's _reticleCollapse, reused here as a
 // persistent "this is the locked target" marker for NEAREST_TARGET_LOCK and
 // TETHER_LOCK.
-function _buildBracket(color, opts = {}) {
+function _buildBracket(color: number, opts: BracketOpts = {}): THREE.Group {
   const size = opts.size ?? 0.8;
   const y = opts.y ?? 1.1;
   const g = new THREE.Group();
-  const corners = [];
+  const corners: THREE.Mesh[] = [];
   const secColor = secondaryColor(color);
   for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
     const mat = new THREE.MeshLambertMaterial({
@@ -154,13 +198,13 @@ function _buildBracket(color, opts = {}) {
   core.position.y = y;
   g.add(core);
 
-  g.userData.recolor = (c) => {
+  g.userData.recolor = (c: number) => {
     const sc = secondaryColor(c);
-    for (const m of corners) { m.material.color.setHex(sc); m.material.emissive.setHex(sc); }
+    for (const m of corners) { (m.material as THREE.MeshLambertMaterial).color.setHex(sc); (m.material as THREE.MeshLambertMaterial).emissive.setHex(sc); }
     coreMat.color.setHex(c); coreMat.emissive.setHex(c);
   };
   g.userData.dispose = () => {
-    for (const m of corners) m.material.dispose();
+    for (const m of corners) (m.material as THREE.Material).dispose();
     coreMat.dispose();
   };
   return g;
@@ -173,7 +217,7 @@ function _buildBracket(color, opts = {}) {
 // DIRECTIONAL_PROJECTILE — a faceted arrow hovering just in front of the
 // caster, pointing toward the cursor. No range clamp: skillshots travel
 // until they hit something or expire.
-function buildDirectional(color) {
+function buildDirectional(color: number): THREE.Group {
   const mat = new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 1, flatShading: true });
   const primary = new THREE.Mesh(_arrowGeo, mat);
   primary.castShadow = false;
@@ -183,12 +227,12 @@ function buildDirectional(color) {
 
   const g = new THREE.Group();
   g.add(secondary, primary);
-  g.userData.recolor = (c) => {
+  g.userData.recolor = (c: number) => {
     mat.color.setHex(c); mat.emissive.setHex(c);
     secMat.color.setHex(secondaryColor(c));
   };
   g.userData.dispose = () => { mat.dispose(); secMat.dispose(); };
-  g.userData.update = (state = {}) => {
+  g.userData.update = (state: ReticleUpdateState = {}) => {
     const cx = state.casterX ?? 0, cz = state.casterZ ?? 0;
     const px = state.point?.x ?? cx + 1, pz = state.point?.z ?? cz;
     const angle = Math.atan2(pz - cz, px - cx);
@@ -201,7 +245,7 @@ function buildDirectional(color) {
 // CONE_SPRAY — a forward wedge sized to the spell's cast range and half-angle
 // (fireSpray's `spread`, push's `cone`), oriented on the caster's facing
 // (matches how push/fireSpray actually resolve their hit-cone in spells.js).
-function buildConeSpray(color, params = {}) {
+function buildConeSpray(color: number, params: SpellTunables = {}): THREE.Group {
   const halfAngle = params.cone ?? params.spread ?? 0.6;
   const range = Math.max(1, params.range ?? 12);
   const { prim, sec } = _wedgeGeo(halfAngle);
@@ -210,11 +254,11 @@ function buildConeSpray(color, params = {}) {
   g.add(shape.secondary, shape.primary);
   g.userData.recolor = shape.recolor;
   g.userData.dispose = shape.dispose;
-  g.userData.update = (state = {}) => {
+  g.userData.update = (state: ReticleUpdateState = {}) => {
     const cx = state.casterX ?? 0, cz = state.casterZ ?? 0;
     const px = state.point?.x, pz = state.point?.z;
     const angle = Number.isFinite(state.casterAim)
-      ? state.casterAim
+      ? (state.casterAim as number)
       : Math.atan2((pz ?? cz) - cz, (px ?? cx + 1) - cx);
     g.position.set(cx, 0, cz);
     g.rotation.y = -angle;
@@ -225,28 +269,28 @@ function buildConeSpray(color, params = {}) {
 // GROUND_AOE_AT_POINT — blast-radius ring at the cursor, clamped to the
 // spell's cast range from the caster; a faint boundary ring around the
 // caster previews that clamp radius.
-function buildGroundAoe(color, params = {}) {
+function buildGroundAoe(color: number, params: SpellTunables = {}): THREE.Group {
   const radius = Math.max(0.5, params.radius ?? 4);
-  const range = params.range;
+  const range: number | undefined = params.range;
   const shape = _buildDuoGroundShape(_ringGeo, _ringSecGeo, color, { opacity: 0.65, scale: radius });
   const g = new THREE.Group();
   g.add(shape.secondary, shape.primary);
 
-  let rangeRing = null, rangeMat = null;
-  if (Number.isFinite(range) && range > 0) {
+  let rangeRing: THREE.Mesh | null = null, rangeMat: THREE.MeshBasicMaterial | null = null;
+  if (Number.isFinite(range) && (range as number) > 0) {
     rangeMat = new THREE.MeshBasicMaterial({
       color: secondaryColor(color), transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false,
     });
     rangeRing = new THREE.Mesh(_ringGeo, rangeMat);
     rangeRing.rotation.x = -Math.PI / 2;
-    rangeRing.scale.set(range, range, 1);
+    rangeRing.scale.set(range as number, range as number, 1);
     rangeRing.position.y = 0.03;
     g.add(rangeRing);
   }
 
-  g.userData.recolor = (c) => { shape.recolor(c); if (rangeMat) rangeMat.color.setHex(secondaryColor(c)); };
+  g.userData.recolor = (c: number) => { shape.recolor(c); if (rangeMat) rangeMat.color.setHex(secondaryColor(c)); };
   g.userData.dispose = () => { shape.dispose(); if (rangeMat) rangeMat.dispose(); };
-  g.userData.update = (state = {}) => {
+  g.userData.update = (state: ReticleUpdateState = {}) => {
     const cx = state.casterX ?? 0, cz = state.casterZ ?? 0;
     const px = state.point?.x ?? cx, pz = state.point?.z ?? cz;
     const clamped = _clampToRange(cx, cz, px, pz, range);
@@ -260,7 +304,7 @@ function buildGroundAoe(color, params = {}) {
 
 // BLINK_MOVE_TO_POINT — a small hovering marker + landing ring at the
 // (range-clamped) cursor point.
-function buildBlink(color, params = {}) {
+function buildBlink(color: number, params: SpellTunables = {}): THREE.Group {
   const range = params.range ?? 10;
   const markerMat = new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 1.1, flatShading: true });
   const marker = new THREE.Mesh(_shardGeo, markerMat);
@@ -271,9 +315,9 @@ function buildBlink(color, params = {}) {
 
   const g = new THREE.Group();
   g.add(shape.secondary, shape.primary, marker);
-  g.userData.recolor = (c) => { markerMat.color.setHex(c); markerMat.emissive.setHex(c); shape.recolor(c); };
+  g.userData.recolor = (c: number) => { markerMat.color.setHex(c); markerMat.emissive.setHex(c); shape.recolor(c); };
   g.userData.dispose = () => { markerMat.dispose(); shape.dispose(); };
-  g.userData.update = (state = {}) => {
+  g.userData.update = (state: ReticleUpdateState = {}) => {
     const cx = state.casterX ?? 0, cz = state.casterZ ?? 0;
     const px = state.point?.x ?? cx, pz = state.point?.z ?? cz;
     const clamped = _clampToRange(cx, cz, px, pz, range);
@@ -285,12 +329,12 @@ function buildBlink(color, params = {}) {
 // NEAREST_TARGET_LOCK — a corner bracket on the nearest valid enemy in range
 // (renderer-supplied `target`), falling back to the range-clamped cursor
 // point when no target is currently in range.
-function buildTargetLock(color, params = {}) {
+function buildTargetLock(color: number, params: SpellTunables = {}): THREE.Group {
   const range = params.range ?? 14;
   const g = _buildBracket(color, { size: 0.7 });
-  g.userData.update = (state = {}) => {
+  g.userData.update = (state: ReticleUpdateState = {}) => {
     const cx = state.casterX ?? 0, cz = state.casterZ ?? 0;
-    let pos;
+    let pos: { x: number; z: number };
     if (state.target) pos = { x: state.target.x, z: state.target.z };
     else pos = _clampToRange(cx, cz, state.point?.x ?? cx, state.point?.z ?? cz, range);
     g.position.set(pos.x, 0, pos.z);
@@ -301,7 +345,7 @@ function buildTargetLock(color, params = {}) {
 // TETHER_LOCK — corner bracket on the locked target/point plus a persistent
 // connecting beam back to the caster, echoing drain/link/pull/drag's
 // caster<->target shape.
-function buildTether(color, params = {}) {
+function buildTether(color: number, params: SpellTunables = {}): THREE.Group {
   const range = params.range ?? 14;
   const bracket = _buildBracket(color, { size: 0.55 });
   const beamMat = new THREE.MeshBasicMaterial({ color: secondaryColor(color), transparent: true, opacity: 0.5, depthWrite: false });
@@ -310,11 +354,11 @@ function buildTether(color, params = {}) {
 
   const g = new THREE.Group();
   g.add(beam, bracket);
-  g.userData.recolor = (c) => { bracket.userData.recolor(c); beamMat.color.setHex(secondaryColor(c)); };
+  g.userData.recolor = (c: number) => { bracket.userData.recolor(c); beamMat.color.setHex(secondaryColor(c)); };
   g.userData.dispose = () => { bracket.userData.dispose(); beamMat.dispose(); };
-  g.userData.update = (state = {}) => {
+  g.userData.update = (state: ReticleUpdateState = {}) => {
     const cx = state.casterX ?? 0, cz = state.casterZ ?? 0;
-    let pos;
+    let pos: { x: number; z: number };
     if (state.target) pos = { x: state.target.x, z: state.target.z };
     else pos = _clampToRange(cx, cz, state.point?.x ?? cx, state.point?.z ?? cz, range);
     bracket.position.set(pos.x, 0, pos.z);
@@ -332,43 +376,43 @@ function buildTether(color, params = {}) {
 // currently reachable via the hold-to-aim flow (vacuum is instant-cast like
 // every SELF_* spell — see isSelfAim()) but kept correct/usable for any
 // future self-centered channel spell.
-function buildSelfAoe(color, params = {}) {
+function buildSelfAoe(color: number, params: SpellTunables = {}): THREE.Group {
   const radius = Math.max(0.5, params.radius ?? 5);
   const shape = _buildDuoGroundShape(_ringGeo, _ringSecGeo, color, { opacity: 0.5, scale: radius });
   const g = new THREE.Group();
   g.add(shape.secondary, shape.primary);
   g.userData.recolor = shape.recolor;
   g.userData.dispose = shape.dispose;
-  g.userData.update = (state = {}) => { g.position.set(state.casterX ?? 0, 0, state.casterZ ?? 0); };
+  g.userData.update = (state: ReticleUpdateState = {}) => { g.position.set(state.casterX ?? 0, 0, state.casterZ ?? 0); };
   return g;
 }
 
 // SELF_BUFF — instant self-casts never enter the aim flow (isSelfAim() below
 // routes them straight to queueCast on keydown), so this reticle is built
 // only defensively and starts hidden.
-function buildSelfBuff(color) {
+function buildSelfBuff(color: number): THREE.Group {
   const shape = _buildDuoGroundShape(_ringGeo, _ringSecGeo, color, { opacity: 0.3, scale: 1.1 });
   const g = new THREE.Group();
   g.add(shape.secondary, shape.primary);
   g.visible = false;
   g.userData.recolor = shape.recolor;
   g.userData.dispose = shape.dispose;
-  g.userData.update = (state = {}) => { g.position.set(state.casterX ?? 0, 0, state.casterZ ?? 0); };
+  g.userData.update = (state: ReticleUpdateState = {}) => { g.position.set(state.casterX ?? 0, 0, state.casterZ ?? 0); };
   return g;
 }
 
 // DASH_IMPACT — thrust's composite reticle: the DIRECTIONAL_PROJECTILE arrow
 // plus a small impact ring at the estimated dash-landing point.
-function buildDashImpact(color, params = {}) {
+function buildDashImpact(color: number, params: SpellTunables = {}): THREE.Group {
   const arrow = buildDirectional(color);
   const landDist = Math.max(2, (params.shockRadius ?? 3) * 1.4 + 1.5);
   const shape = _buildDuoGroundShape(_ringGeo, _ringSecGeo, color, { opacity: 0.5, scale: params.shockRadius ?? 3 });
 
   const g = new THREE.Group();
   g.add(arrow, shape.secondary, shape.primary);
-  g.userData.recolor = (c) => { arrow.userData.recolor(c); shape.recolor(c); };
+  g.userData.recolor = (c: number) => { arrow.userData.recolor(c); shape.recolor(c); };
   g.userData.dispose = () => { arrow.userData.dispose(); shape.dispose(); };
-  g.userData.update = (state = {}) => {
+  g.userData.update = (state: ReticleUpdateState = {}) => {
     arrow.userData.update(state);
     const cx = state.casterX ?? 0, cz = state.casterZ ?? 0;
     const px = state.point?.x ?? cx + 1, pz = state.point?.z ?? cz;
@@ -382,13 +426,13 @@ function buildDashImpact(color, params = {}) {
 // Generic fallback — a faceted duo ring following (and range-clamped to) the
 // cursor, for any spell missing (or with an unrecognized) `aim`. Mirrors
 // duotone.js's getVfx() generic-fallback contract.
-function buildGenericReticle(color) {
+function buildGenericReticle(color: number): THREE.Group {
   const shape = _buildDuoGroundShape(_ringGeo, _ringSecGeo, color, { opacity: 0.5, scale: 1.2 });
   const g = new THREE.Group();
   g.add(shape.secondary, shape.primary);
   g.userData.recolor = shape.recolor;
   g.userData.dispose = shape.dispose;
-  g.userData.update = (state = {}) => {
+  g.userData.update = (state: ReticleUpdateState = {}) => {
     const cx = state.casterX ?? 0, cz = state.casterZ ?? 0;
     const clamped = _clampToRange(cx, cz, state.point?.x ?? cx, state.point?.z ?? cz, state.range);
     g.position.set(clamped.x, 0, clamped.z);
@@ -396,7 +440,7 @@ function buildGenericReticle(color) {
   return g;
 }
 
-export const RETICLE_ARCHETYPES = {
+export const RETICLE_ARCHETYPES: Record<string, (color: number, params?: SpellTunables) => THREE.Group> = {
   DIRECTIONAL_PROJECTILE: (color) => buildDirectional(color),
   CONE_SPRAY: (color, params) => buildConeSpray(color, params),
   GROUND_AOE_AT_POINT: (color, params) => buildGroundAoe(color, params),
@@ -408,18 +452,24 @@ export const RETICLE_ARCHETYPES = {
   DASH_IMPACT: (color, params) => buildDashImpact(color, params),
 };
 
+export interface ReticleEntry {
+  archetype: string;
+  params: SpellTunables;
+  build: (color?: number) => THREE.Group;
+}
+
 // Resolve a spell id to its reticle archetype + a build(color) factory.
 // Falls back to a generic faceted ring for any spell with a missing or
 // unrecognized `aim` (matches src/vfx/duotone.js's getVfx() fallback
 // contract so callers never need a null check).
-export function getReticle(spellId) {
+export function getReticle(spellId: string): ReticleEntry {
   const spell = SPELLS[spellId];
   const archetype = spell?.aim;
   const builder = archetype && RETICLE_ARCHETYPES[archetype];
   return {
-    archetype: builder ? archetype : "GENERIC",
+    archetype: builder ? (archetype as string) : "GENERIC",
     params: spell || {},
-    build: (color = spell?.color ?? 0x8888ff) =>
+    build: (color: number = (spell?.color as number | undefined) ?? 0x8888ff) =>
       builder ? builder(color, spell || {}) : buildGenericReticle(color),
   };
 }
@@ -427,7 +477,7 @@ export function getReticle(spellId) {
 // SELF_BUFF/SELF_AOE spells cast instantly on keydown (no hold-to-aim) —
 // src/input.js checks this before deciding whether to start an aim hold or
 // queue the cast immediately.
-export function isSelfAim(spellId) {
+export function isSelfAim(spellId: string): boolean {
   const a = SPELLS[spellId]?.aim;
   return a === "SELF_BUFF" || a === "SELF_AOE";
 }
