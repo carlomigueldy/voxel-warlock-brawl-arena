@@ -1,6 +1,9 @@
-// Source guards for the networking layer: net.js, main.js, plus the 3
-// behavioral FakePeer Client/Host tests. Split from test/source.test.mjs
-// (#103) by which source file each guard reads.
+// Source guards for the networking layer: net.ts, plus the 3 behavioral
+// FakePeer Client/Host tests. Split from test/source.test.mjs (#103) by
+// which source file each guard reads; trimmed again in P6 (#179) when the
+// main.js-reading assertions below died with main.js itself — the 2 net.ts
+// assertions and the 3 pure-behavioral tests have no main.js dependency and
+// still hold unchanged.
 import { test } from "vitest";
 import assert from "node:assert";
 import fs from "node:fs";
@@ -8,103 +11,16 @@ import { Client, Host } from "../src/net.js";
 
 console.log("Source guards (net) checks:");
 
-const main = fs.readFileSync("src/main.js", "utf8");
-
-// legacy text guard — delete in P6
-test("host start is gated by Simulation.startMatch result", () => {
-  assert.match(main, /if \(!sim\.startMatch\(\)\)/);
-});
-
-// legacy text guard — delete in P6
-test("host lobby start button uses Simulation.canStartMatch", () => {
-  assert.match(main, /sim\.canStartMatch\(\)/);
-});
-
-// legacy text guard — delete in P6
-test("late clients switch to game view from active state snapshots", () => {
-  assert.match(main, /snap\.phase !== PHASE\.LOBBY[\s\S]*ui\.showGame\(\)/);
-});
-
-// legacy text guard — delete in P6
-test("clients ignore stale state snapshots", () => {
-  assert.match(main, /snap\.t <= latestSnapshot\.t/);
-});
-
-// legacy text guard — delete in P6
 test("network join names are sanitized as strings before slicing", () => {
   const net = fs.readFileSync("src/net.ts", "utf8");
   assert.match(net, /sanitizeName/);
   assert.match(net, /String\(name \?\? "warlock"\)/);
 });
 
-// legacy text guard — delete in P6
-test("disconnect handling sends the host back to lobby when a match cannot continue", () => {
-  assert.match(main, /if \(sim\.phase === PHASE\.LOBBY\)/);
-  assert.match(main, /inGame = false/);
-});
-
-// legacy text guard — delete in P6
-test("host menu no longer exposes an all-abilities toggle (strict slots only, main half)", () => {
-  assert.doesNotMatch(main, /allAbilitiesAtStart/);
-});
-
-// legacy text guard — delete in P6
 test("selected character is networked from client to host on join", () => {
   const net = fs.readFileSync("src/net.ts", "utf8");
   assert.match(net, /type: MSG\.JOIN[\s\S]*name: this\.name[\s\S]*character: this\.character/);
   assert.match(net, /conn\._character/);
-});
-
-// legacy text guard — delete in P6
-test("host carries each player's character in lobby meta", () => {
-  assert.match(main, /character: getCharacter\(character\)\.id/);
-  assert.match(main, /character: m\.character \|\| CFG\.DEFAULT_CHARACTER/);
-});
-
-// legacy text guard — delete in P6
-test("host lobby exposes bot count and difficulty controls (main half)", () => {
-  assert.match(main, /sim\.setBotRoster/);
-});
-
-// legacy text guard — delete in P6
-test("host menu exposes arena world and land size controls (main half)", () => {
-  assert.match(main, /arenaWorld: options\.arenaWorld/);
-  assert.match(main, /landSize: options\.landSize/);
-});
-
-// legacy text guard — delete in P6
-test("syncLocalSpellSlots (or setSpellSlots) is called inside both host and client rAF loops in main.js", () => {
-  // The host loop already had syncLocalSpellSlots; the client loop got it in Step 8 (A1 fix).
-  // We search for the function name appearing at least twice in the file so either loop can
-  // use it (the function itself counts as one occurrence; each call-site is another).
-  const matches = main.match(/syncLocalSpellSlots/g) || [];
-  assert.ok(matches.length >= 3,
-    `syncLocalSpellSlots must appear at least 3 times in main.js (definition + host call + client call); found ${matches.length}`);
-  // Additionally confirm the client loop block specifically contains it.
-  // The client loop is identified by the clientLoop function definition.
-  const clientLoopBlock = main.match(/function clientLoop[\s\S]*?requestAnimationFrame\(clientLoop\)/)?.[0] || "";
-  assert.match(clientLoopBlock, /syncLocalSpellSlots/,
-    "syncLocalSpellSlots must appear inside the clientLoop function body");
-});
-
-// legacy text guard — delete in P6
-test("hostLoop survives a throwing frame (try/catch wraps body, rAF stays outside)", () => {
-  assert.match(main, /function hostLoop[\s\S]*?try \{[\s\S]*?catch[\s\S]*?requestAnimationFrame\(hostLoop\)/);
-});
-
-// legacy text guard — delete in P6
-test("clientLoop survives a throwing frame (try/catch wraps body, rAF stays outside)", () => {
-  assert.match(main, /function clientLoop[\s\S]*?try \{[\s\S]*?catch[\s\S]*?requestAnimationFrame\(clientLoop\)/);
-});
-
-// legacy text guard — delete in P6
-test("quick match flow no longer imports hosted open_rooms helpers", () => {
-  assert.doesNotMatch(main, /quickMatch as qmatch/);
-  assert.doesNotMatch(main, /publishRoom/);
-  assert.doesNotMatch(main, /heartbeat/);
-  assert.doesNotMatch(main, /listRooms/);
-  assert.doesNotMatch(main, /subscribeRooms/);
-  assert.doesNotMatch(main, /closeRoom/);
 });
 
 test("client join payload includes matchmaking metadata when supplied", async () => {
@@ -265,10 +181,4 @@ test("client terminal join errors are not overwritten by the follow-up close eve
   } finally {
     globalThis.Peer = originalPeer;
   }
-});
-
-// legacy text guard — delete in P6
-test("matchmaking host errors cancel the active queue and return to queue status", () => {
-  assert.match(main, /onHostError:/);
-  assert.match(main, /cancelRegionQueue\(\{ clearStatus: false \}\)/);
 });
