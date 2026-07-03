@@ -16,7 +16,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useRosterStore } from "../../store/useRosterStore";
 import { snapshotRef } from "../../store/snapshotRef";
-import { buildItemDrop } from "../../voxel.js";
+import { buildItemDrop, type ItemRarity } from "../../voxel.js";
 
 // Canvas-sprite name label — legacy renderer.js's `_makeLabel(name, color, y)`
 // (renderer.js is golden/untouched, so this is a local, scoped copy rather
@@ -52,7 +52,7 @@ function makeItemLabel(name: string, color: number, y = 3.4): THREE.Sprite {
 function ItemEntity({ id }: { id: number }) {
   const group = useMemo(() => {
     const it = snapshotRef.current?.items.find((i) => i.id === id);
-    const g = buildItemDrop(it?.shape || "orb", it?.c || 0xffffff, { rarity: it?.rarity });
+    const g = buildItemDrop(it?.shape || "orb", it?.c || 0xffffff, { rarity: it?.rarity as ItemRarity | undefined });
     const label = makeItemLabel(it?.name || "Item", it?.c || 0xffffff, 1.65);
     g.add(label);
     g.userData.label = label;
