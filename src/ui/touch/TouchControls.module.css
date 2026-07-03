@@ -1,0 +1,99 @@
+/* Port of src/style.css's "Touch" block (L1039-1054) — design §9
+   #167 p5-touch. `.touchControls`/`.joystick`/`.joystickKnob`/`.fireBtn`
+   mirror `#touch-controls`/`#joystick`/`#joystick-knob`/`#fire-btn` almost
+   value-for-value (var(--token) only, per design §4/§7). Ability selection
+   used to have its own strip here; #178's review found it overlapping the
+   HUD's own ability bar on narrow phones, so that chrome moved to
+   AbilityBar.tsx/SpellSlot.module.css instead (see TouchControls.tsx's
+   header comment) — this file is back to a near-literal legacy port. */
+.touchControls {
+  position: fixed;
+  inset: 0;
+  z-index: 6; /* matches Hud.module.css's .abilityBar/.itemBar (6) */
+  pointer-events: none;
+}
+
+.joystick {
+  position: absolute;
+  bottom: 40px;
+  left: 40px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(108, 76, 255, 0.18); /* --arcane tint, same literal legacy uses (no alpha-token exists) */
+  border: 2px solid var(--line-strong);
+  pointer-events: auto;
+  touch-action: none; /* suppress browser pan/zoom so drag never scrolls the page */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.joystickKnob {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(108, 76, 255, 0.6); /* --arcane tint, matches legacy's #joystick-knob */
+  pointer-events: none; /* drag target is the outer .joystick, never the knob itself */
+}
+
+.fireBtn {
+  position: absolute;
+  bottom: 50px;
+  right: 40px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: var(--ember);
+  pointer-events: auto;
+  touch-action: manipulation;
+  font-size: 18px;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 8px 24px -8px rgba(255, 90, 60, 0.8), var(--bezel);
+}
+.fireBtn:active {
+  filter: brightness(0.92);
+}
+
+/* 480px, not 400px: the HUD's ability bar (Hud.module.css .abilityBar,
+   width:max-content;max-width:96vw, container `bottom:120px`) wraps to 2
+   rows (~135px tall) and stretches near-full-width on any phone-class
+   viewport, not just the narrowest ones — measured (real
+   getBoundingClientRect, #178's fix) colliding with the full-size
+   joystick/fire-button at 428px (iPhone 14 Pro Max) even though 400px
+   already looked "narrow enough". `bottom` here is chosen so
+   `bottom + height` clears the ability bar's own `bottom:120px` with a
+   small margin (96+16=112, 80+30=110 -- both < 120), not bumped up
+   further "for safety" the way an earlier revision of this fix did (that
+   pushed `bottom+height` back OVER 120 and re-introduced the very overlap
+   it was trying to fix) -- re-verified collision-free at both 390px and
+   428px against the real rendered ability-bar rect. */
+@media (max-width: 480px) {
+  .joystick {
+    width: 96px;
+    height: 96px;
+    left: 20px;
+    bottom: 16px;
+  }
+  .joystickKnob {
+    width: 42px;
+    height: 42px;
+  }
+  .fireBtn {
+    width: 80px;
+    height: 80px;
+    right: 20px;
+    bottom: 30px;
+    font-size: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fireBtn {
+    transition: none;
+  }
+}

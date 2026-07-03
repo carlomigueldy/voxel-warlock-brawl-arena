@@ -1,0 +1,51 @@
+/* Port of src/style.css L369-395 (.btn/.btn-forge/.btn-ghost) — design §4
+   partition map: "controls (toggle/segmented/cards/buttons)" -> shared
+   primitives. var(--token) only, no hardcoded colors/sizes. */
+.btn {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px; /* design floor: touch targets >= 44px */
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 1px;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 26px;
+  color: #fff;
+  transition: transform 0.12s var(--ease-spring), filter 0.18s, box-shadow 0.2s;
+}
+.btn:active { transform: translateY(2px) scale(0.99); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+.forge {
+  background: linear-gradient(135deg, var(--ember), #ff8a3c);
+  box-shadow: 0 8px 24px -8px rgba(255, 90, 60, 0.8), var(--bezel);
+}
+.forge:hover { filter: brightness(1.08); box-shadow: 0 10px 30px -8px rgba(255, 90, 60, 0.9); }
+.spark {
+  position: absolute; top: 0; left: -60%; width: 50%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+}
+.forge:hover .spark { animation: spark 0.7s ease; }
+@keyframes spark { to { left: 130%; } }
+
+.ghost {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+}
+.ghost:hover { background: rgba(108, 76, 255, 0.18); box-shadow: var(--glow-arcane); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: none; }
+  .forge:hover .spark { animation: none; }
+}

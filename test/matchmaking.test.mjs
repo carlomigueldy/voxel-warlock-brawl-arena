@@ -1,29 +1,13 @@
+import { test, beforeEach, vi } from "vitest";
 import assert from "node:assert";
-import fs from "node:fs";
 import { CFG } from "../src/config.js";
 
-let passed = 0;
-const tests = [];
+const supa = { isEnabled: () => true, getClient: () => null };
+vi.mock("../src/supabase.js", () => ({ isEnabled: () => supa.isEnabled(), getClient: () => supa.getClient() }));
 
-function test(name, fn) {
-  tests.push({ name, fn });
-}
+import { regionScanOrder, flattenPresenceState, selectPair, electHiddenHost, RegionQueue } from "../src/matchmaking.js";
 
-async function loadMatchmakingModule({ cfg = CFG, isEnabled = () => true, getClient = () => null } = {}) {
-  const srcPath = new URL("../src/matchmaking.js", import.meta.url);
-  let source = fs.readFileSync(srcPath, "utf8");
-  source = source
-    .replace(/import\s+\{\s*CFG\s*\}\s+from\s+["']\.\/config\.js["'];?\n/, "const { CFG } = globalThis.__matchmakingTestDeps;\n")
-    .replace(/import\s+\{\s*isEnabled,\s*getClient\s*\}\s+from\s+["']\.\/supabase\.js["'];?\n/, "const { isEnabled, getClient } = globalThis.__matchmakingTestDeps;\n");
-
-  globalThis.__matchmakingTestDeps = { CFG: cfg, isEnabled, getClient };
-  const url = `data:text/javascript;base64,${Buffer.from(source).toString("base64")}#${Date.now()}-${Math.random()}`;
-  try {
-    return await import(url);
-  } finally {
-    delete globalThis.__matchmakingTestDeps;
-  }
-}
+beforeEach(() => { supa.isEnabled = () => true; supa.getClient = () => null; });
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -35,7 +19,6 @@ test("regionScanOrder keeps home region first and preserves remaining CFG order"
     setItem() { writes++; },
     getItem() { return null; },
   };
-  const { regionScanOrder } = await loadMatchmakingModule();
   const order = regionScanOrder("eu", CFG.REGIONS);
   assert.deepStrictEqual(order.map((region) => region.id), ["eu", "sea", "us-east", "us-west", "sa", "oce"]);
   assert.strictEqual(writes, 0, "region scan order must not persist localStorage");
@@ -43,7 +26,6 @@ test("regionScanOrder keeps home region first and preserves remaining CFG order"
 });
 
 test("flattenPresenceState flattens presence maps into payload arrays", async () => {
-  const { flattenPresenceState } = await loadMatchmakingModule();
   const flat = flattenPresenceState({
     alpha: [
       { queueId: "a-1", status: "searching" },
@@ -55,7 +37,6 @@ test("flattenPresenceState flattens presence maps into payload arrays", async ()
 });
 
 test("selectPair chooses the first two searching players by joinedAt then queueId", async () => {
-  const { selectPair } = await loadMatchmakingModule();
   const pair = selectPair([
     { queueId: "q-3", joinedAt: 30, status: "searching" },
     { queueId: "q-2", joinedAt: 10, status: "away" },
@@ -66,7 +47,6 @@ test("selectPair chooses the first two searching players by joinedAt then queueI
 });
 
 test("electHiddenHost returns the earliest joined player and tie-breaks on queueId", async () => {
-  const { electHiddenHost } = await loadMatchmakingModule();
   const host = electHiddenHost([
     { queueId: "queue-b", joinedAt: 12_000 },
     { queueId: "queue-a", joinedAt: 12_000 },
@@ -111,40 +91,31 @@ test("RegionQueue cancel cleans up presence tracking and removes its channel", a
     },
   };
 
-  const cfg = {
-    ...CFG,
-    MATCHMAKING: {
-      MATCH_SIZE: 2,
-      REGION_DWELL_MS: 5,
-      OFFER_TIMEOUT_MS: 10,
-      CHANNEL_PREFIX: "matchmaking",
-    },
-  };
+  const saved = CFG.MATCHMAKING;
+  CFG.MATCHMAKING = { MATCH_SIZE: 2, REGION_DWELL_MS: 5, OFFER_TIMEOUT_MS: 10, CHANNEL_PREFIX: "matchmaking" };
+  supa.getClient = () => client;
+  try {
+    const queue = new RegionQueue({
+      homeRegion: "sea",
+      player: { name: "Mage", character: "ember" },
+      regions: CFG.REGIONS,
+    });
 
-  const { RegionQueue } = await loadMatchmakingModule({
-    cfg,
-    isEnabled: () => true,
-    getClient: () => client,
-  });
+    queue.start();
+    await tick();
+    assert.strictEqual(topic, "matchmaking:sea");
 
-  const queue = new RegionQueue({
-    homeRegion: "sea",
-    player: { name: "Mage", character: "ember" },
-    regions: CFG.REGIONS,
-  });
+    channel._subscribe?.("SUBSCRIBED");
+    await tick();
 
-  queue.start();
-  await tick();
-  assert.strictEqual(topic, "matchmaking:sea");
+    assert.strictEqual(tracked, 1, "queue must track presence after subscription");
+    await queue.cancel();
 
-  channel._subscribe?.("SUBSCRIBED");
-  await tick();
-
-  assert.strictEqual(tracked, 1, "queue must track presence after subscription");
-  await queue.cancel();
-
-  assert.strictEqual(untracked, 1, "cancel must untrack presence");
-  assert.strictEqual(removed, 1, "cancel must remove the active channel");
+    assert.strictEqual(untracked, 1, "cancel must untrack presence");
+    assert.strictEqual(removed, 1, "cancel must remove the active channel");
+  } finally {
+    CFG.MATCHMAKING = saved;
+  }
 });
 
 test("RegionQueue creates broadcast channels with ack enabled before sending offers", async () => {
@@ -164,10 +135,7 @@ test("RegionQueue creates broadcast channels with ack enabled before sending off
     },
     removeChannel() {},
   };
-  const { RegionQueue } = await loadMatchmakingModule({
-    isEnabled: () => true,
-    getClient: () => client,
-  });
+  supa.getClient = () => client;
 
   const queue = new RegionQueue({
     homeRegion: "sea",
@@ -199,10 +167,8 @@ test("RegionQueue ignores malformed or stale offers for the active match", async
     channel() { return channel; },
     removeChannel() {},
   };
-  const { RegionQueue } = await loadMatchmakingModule({
-    isEnabled: () => true,
-    getClient: () => client,
-  });
+  supa.getClient = () => client;
+
   const queue = new RegionQueue({
     homeRegion: "sea",
     player: { name: "Mage", character: "ember" },
@@ -261,10 +227,8 @@ test("RegionQueue reports subscription and track failures instead of staying stu
     channel() { return channel; },
     removeChannel() { removed++; },
   };
-  const { RegionQueue } = await loadMatchmakingModule({
-    isEnabled: () => true,
-    getClient: () => client,
-  });
+  supa.getClient = () => client;
+
   const queue = new RegionQueue({
     homeRegion: "sea",
     player: { name: "Mage", character: "ember" },
@@ -314,10 +278,8 @@ test("RegionQueue sendOffer broadcasts the match offer payload and reflects the 
     channel() { return channel; },
     removeChannel() {},
   };
-  const { RegionQueue } = await loadMatchmakingModule({
-    isEnabled: () => true,
-    getClient: () => client,
-  });
+  supa.getClient = () => client;
+
   const queue = new RegionQueue({
     homeRegion: "sea",
     player: { name: "Mage", character: "ember" },
@@ -380,67 +342,46 @@ test("RegionQueue dwell timer advances scanIndex and re-enters the next region o
     removeChannel() {},
   };
 
-  const cfg = {
-    ...CFG,
-    MATCHMAKING: {
-      MATCH_SIZE: 2,
-      REGION_DWELL_MS: 5,
-      OFFER_TIMEOUT_MS: 10_000,
-      CHANNEL_PREFIX: "matchmaking",
-    },
-  };
-
-  const { RegionQueue } = await loadMatchmakingModule({
-    cfg,
-    isEnabled: () => true,
-    getClient: () => client,
-  });
-
-  const queue = new RegionQueue({
-    homeRegion: "sea",
-    player: { name: "Mage", character: "ember" },
-    regions: CFG.REGIONS,
-  });
-  queue.start();
-  await tick();
-  channel._subscribe?.("SUBSCRIBED");
-  await tick();
-
-  assert.strictEqual(queue.scanIndex, 0);
-  assert.strictEqual(queue.currentRegion?.id, "sea");
-
-  // With no activeMatch, the dwell timer should advance scanIndex and re-enter the next region.
-  await new Promise((resolve) => setTimeout(resolve, cfg.MATCHMAKING.REGION_DWELL_MS + 20));
-  channel._subscribe?.("SUBSCRIBED");
-  await tick();
-
-  assert.strictEqual(queue.scanIndex, 1 % queue.scanOrder.length, "scanIndex should advance modulo scanOrder length");
-  assert.strictEqual(queue.currentRegion?.id, queue.scanOrder[1].id, "queue should re-enter the next region in scan order");
-  assert.strictEqual(topics.at(-1), `matchmaking:${queue.scanOrder[1].id}`, "channel topic should reflect the new region");
-
-  const indexBeforeMatch = queue.scanIndex;
-  const regionBeforeMatch = queue.currentRegion?.id;
-  queue.activeMatch = { matchId: "sea:q-host:q-guest", region: regionBeforeMatch };
-
-  // With an activeMatch set, the dwell timer must not advance the region.
-  await new Promise((resolve) => setTimeout(resolve, cfg.MATCHMAKING.REGION_DWELL_MS + 20));
-  await tick();
-
-  assert.strictEqual(queue.scanIndex, indexBeforeMatch, "scanIndex must not advance while a match is active");
-  assert.strictEqual(queue.currentRegion?.id, regionBeforeMatch, "region must not change while a match is active");
-
-  queue.activeMatch = null;
-  await queue.cancel();
-});
-
-for (const { name, fn } of tests) {
+  const saved = CFG.MATCHMAKING;
+  CFG.MATCHMAKING = { MATCH_SIZE: 2, REGION_DWELL_MS: 5, OFFER_TIMEOUT_MS: 10_000, CHANNEL_PREFIX: "matchmaking" };
+  supa.getClient = () => client;
   try {
-    await fn();
-    console.log("  ok  -", name);
-    passed++;
-  } catch (e) {
-    console.error("  FAIL-", name, "\n", e.message);
-    process.exitCode = 1;
+    const queue = new RegionQueue({
+      homeRegion: "sea",
+      player: { name: "Mage", character: "ember" },
+      regions: CFG.REGIONS,
+    });
+    queue.start();
+    await tick();
+    channel._subscribe?.("SUBSCRIBED");
+    await tick();
+
+    assert.strictEqual(queue.scanIndex, 0);
+    assert.strictEqual(queue.currentRegion?.id, "sea");
+
+    // With no activeMatch, the dwell timer should advance scanIndex and re-enter the next region.
+    await new Promise((resolve) => setTimeout(resolve, CFG.MATCHMAKING.REGION_DWELL_MS + 20));
+    channel._subscribe?.("SUBSCRIBED");
+    await tick();
+
+    assert.strictEqual(queue.scanIndex, 1 % queue.scanOrder.length, "scanIndex should advance modulo scanOrder length");
+    assert.strictEqual(queue.currentRegion?.id, queue.scanOrder[1].id, "queue should re-enter the next region in scan order");
+    assert.strictEqual(topics.at(-1), `matchmaking:${queue.scanOrder[1].id}`, "channel topic should reflect the new region");
+
+    const indexBeforeMatch = queue.scanIndex;
+    const regionBeforeMatch = queue.currentRegion?.id;
+    queue.activeMatch = { matchId: "sea:q-host:q-guest", region: regionBeforeMatch };
+
+    // With an activeMatch set, the dwell timer must not advance the region.
+    await new Promise((resolve) => setTimeout(resolve, CFG.MATCHMAKING.REGION_DWELL_MS + 20));
+    await tick();
+
+    assert.strictEqual(queue.scanIndex, indexBeforeMatch, "scanIndex must not advance while a match is active");
+    assert.strictEqual(queue.currentRegion?.id, regionBeforeMatch, "region must not change while a match is active");
+
+    queue.activeMatch = null;
+    await queue.cancel();
+  } finally {
+    CFG.MATCHMAKING = saved;
   }
-}
-console.log(`\n${passed} matchmaking checks passed.`);
+});

@@ -154,6 +154,36 @@ npm test
 
 Covers simulation lifecycle, charge-scaled knockback, edge death, round resolution, malformed input handling, stale snapshot protection, and UI/network source checks.
 
+### Parity harness (R3F determinism gate)
+
+P4 replaced the imperative legacy `renderer.js` with a declarative
+`src/three/**` (React Three Fiber) scene; P6 deleted `renderer.js` itself and
+collapsed the app to the R3F-only path. The replay→screenshot harness that
+used to prove r3f hadn't regressed the golden legacy renderer now proves a
+narrower but still useful thing: same-page determinism — two independent
+captures of the same fixture+seed produce ≈identical pixels, an ongoing
+regression guard against an accidental `Math.random()`/timing leak into
+build/VFX code:
+
+```bash
+# Full gate: r3f-vs-r3f same-page determinism, across every
+# test/replay/fixtures/*.json fixture.
+npm run parity
+
+# Single-fixture PR evidence (a screenshot PNG under
+# test/parity/.output/<fixture>/) for whatever feature a specific PR adds:
+node scripts/parity.mjs --fixture spell-cast-seed42
+
+node scripts/parity.mjs --help
+```
+
+Not part of `npm test` (it drives a real headless Chromium via Playwright and
+a production `vite build` + `vite preview`, so it's slower and needs
+`playwright install chromium` once). See `src/three/parity/determinism.ts`
+(seeded RNG + fixed dt + `preserveDrawingBuffer` capture patches) and
+`test/parity/replayDriver.ts` (drives the exact same `test/replay/
+run-replay.mjs` fixtures the r3f scene consumes).
+
 ## Tech stack
 
 - HTML5 Canvas + WebGL

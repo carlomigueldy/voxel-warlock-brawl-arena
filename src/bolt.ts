@@ -1,0 +1,313 @@
+// Projectiles. Host-authoritative: only the host integrates motion and resolves
+// collisions; clients render snapshots. A single class covers every projectile
+// the handbook needs (fireball, boomerang, homing, bouncer, splitter, meteor
+// shards, fire-spray pellets) so the renderer can treat them uniformly.
+import { CFG } from "./config.js";
+import type { BoltSnap } from "./types";
+
+/** Options bag accepted by the Bolt constructor (per-projectile-kind tunables). */
+export interface BoltOptions {
+  proj?: string;
+  speed?: number;
+  kb?: number;
+  dmg?: number;
+  range?: number;
+  turn?: number;
+  bounces?: number;
+  splitDist?: number;
+  shards?: number;
+  life?: number;
+  slow?: number;
+  slowDur?: number;
+  burn?: number;
+  burnDur?: number;
+  curse?: number;
+  curseDur?: number;
+  groundY?: number;
+}
+
+/** Minimal player-like shape Bolt/step() reads/writes — Player itself isn't
+ * converted to TS yet (see src/player.js), so this is a narrow structural
+ * interface rather than an import of the real class. */
+export interface BoltPlayerLike {
+  id: string;
+  x: number;
+  z: number;
+  alive: boolean;
+  falling: boolean;
+  groundY?: number;
+  applyHit(vx: number, vz: number, kb: number): boolean;
+  applyDamage(dmg: number, byId: string): void;
+}
+
+/** Minimal arena-like shape Bolt/step() reads. */
+export interface BoltArenaLike {
+  radius: number;
+  isOnPlatform(x: number, z: number): boolean;
+  obstaclesBlockingRay?(x1: number, z1: number, y1: number, x2: number, z2: number, y2: number): boolean;
+}
+
+export interface BoltStepOptions {
+  movementOnly?: boolean;
+  skipMove?: boolean;
+}
+
+export interface BoltStepResult {
+  hit: string | null;
+  split?: boolean;
+  blocked?: boolean;
+  landed?: boolean;
+}
+
+let _id = 1;
+export function _resetBoltIds(): void { _id = 1; } // test helper
+
+export class Bolt {
+  id: number;
+  ownerId: string;
+  x: number;
+  z: number;
+  prevX: number;
+  prevZ: number;
+  y: number;
+  coverEnabled: boolean;
+  dir: number;
+  proj: string;
+  speed: number;
+  vx: number;
+  vz: number;
+  life: number;
+  color: number;
+  kb: number;
+  dmg: number;
+  dead: boolean;
+  slow: number;
+  slowDur: number;
+  burn: number;
+  burnDur: number;
+  curse: number;
+  curseDur: number;
+  range: number;
+  turn: number;
+  bounces: number;
+  splitDist: number;
+  shards: number;
+  distance: number;
+  returning: boolean;
+  _origX: number;
+  _origZ: number;
+  _splitDone: boolean;
+  _spawn: Bolt[];
+  _hitSet: Set<string>;
+  mesh: unknown;
+  /** Set by disable-spell projectiles (disable duration in seconds);
+   * snapshot() special-cases this kind and sim.js reads it on hit. */
+  disable?: number;
+
+  // opts: { proj, kb, color, range, turn, bounces, splitDist, shards, life }
+  constructor(ownerId: string, x: number, z: number, dir: number, color: number, opts: BoltOptions = {}) {
+    this.id = _id++;
+    this.ownerId = ownerId;
+    this.x = x;
+    this.z = z;
+    this.prevX = x;
+    this.prevZ = z;
+    // Spawn height above the owner's ground surface so high-ground shots start
+    // at the correct elevation.  Defaults to PLATFORM_TOP when no groundY is
+    // given (backwards-compatible with bolts created without a groundY option).
+    this.y = (opts.groundY ?? CFG.PLATFORM_TOP) + 1.1;
+    // Cover checking is opt-in: only bolts spawned through the normal spell
+    // pipeline (spawnProjectile passes groundY) check terrain.  Test bolts
+    // created directly with new Bolt() do not, so they are unaffected by
+    // procedural map obstacles that may happen to coincide with test positions.
+    this.coverEnabled = (opts.groundY !== undefined);
+    this.dir = dir; // radians
+    this.proj = opts.proj || "fireball";
+    this.speed = opts.speed || CFG.BOLT_SPEED;
+    this.vx = Math.cos(dir) * this.speed;
+    this.vz = Math.sin(dir) * this.speed;
+    this.life = opts.life || CFG.BOLT_LIFETIME;
+    this.color = color;
+    this.kb = opts.kb ?? CFG.BOLT_BASE_KNOCKBACK;
+    this.dmg = opts.dmg ?? CFG.BOLT_BASE_DAMAGE;
+    this.dead = false;
+    // Status-effect payloads applied on hit (from spell config).
+    this.slow = opts.slow || 0;
+    this.slowDur = opts.slowDur || 0;
+    this.burn = opts.burn || 0;
+    this.burnDur = opts.burnDur || 0;
+    this.curse = opts.curse || 0;
+    this.curseDur = opts.curseDur || 0;
+
+    // Per-type state.
+    this.range = opts.range || 16;     // boomerang turnaround distance
+    this.turn = opts.turn || 0;        // homing turn rate (rad/sec)
+    this.bounces = opts.bounces || 0;  // bouncer wall bounces left
+    this.splitDist = opts.splitDist || 0; // splitter: distance before it splits
+    this.shards = opts.shards || 0;
+    this.distance = 0;
+    this.returning = false;
+    this._origX = x;
+    this._origZ = z;
+    this._splitDone = false;
+    this._spawn = [];                  // child projectiles produced this step
+    this._hitSet = new Set();          // per-pass hit dedup for pass-through projectiles
+    this.mesh = null;
+  }
+
+  // Returns: { hit: victimId|null, split: bool } and queues children in _spawn.
+  step(dt: number, players: BoltPlayerLike[], arena: BoltArenaLike, options: BoltStepOptions = {}): BoltStepResult {
+    this._spawn = [];
+    const movementOnly = !!options.movementOnly;
+    const skipMove = !!options.skipMove;
+    this.life -= dt;
+
+    // Homing: steer toward nearest non-owner alive target.
+    if (this.proj === "homing" && this.turn > 0) {
+      const tgt = this._nearestTarget(players);
+      if (tgt) {
+        const want = Math.atan2(tgt.z - this.z, tgt.x - this.x);
+        let da = want - this.dir;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        const max = this.turn * dt;
+        this.dir += Math.max(-max, Math.min(max, da));
+        this.vx = Math.cos(this.dir) * this.speed;
+        this.vz = Math.sin(this.dir) * this.speed;
+      }
+    }
+
+    // Boomerang: fly out then curve back to the thrower.
+    if (this.proj === "boomerang") {
+      this.distance += this.speed * dt;
+      if (!this.returning && this.distance >= this.range) {
+        this.returning = true;
+        this._hitSet = new Set(); // fresh set so the return pass can hit the same players
+      }
+      if (this.returning) {
+        const owner = players.find((p) => p.id === this.ownerId);
+        if (owner) {
+          this.dir = Math.atan2(owner.z - this.z, owner.x - this.x);
+          this.vx = Math.cos(this.dir) * this.speed;
+          this.vz = Math.sin(this.dir) * this.speed;
+          const dx = owner.x - this.x, dz = owner.z - this.z;
+          if (dx * dx + dz * dz < 1.2 * 1.2) { this.dead = true; return { hit: null }; }
+        }
+      }
+    }
+
+    if (!skipMove) {
+      this.prevX = this.x;
+      this.prevZ = this.z;
+      this.x += this.vx * dt;
+      this.z += this.vz * dt;
+    }
+
+    // Bouncer: reflect off the circular arena rim instead of dying.
+    if (this.proj === "bouncer" && !arena.isOnPlatform(this.x, this.z) && this.bounces > 0) {
+      const nx = this.x, nz = this.z;
+      const len = Math.hypot(nx, nz) || 1;
+      const ndx = nx / len, ndz = nz / len; // outward normal
+      const dot = this.vx * ndx + this.vz * ndz;
+      this.vx -= 2 * dot * ndx;
+      this.vz -= 2 * dot * ndz;
+      this.dir = Math.atan2(this.vz, this.vx);
+      // Nudge back inside.
+      this.x = ndx * (arena.radius - 0.5);
+      this.z = ndz * (arena.radius - 0.5);
+      this.bounces--;
+      this._hitSet = new Set(); // fresh set so the next pass can re-hit the same players
+    }
+
+    // Cover / obstacle blocking: fizzle when the bolt's travel this tick crosses
+    // a map feature (plateau wall or obstacle) taller than the bolt's Y.  A SWEPT
+    // segment test (prev → new) is used rather than a point test at the new
+    // position: at bolt speed the per-tick step (~0.87u) exceeds the diameter of
+    // thin obstacles (columns/walls/trees), so a point test would tunnel straight
+    // through them.  obstaclesBlockingRay height-gates each feature, so shots
+    // from high ground still clear low cover.
+    // Only applies to bolts spawned through the normal spell pipeline
+    // (this.coverEnabled); test bolts placed directly are unaffected.
+    if (!skipMove && this.coverEnabled &&
+        arena && typeof arena.obstaclesBlockingRay === "function") {
+      if (arena.obstaclesBlockingRay(this.prevX, this.prevZ, this.y, this.x, this.z, this.y)) {
+        this.dead = true;
+        return { hit: null, blocked: true };
+      }
+    }
+
+    // Splitter: after travelling its split distance, fan out into shards.
+    if (this.proj === "splitter" && !this._splitDone && this.shards > 0) {
+      this.distance += this.speed * dt;
+      if (this.distance >= (this.splitDist || 7)) {
+        this._splitDone = true;
+        const spread = 0.7;
+        for (let i = 0; i < this.shards; i++) {
+          const a = this.dir + (i - (this.shards - 1) / 2) * (spread / this.shards) * 2;
+          const child = new Bolt(this.ownerId, this.x, this.z, a, this.color, {
+            proj: "fireball", kb: this.kb, life: 0.9,
+          });
+          this._spawn.push(child);
+        }
+        this.dead = true;
+        return { hit: null, split: true };
+      }
+    }
+
+    if (this.life <= 0) { this.dead = true; return { hit: null }; }
+    if (movementOnly) return { hit: null };
+
+    // Collision with players (skip owner).
+    for (const p of players) {
+      if (p.id === this.ownerId || !p.alive || p.falling) continue;
+      // Asymmetric height gate — elevation affects hit registration in one
+      // direction only, matching the design intent "shooting up is hard, shooting
+      // down clears cover / always connects":
+      //   • Reject ONLY when the target's ground is meaningfully ABOVE the bolt
+      //     (hard up-shot: the bolt skims below the target's feet).
+      //   • Allow when the bolt is at or above the target level (down-shots from
+      //     high ground, same-level shots, and ramp transitions all connect).
+      // band ≈ 0.6 lets a bolt hugging the plateau edge still register without
+      // reaching all the way up to a target two full heights above it.
+      const tGroundY = p.groundY ?? CFG.PLATFORM_TOP;
+      if (tGroundY > this.y + 0.6) continue;
+      const dx = p.x - this.x;
+      const dz = p.z - this.z;
+      const r = CFG.PLAYER_RADIUS + CFG.BOLT_RADIUS;
+      if (dx * dx + dz * dz <= r * r) {
+        // Pass-through projectiles (boomerang/bouncer) hit each player at most once per
+        // pass — prevents multi-tick overlap from dealing damage every tick.
+        if ((this.proj === "boomerang" || this.proj === "bouncer") && this._hitSet.has(p.id)) continue;
+        const landed = p.applyHit(this.vx, this.vz, this.kb);
+        if (landed) p.applyDamage(this.dmg, this.ownerId);
+        if (this.proj === "boomerang" || this.proj === "bouncer") this._hitSet.add(p.id);
+        // Boomerang/bouncer pass through after a hit (don't die) for combo play.
+        if (this.proj !== "boomerang" && this.proj !== "bouncer") this.dead = true;
+        return { hit: p.id, landed };
+      }
+    }
+    return { hit: null };
+  }
+
+  _nearestTarget(players: BoltPlayerLike[]): BoltPlayerLike | null {
+    let best: BoltPlayerLike | null = null, bestD = Infinity;
+    for (const p of players) {
+      if (p.id === this.ownerId || !p.alive || p.falling) continue;
+      const d = (p.x - this.x) ** 2 + (p.z - this.z) ** 2;
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    return best;
+  }
+
+  snapshot(): BoltSnap {
+    return {
+      id: this.id,
+      o: this.ownerId,
+      x: +this.x.toFixed(2),
+      z: +this.z.toFixed(2),
+      y: +this.y.toFixed(2),
+      c: this.color,
+      k: this.disable ? "disable" : this.proj, // kind, so renderer can pick a mesh/VFX
+    };
+  }
+}

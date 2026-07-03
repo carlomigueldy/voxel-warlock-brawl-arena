@@ -1466,6 +1466,1660 @@
       "blocks": [
         "feat-region-matchmaking"
       ]
+    },
+    {
+      "id": "EPIC-V1-R3F",
+      "title": "Migrate client to React + Vite + React Three Fiber + TypeScript",
+      "type": "epic",
+      "phase": "v1",
+      "area": "infra",
+      "status": "in_progress",
+      "priority": "P0",
+      "labels": [
+        "epic",
+        "v1",
+        "migration",
+        "rendering",
+        "ui",
+        "infra"
+      ],
+      "issue": {
+        "number": 100,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/100"
+      },
+      "parent": null,
+      "dependencies": [
+        "none"
+      ],
+      "subissues": [
+        "FEAT-V1-R3F-P0-00",
+        "FEAT-V1-R3F-P0-01",
+        "FEAT-V1-R3F-P0-02",
+        "FEAT-V1-R3F-P0-03",
+        "FEAT-V1-R3F-P1-0A",
+        "FEAT-V1-R3F-P1-0B",
+        "FEAT-V1-R3F-P1-0C",
+        "FEAT-V1-R3F-P1-0D",
+        "FEAT-V1-R3F-P2-0A",
+        "FEAT-V1-R3F-P2-0B",
+        "FEAT-V1-R3F-P2-0C",
+        "FEAT-V1-R3F-P2-0D",
+        "FEAT-V1-R3F-P2-0E",
+        "FEAT-V1-R3F-P3-0A",
+        "FEAT-V1-R3F-P3-0B",
+        "FEAT-V1-R3F-P3-0C",
+        "FEAT-V1-R3F-P3-0D",
+        "FEAT-V1-R3F-P3-0E",
+        "FEAT-V1-R3F-P3-0F",
+        "FEAT-V1-R3F-P4-0A",
+        "FEAT-V1-R3F-P4-0B",
+        "FEAT-V1-R3F-P4-0C",
+        "FEAT-V1-R3F-P4-0D",
+        "FEAT-V1-R3F-P4-0E",
+        "FEAT-V1-R3F-P4-0F",
+        "FEAT-V1-R3F-P4-0G",
+        "FEAT-V1-R3F-P4-0H",
+        "FEAT-V1-R3F-P4-0I",
+        "FEAT-V1-R3F-P4-0J",
+        "FEAT-V1-R3F-P4-0K",
+        "FEAT-V1-R3F-P5-0A",
+        "FEAT-V1-R3F-P5-0B",
+        "FEAT-V1-R3F-P5-0C",
+        "FEAT-V1-R3F-P5-0D",
+        "FEAT-V1-R3F-P5-0E",
+        "FEAT-V1-R3F-P5-0F",
+        "FEAT-V1-R3F-P5-0G",
+        "FEAT-V1-R3F-P5-0H",
+        "FEAT-V1-R3F-P5-0I",
+        "FEAT-V1-R3F-P6-0A",
+        "FEAT-V1-R3F-P6-0B",
+        "FEAT-V1-R3F-P6-0C",
+        "FEAT-V1-R3F-P6-0D"
+      ],
+      "acceptance_criteria": [
+        "npm run dev/build/preview serve the game; no CDN runtime dependency",
+        "typecheck+lint+test+build gates all green; feature_list.json valid",
+        "Every feature preserved (33 spells, 10 items, 4 characters+clips, 4 mobs, 5 arenas, P2P room/QR/invite + Supabase mm/accounts/leaderboards, chat/voice/social, onboarding, HUD/menus/juice)",
+        "Declarative R3F render layer at visual parity with the legacy renderer (replay+screenshot signed)",
+        "Legacy prototype removed; Vercel deploy loads with COOP/COEP, PWA installable, SEO/OG unchanged"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md",
+        "AGENTS.md",
+        ".agents/harness/fleet-loop.md"
+      ],
+      "summary": "Strangler-fig migration of the whole client from vanilla JS+Three.js (CDN import map) to React+Vite+React Three Fiber+TypeScript. Full declarative R3F scene orchestration with pure-TS leaf builders; zero feature regressions via legacy-as-golden + deterministic sim-replay + screenshot parity. Autonomous fleet: Sonnet implementers + Haiku scouts + Sonnet/Opus review, gated merges into feat/epic-100-integration."
+    },
+    {
+      "id": "FEAT-V1-R3F-P0-00",
+      "title": "chore(setup): project-scoped refactor skills + backlog seed",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "infra"
+      ],
+      "issue": {
+        "number": 101,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/101"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "none"
+      ],
+      "acceptance_criteria": [
+        "5 skills installed project-scoped under .claude/skills/ (vite, vitest, typescript-advanced-types, vercel-react-best-practices, request-refactor-plan)",
+        "feature_list.json seeded with epic+P0 sub-issues, valid JSON",
+        "No app code touched"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Install project-scoped refactor/migration skills for fleet implementers and seed the backlog mirror."
+    },
+    {
+      "id": "FEAT-V1-R3F-P0-01",
+      "title": "chore(build): stand up Vite/TS/Vitest toolchain + flip CDN->npm deps",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "infra"
+      ],
+      "issue": {
+        "number": 102,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/102"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P0-00"
+      ],
+      "acceptance_criteria": [
+        "vite dev + build+preview boot the unmodified vanilla game",
+        "three/supabase-js/peerjs/qrcode from npm; no CDN runtime calls; three/addons aliased",
+        "all GLB+mp3 load dev+build via public/",
+        "Supabase creds via import.meta.env.VITE_*; graceful when absent",
+        "COOP/COEP in vite dev; live host/join smoke passes",
+        "lint/format/typecheck gates exist and pass; npm test still runs"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Stand up the Vite/TS/Vitest/ESLint toolchain and flip dependency delivery from the CDN import map/global scripts to npm, keeping the vanilla game 100% playable."
+    },
+    {
+      "id": "FEAT-V1-R3F-P0-02",
+      "title": "test(build): port test suite to Vitest + fix fragile tests",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "infra"
+      ],
+      "issue": {
+        "number": 103,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/103"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P0-01"
+      ],
+      "acceptance_criteria": [
+        "11 stable suites green under vitest run",
+        "matchmaking.test uses vi.mock (data:URL hack removed)",
+        "source.test.mjs split into disjoint guard.{sim,render,ui,net,assets} files",
+        "npm test = vitest run; all green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the node:assert suites to Vitest and repair the two fragile tests (matchmaking source-rewrite, source-regex guard)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P0-03",
+      "title": "test(build): deterministic sim-replay harness + fixtures",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "infra"
+      ],
+      "issue": {
+        "number": 104,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/104"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P0-01"
+      ],
+      "acceptance_criteria": [
+        "Documented fixture format seed+config+inputTimeline -> deterministic Snapshot[]",
+        "stepper replays a fixture identically twice (asserted)",
+        "record-replay.mjs records a fixture",
+        "seed fixtures (a spell cast, a mob spawn, an arena shrink) committed",
+        "no app src behavior change"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Deterministic seeded sim-replay harness: the foundation of the zero-regression visual-parity safety net."
+    },
+    {
+      "id": "FEAT-V1-R3F-P1-0A",
+      "title": "config.ts + shared domain types + typecheck gate",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 109,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/109"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P0-01",
+        "FEAT-V1-R3F-P0-02",
+        "FEAT-V1-R3F-P0-03"
+      ],
+      "acceptance_criteria": [
+        "config.ts fully typed, all exports preserved",
+        "src/types.ts shared domain types published",
+        "npm run typecheck (tsc --noEmit) added + green",
+        "all 451 Vitest tests + vite build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert config.js->config.ts with full types + add src/types.ts shared domain types + a typecheck gate. Bottleneck for P1 (config imported by ~30 modules)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P1-0B",
+      "title": "Convert leaf/support logic to TS (rng, arena-query, mapgen, animations, social, spell-icons)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 110,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/110"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A"
+      ],
+      "acceptance_criteria": [
+        "each renamed .ts + typed, runtime identical",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert DOM/Three-free leaf/support modules to TypeScript; no importer changes (Vite resolves .js->.ts)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P1-0C",
+      "title": "Convert combat entities to TS (bolt, bot, mob)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 111,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/111"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A"
+      ],
+      "acceptance_criteria": [
+        "bolt/bot/mob renamed .ts + typed, runtime identical",
+        "typecheck + tests (esp mobs) + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert projectile/AI/mob logic to TypeScript."
+    },
+    {
+      "id": "FEAT-V1-R3F-P1-0D",
+      "title": "Convert core sim to TS (player, spells, sim)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 112,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/112"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A",
+        "FEAT-V1-R3F-P1-0B",
+        "FEAT-V1-R3F-P1-0C"
+      ],
+      "acceptance_criteria": [
+        "player/spells/sim renamed .ts + typed, runtime identical; guard.sim readFileSync updated for spells.ts",
+        "typecheck + all 451 tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert core simulation to TypeScript; spells.js is text-guarded so update guard.sim readFileSync path."
+    },
+    {
+      "id": "FEAT-V1-R3F-P2-0A",
+      "title": "Convert Supabase client to TypeScript (P2a, hub)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "infra"
+      ],
+      "issue": {
+        "number": 118,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/118"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A"
+      ],
+      "acceptance_criteria": [
+        "src/supabase.js renamed to src/supabase.ts, fully typed; exports isEnabled()/getClient() preserved",
+        "typecheck + all 451 Vitest tests + build + lint green",
+        "vi.mock(\"../src/supabase.js\") in test/matchmaking.test.mjs still intercepts after the rename"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert the Supabase client to TypeScript. Type hub for P2 — auth, region, leaderboard, and matchmaking all depend on getClient()'s return type."
+    },
+    {
+      "id": "FEAT-V1-R3F-P2-0B",
+      "title": "Convert PeerJS net layer to TypeScript (P2b)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 119,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/119"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A"
+      ],
+      "acceptance_criteria": [
+        "src/net.js renamed to src/net.ts; exports sanitizeChat/makeChatRateLimiter/Host/Client preserved",
+        "test/guard.net.test.mjs readFileSync guards at L35 and L53 flipped to src/net.ts",
+        "ambient Peer/Window.Peer globals + PeerJS types declared",
+        "guard.net FakePeer tests + social.test stay green; typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert the PeerJS-based P2P networking layer to TypeScript."
+    },
+    {
+      "id": "FEAT-V1-R3F-P2-0C",
+      "title": "Convert input/audio/voice engines to TypeScript (P2c)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "audio",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui",
+        "audio"
+      ],
+      "issue": {
+        "number": 120,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/120"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A"
+      ],
+      "acceptance_criteria": [
+        "src/input.js, src/audio.js, src/voice.js renamed to .ts; InputController/AudioEngine/menuCue/VoiceChat preserved",
+        "test/guard.ui.test.mjs:10 flipped to src/input.ts; test/guard.assets.test.mjs:11 flipped to src/audio.ts",
+        "ambient browser globals (e.g. webkitAudioContext) declared per-module",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert the input, audio, and voice-chat engines to TypeScript."
+    },
+    {
+      "id": "FEAT-V1-R3F-P2-0D",
+      "title": "Convert matchmaking to TypeScript (P2d)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 121,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/121"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P2-0A"
+      ],
+      "acceptance_criteria": [
+        "src/matchmaking.js renamed to src/matchmaking.ts; regionScanOrder/flattenPresenceState/selectPair/electHiddenHost/RegionQueue preserved",
+        "test/matchmaking.test.mjs stays green, incl. its vi.mock of ../src/supabase.js",
+        "Supabase Realtime channel usage typed",
+        "new types QueueCandidate/Match/MatchOffer added to types.ts",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert region queueing, presence flattening, and hidden-host election logic to TypeScript."
+    },
+    {
+      "id": "FEAT-V1-R3F-P2-0E",
+      "title": "Convert auth/region/leaderboard to TypeScript (P2e)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 122,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/122"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P2-0A"
+      ],
+      "acceptance_criteria": [
+        "src/auth.js, src/region.js, src/leaderboard.js renamed to .ts; all exports preserved",
+        "wallet globals window.ethereum/window.solana declared",
+        "new types AppUser/MatchResultPayload/LeaderboardRow/LeaderboardMetric added to types.ts",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert account auth (incl. web3 wallet sign-in), region selection, and leaderboard submission/fetch to TypeScript."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0A",
+      "title": "React shell + Zustand store contract (P3a, bottleneck)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui",
+        "infra"
+      ],
+      "issue": {
+        "number": 129,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/129"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P2-0A",
+        "FEAT-V1-R3F-P2-0B",
+        "FEAT-V1-R3F-P2-0C",
+        "FEAT-V1-R3F-P2-0D",
+        "FEAT-V1-R3F-P2-0E"
+      ],
+      "acceptance_criteria": [
+        "react/react-dom/zustand deps + @vitejs/plugin-react wired; three/addons alias + COOP/COEP headers preserved verbatim",
+        "snapshotRef.ts (non-reactive) + aimBridge.ts added; InputRenderer exported from input.ts",
+        "five Zustand stores added: session/roster/hud/ui/settings (settings mirrors the 8 exact legacy vwb-* keys, NO persist middleware)",
+        "services/registry.ts, fixedTimestep.ts, main.tsx/App.tsx, config/flags.ts, LegacyRendererBridge/LegacyUiBridge/wireLegacyUiToStores, loop-hook skeletons added",
+        "React shell loads behind ?shell=react selector; main.js stays the DEFAULT entry (non-breaking); ?shell=react&renderer=legacy&ui=legacy boots and is 100% playable",
+        "store render-count probe proves ZERO per-frame re-render",
+        "accumulator replay-parity test vs golden main.js passes",
+        "typecheck + 451+ tests + build + lint all green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Stand up the React shell and the frozen store contract every other P3 sub-issue builds on: three-tier store split (non-reactive snapshotRef, value-gated roster, throttled HUD), service registry, fixed-timestep accumulator, and legacy bridges. Bottleneck; checkpoint #2 store-contract freeze."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0B",
+      "title": "Port game loop + session hooks to React (P3b)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "gameplay",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 130,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/130"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "useGameSession ports startHosting/startJoining verbatim, incl. matchmaking host-timeout and online-match teardown",
+        "useHostLoop/useClientLoop wired to the P3a accumulator",
+        "onNewSnapshot fan-out ports pushSnapshot + roster/hud/session store updates",
+        "wireLegacyUiToStores core intents routed to the session hook",
+        "?shell=react is 100% playable via legacy renderer/ui flags",
+        "replay-parity test vs golden main.js hostLoop/clientLoop passes",
+        "typecheck + tests + build + lint all green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the full game session lifecycle (host/join, matchmaking timeout, accumulator loops, snapshot fan-out) onto the P3a store/loop contract. Review tier: Opus (parity-critical)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0C",
+      "title": "Port net/chat/voice wiring to React hook (P3c)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 131,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/131"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "Host/Client construction + callbacks ported into a net hook consuming the service registry",
+        "snapshotRef.meta mutated on onReady/onPlayerJoin/onPlayerLeave/client onLobby/syncBotMeta",
+        "client snapshot staleness gate ported verbatim before pushSnapshot",
+        "chat/roster/voice senders wired + showChatBubble port",
+        "guard tests + full suite green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port Host/Client peer construction and callbacks, chat/roster/voice wiring, and the snapshot staleness gate onto the P3a hook seam."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0D",
+      "title": "Port audio engine wiring to React hook (P3d)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "audio",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "audio"
+      ],
+      "issue": {
+        "number": 132,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/132"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "useAudio hook resolves the AudioEngine singleton via the service registry",
+        "playTransitionAudio dedupe logic ported verbatim",
+        "audio.resume() gated on first pointerdown/keydown interaction",
+        "music start/stop wired to session/phase transitions",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the AudioEngine singleton wiring (transition SFX dedupe, first-interaction resume, music) into a useAudio hook via the service registry."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0E",
+      "title": "Port input controller wiring to React hook (P3e)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 133,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/133"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "InputController constructed once via the service registry and attached to aimBridge",
+        "hook subscribes to useSettingsStore and mirrors hotkeys/pttKey into the live InputController",
+        "ESC-pause and Enter-to-open-chat keydown handling ported verbatim",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the InputController wiring into a useInput hook: registry-backed construction, aimBridge attachment, settings-store hotkey/PTT mirroring, ESC-pause/Enter-chat keydown."
+    },
+    {
+      "id": "FEAT-V1-R3F-P3-0F",
+      "title": "Port auth + matchmaking wiring to React hook (P3f)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "multiplayer",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "multiplayer"
+      ],
+      "issue": {
+        "number": 134,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/134"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "auth intents route to useUiStore.authView",
+        "RegionQueue lifecycle (start/cancel/timeout) wired for online matchmaking",
+        "leaderboard fetch wired to useUiStore.leaderboard",
+        "region selection persists via the canonical region.ts helper",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port auth/matchmaking/leaderboard wiring into a hook: auth intents to useUiStore.authView, RegionQueue lifecycle, leaderboard fetch, region persistence."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0A",
+      "title": "R3F scaffold — Canvas/Scene/Camera/Lights/materials (P4a bottleneck)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "review",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 137,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/137"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "empty scene renders under ?renderer=r3f (legacy stays default; exclusive flag, no double canvas, no StrictMode)",
+        "renderer/camera/scene/fog match the §0 parity contract exactly",
+        "lights match §0 (hemisphere+directional+hazard point light)",
+        "materials/palette.ts wraps Lambert-flat/Basic recipes only — no MeshStandardMaterial anywhere",
+        "entityRegistry.ts exposes register/unregister for players and mobs + position/trigger accessors",
+        "voxel/lowpoly/props/arena/renderer-util/duotone compile as .ts with zero importer edits",
+        "scene-graph smoke test green",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Stand up the R3F scaffold (GameCanvas/Scene/CameraRig/LightPool/Environment/AimBridge/Bridge), materials/palette.ts, entityRegistry.ts, wire the ?renderer=r3f App.tsx branch, add R3F deps, and mechanically port voxel/lowpoly/props/arena/renderer-util/duotone to .ts. P4 bottleneck — every other P4 sub-issue depends on it."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0B",
+      "title": "deterministic replay→screenshot parity harness (P4a)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 138,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/138"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A",
+        "FEAT-V1-R3F-P0-03"
+      ],
+      "acceptance_criteria": [
+        "legacy-vs-legacy replay diff ≈0",
+        "harness posts golden/candidate/diff PNGs for the full capture set",
+        "deterministic across 2 consecutive runs",
+        "mismatch tolerance documented (starts ~1.5% of pixels, ratchet-down plan noted)",
+        "scene-graph smoke test asserts mesh counts, materials, light topology, GLB clip names, frustumCulled",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the deterministic replay→screenshot parity harness (determinism.ts seeded rng + fixed dt + frozen shake + fixed raster, Playwright replayDriver/parity.spec, scene-graph smoke test) that gates every subsequent P4 PR."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0C",
+      "title": "declarative arena floor + hazards + map layout (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "review",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 139,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/139"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 5 arena worlds (floor/hazard/fog/plateaus/obstacles) render at parity with legacy",
+        "plateaus/ramps/obstacles placement matches legacy map layout exactly",
+        "shrink-cull behavior matches legacy _cullMapMeshes",
+        "hazard re-theme dedups by hazard id like legacy _applyHazardTheme",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port arena floor, hazard theming/details, and map layout to declarative R3F (ArenaFloor/Hazard/HazardDetails/MapLayout), reusing the buildPlatform/buildHazard/animate* factories."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0D",
+      "title": "warlock GLB models + player entities (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "review",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 140,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/140"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 4 characters × clips render at parity, including manual weight-lerp blend and walk/run timescale",
+        "GLB self-heal is byte-exact (geometry-bbox union, TARGET_HEIGHT=1.8, position.y-=min.y·s, frustumCulled=false)",
+        "charge tint applied per-instance (cloned materials, no bleed)",
+        "Suspense/ErrorBoundary fallback to VoxelWarlockBody matches legacy usingGLB=false",
+        "entity interpolation matches parity contract",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port warlock GLB models and player entities to declarative R3F (useWarlockModel/WarlockBody, PlayersLayer/PlayerEntity/VoxelWarlockBody/NameLabel/HpBar/StatusVisuals, character.ts refactor) with the manual multi-GLB clip state machine ported verbatim."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0E",
+      "title": "mob GLB models + mob entities (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "review",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 141,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/141"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 4 mob types render idle/attack/entrance at parity",
+        "entrance rise/scale (no animation during entrance) matches legacy exactly",
+        "HP bar renders and updates per mob",
+        "channel decal matches legacy _buildChannelDecal/updateChannel",
+        "speed smoothing matches parity contract",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port big-mob GLB models and mob entities to declarative R3F (useMobModel/MobBody, MobsLayer/MobEntity/ChannelDecal, mobModel.ts refactor), mirroring the warlock model pattern with mob-specific entrance behavior and channel decal."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0F",
+      "title": "projectiles/bolts/meteors/items + pooling (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "review",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 142,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/142"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 8 bolt kinds render + trail pool at parity",
+        "bolt light pool (LIGHT_POOL_SIZE=4, nearest-to-local) matches legacy",
+        "bolts are NOT interpolated (direct from snapshot, per parity contract)",
+        "meteors and items render/despawn at parity",
+        "pooling acquire/release happens only in useEffect cleanup; teardown flushes trails + resets stores",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port projectiles, meteors, and items to declarative R3F with object pooling (BoltsLayer/BoltEntity/MeteorsLayer/ItemsLayer, pool.ts, vfx/projectiles.js→ts)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0G",
+      "title": "AoE VFX builders → TS (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 143,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/143"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "meteor impact, explode, gravity/vacuum, stun, target, and push AoE effects all render at parity",
+        "transient contract preserved: userData.update(dt)+userData.done+userData.dispose()",
+        "self-spawning controller groups (e.g. meteor telegraph rings) ported one-for-one",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Mechanically port the area-of-effect VFX builders vfx/aoe.js→ts, preserving build-time Math.random() call sites for later routing through the shared seedable rng."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0H",
+      "title": "beam VFX builders + light pool → TS (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "review",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 144,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/144"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "lightning/chain beams, drain, pull, drag, and link effects all render at parity",
+        "beam light pool (3 PointLights) stays a module-level singleton",
+        "two-endpoint effects resolve endpoints identically to legacy",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the beam VFX builders vfx/beams.js→ts, preserving the 3-slot beam light pool as a module singleton."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0I",
+      "title": "reticle layer + reticle builders → TS (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "review",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 145,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/145"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 9 reticle archetypes render at parity, rebuilding only on spell change",
+        "nearest-enemy resolution for TARGET_LOCK/TETHER matches legacy",
+        "SELF_BUFF reticle correctly hidden",
+        "reticle.userData.update(state) tick contract preserved",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the reticle layer and reticle builders (three/vfx/ReticleLayer.tsx, vfx/reticles.js→ts) as a persistent declarative single instance."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0J",
+      "title": "utility VFX builders → TS (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "todo",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 146,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/146"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0A"
+      ],
+      "acceptance_criteria": [
+        "all 14 utility spells/effects render at parity",
+        "transient contract preserved: userData.update(dt)+userData.done+userData.dispose()",
+        "status auras (shield/wind-walk/invis/stun) render correctly where owned by this module",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Mechanically port the remaining utility VFX builders vfx/utility.js→ts (buffs, status auras, item/rune pickups, other one-shot/persistent utility effects)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P4-0K",
+      "title": "VFX event pipeline (EffectsLayer + eventToEffects) [checkpoint #3] (P4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "rendering",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "rendering"
+      ],
+      "issue": {
+        "number": 147,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/147"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P4-0C",
+        "FEAT-V1-R3F-P4-0D",
+        "FEAT-V1-R3F-P4-0E",
+        "FEAT-V1-R3F-P4-0F",
+        "FEAT-V1-R3F-P4-0G",
+        "FEAT-V1-R3F-P4-0H",
+        "FEAT-V1-R3F-P4-0I",
+        "FEAT-V1-R3F-P4-0J"
+      ],
+      "acceptance_criteria": [
+        "full _processEvents port: all ~40 GameEvent kinds dispatch to the correct effect/trigger",
+        "per-event shake caps applied non-additively, each clamped to its own cap, preserved literally",
+        "cast/reaction/mob-attack triggers fire on every event before the switch, in legacy order",
+        "SFX + stereo pan wired for all applicable events",
+        "checkpoint #3 VFX-parity sign-off: full replay+screenshot parity suite green across the entire capture set",
+        "PR reproduces §0 parity constants exactly and attaches replay screenshot golden/candidate/diff parity evidence",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Wire the VFX event pipeline (three/vfx/EffectsLayer+eventToEffects.ts, three/fx/builders.ts) integrating every prior P4 sub-issue's entityRegistry triggers and shake channel. Checkpoint #3 — VFX-parity sign-off; integrates last."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0A",
+      "title": "React UI shell + CSS system + shared primitives (P5a bottleneck)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 160,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/160"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P3-0A"
+      ],
+      "acceptance_criteria": [
+        "<UiRoot> replaces the null branch at App.tsx:150; no other App.tsx restructuring (design invariant)",
+        "UiRoot no-ops under ?capture=1, mirroring the existing !CAPTURE guard",
+        "styles/tokens.css is a verbatim port of the :root block (style.css L6-38, 18 custom properties)",
+        "styles/global.css and styles/fx.css match the partition map in the approved P5 design",
+        "shared primitive kit (Button, Panel, Modal, SegmentedControl, Toggle, CharacterCard, Slider, Icon) ships as CSS Modules using var(--token) only",
+        "hooks/useFx.ts exposes the same FX.flash/vignette/aberration/shake/burst/onStage/emitStage API as legacy src/fx.js, gated on prefers-reduced-motion",
+        "useLobbyConfigStore and useSocialPrefsStore exist; useGameSession reads them via a single new getUiInputs() adapter (the only additive edit to useGameSession in this issue)",
+        "menu-nav sub-screen state and draft overlay state are modeled and documented so siblings can build against a stable contract",
+        "design decision write-up reviewed and approved by an Opus reviewer before siblings are unblocked",
+        "responsive 320-1440px, :focus-visible on every interactive primitive, prefers-reduced-motion honored — design floor baseline for all P5 work",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Stand up <UiRoot> at the App.tsx:150 seam, port the CSS token/global/FX layers and shared primitive kit, port fx.js to hooks/useFx.ts, and add the P3a-additive store extensions (useLobbyConfigStore, useSocialPrefsStore, getUiInputs() adapter) that unblock the 8 sibling P5 sub-issues. P5 bottleneck — every other P5 sub-issue forks from this."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0B",
+      "title": "main menu, spine nav, character select, settings, auth (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 161,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/161"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "spine nav covers all 6 sub-screens (online/private/characters/leaderboards/account/tutorial) with identical topology to legacy",
+        "character-select cards render live preview and selection persists via useSettingsStore",
+        "settings screen exposes configurable spell-slot/item-slot hotkeys that persist through useSettingsStore",
+        "online screen shows only queue status - no room browser",
+        "region selector and leaderboard screen (metric+scope) wired to their store fields",
+        "auth forms (guest/sign-in/sign-up/eth/sol/sign-out/upgrade) each dispatch the matching intent with no dropped/added behavior vs legacy",
+        "RTL tests replace the corresponding legacy guard.ui.test.mjs assertions for menu-owned surfaces",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React main menu: spine navigation, character-select with live preview, settings/hotkeys, region + leaderboard screens, and the auth forms, wiring the majority of the 37 legacy ui.js intent handlers."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0C",
+      "title": "lobby, room code/QR, player list, arena/bot config (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 162,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/162"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "room code renders and a QR code (via qrcode) encodes the join link/code",
+        "join-by-code form dispatches the join(name, code, char?) intent",
+        "player list reflects useRosterStore.meta live as players join/leave",
+        "bot count/skill controls write useLobbyConfigStore",
+        "arena world/land size/mobs-enabled/obstacle-toggle controls write useLobbyConfigStore",
+        "obstacle toggle state persists through the existing vwb-map-objects single-writer path",
+        "RTL tests replace the corresponding legacy guard.ui.test.mjs assertions for lobby-owned surfaces",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React lobby: room-code/QR join flow, live player list, bot count/skill controls, and arena world/land/mobs/obstacle controls writing useLobbyConfigStore, preserving the vwb-map-objects persistence path."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0D",
+      "title": "in-game HUD (round/timer/cooldowns/scoreboard) (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 163,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/163"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "HUD subscribes to useHudStore.hud exclusively for per-frame data; no snapshotRef reads in HUD components",
+        "scoreboard player names are rendered as text content, never innerHTML-interpolated",
+        "center match message uses the same escaping discipline as legacy escapeHTML(w)",
+        "no select-all-abilities toggle exists in the ability bar",
+        "ability bar reads spellSlots and applies a locked state matching legacy semantics",
+        "rune mode shows exactly SPELL_SLOT_COUNT (6) slots",
+        "item bar is present, reflects items from the HUD snapshot, and is positioned with pointer-events:auto without blocking the viewport",
+        "cooldown display matches cooldowns from the HUD snapshot exactly",
+        "RTL tests replace the corresponding legacy guard.ui.test.mjs assertions",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React in-game HUD (round/timer/vitals/ability bar/item bar/cooldowns/scoreboard) subscribing to useHudStore.hud only, never snapshotRef per-frame, preserving the guard.ui XSS/lock/slot-count/item-bar assertions."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0E",
+      "title": "spell/item draft overlay + draft-juice (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 164,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/164"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "draft overlay renders picks, timer, ready state, and template selection matching legacy behavior",
+        "pick/ban/ready actions dispatch the draft(action) intent with no dropped/added behavior vs legacy",
+        "draft-juice is ported to React and degrades to instant transitions under prefers-reduced-motion",
+        "draft overlay is keyboard-operable with a modal focus-trap while open",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR",
+        "escalate review to Opus if the store/animation-timing interaction proves complex"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React spell/item draft overlay and port draft-juice (pick/ready/timer animations), dispatching the draft(action) intent against the ephemeral draft state established by P5a."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0F",
+      "title": "onboarding flow (name/character/goal/hotkeys) (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 165,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/165"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A",
+        "#91"
+      ],
+      "acceptance_criteria": [
+        "onboarding steps (name, character, goal, hotkeys) match legacy content and ordering",
+        "vwb-onboarded-v1 is read/written through useSettingsStore, matching the existing persistence contract",
+        "Escape (or an explicit Cancel control) closes/dismisses onboarding at any step (fixes #91)",
+        "touch users have a visible, reachable skip control at every step (fixes #91)",
+        "each onboarding step is a focus-trapped modal/panel with correct tab order",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React onboarding flow (name/character/goal/hotkeys) with vwb-onboarded-v1 persisted via useSettingsStore; also fixes open issue #91 (Escape/cancel + touch skip)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0G",
+      "title": "pause menu + chat panel + social settings (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 166,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/166"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "pause menu resume/leave-match controls dispatch resume()/leaveMatch() intents with identical downstream effect to legacy",
+        "chat panel open/close state syncs with useUiStore.chatOpen; send/typing dispatch sendChat(text)/sendTyping(v)",
+        "mute list UI dispatches toggleMute(peerId)/clearMutes(peerIds) and persists through the existing vwb-mute-list single-writer path",
+        "social prefs dispatch socialPrefs(...) and persist through the existing vwb-social-prefs single-writer path",
+        "conduct-notice dismissal persists through the existing vwb-social-conduct-v1 single-writer path",
+        "pause menu and chat/social panels are modal focus-trapped while open",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React pause menu and social chat panel (mute list, social prefs, conduct dismissal), preserving the existing vwb-mute-list/vwb-social-prefs/vwb-social-conduct-v1 single-writer persistence paths."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0H",
+      "title": "touch/mobile controls + nav-feel (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 167,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/167"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "touch movement, aim, and ability controls dispatch the same intents as their legacy touch equivalents",
+        "all touch tap targets are at least 44px",
+        "touch nav-feel matches legacy behavior and degrades under prefers-reduced-motion",
+        "emulated-touch parity verified via Playwright device emulation against the legacy DOM controls",
+        "responsive 320-1440px, :focus-visible where applicable, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Build the React touch/mobile control layer (movement/aim/ability tap targets) and port legacy nav-feel touch handling, verified against emulated-touch parity."
+    },
+    {
+      "id": "FEAT-V1-R3F-P5-0I",
+      "title": "screen transitions, gamepad, credits juice (P5)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "ui",
+      "status": "done",
+      "priority": "P2",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "ui"
+      ],
+      "issue": {
+        "number": 168,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/168"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A"
+      ],
+      "acceptance_criteria": [
+        "screen transitions (panelIn/titleDrop/fadeDown) reproduce legacy timing/easing via the ported styles/fx.css keyframes",
+        "menu nav-feel and gamepad input feel are ported as hooks/components reading store state, with no MutationObserver or injected <style> elements",
+        "credits screen content and behavior match legacy",
+        "prefers-reduced-motion degrades all transition/particle animation to instant; menuCue audio is never silenced by the reduced-motion path",
+        "responsive 320-1440px, :focus-visible, prefers-reduced-motion honored",
+        "typecheck + lint + test + build green; screenshot parity vs legacy DOM posted to the PR"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Port the remaining legacy juice (screen transitions, nav-feel, gamepad, credits) from src/legacy/juice.ts into React hooks/components that read store state directly instead of observing the DOM."
+    },
+    {
+      "id": "FEAT-V1-R3F-P6-0A",
+      "title": "delete legacy prototype + retire dual-path flags (P6)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "review",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "infra",
+        "rendering",
+        "ui"
+      ],
+      "issue": {
+        "number": 179,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/179"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P5-0A",
+        "FEAT-V1-R3F-P5-0B",
+        "FEAT-V1-R3F-P5-0C",
+        "FEAT-V1-R3F-P5-0D",
+        "FEAT-V1-R3F-P5-0E",
+        "FEAT-V1-R3F-P5-0F",
+        "FEAT-V1-R3F-P5-0G",
+        "FEAT-V1-R3F-P5-0H",
+        "FEAT-V1-R3F-P5-0I"
+      ],
+      "acceptance_criteria": [
+        "src/main.js, src/ui.js, src/renderer.js and every legacy-only module reachable only from them are deleted",
+        "?renderer=legacy|r3f, ?ui=legacy|react, ?shell flags are gone from the codebase (no reads, no branches)",
+        "LegacyUiBridge and LegacyRendererBridge components are deleted, along with every legacy dual-write/call-site that fed them",
+        "index.html is reduced to <div id=\"root\"></div> + main.tsx entry — no legacy <script>/DOM scaffolding remains",
+        "the app runs identically with no query flags set; a grep for any import of a deleted module returns nothing",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Delete src/main.js/ui.js/renderer.js + legacy-only modules, remove the ?renderer/?ui/?shell flags + LegacyUiBridge/LegacyRendererBridge + every legacy dual-write call-site, and reduce index.html to <div id=root> + main.tsx so the React/R3F path is the only path. P6 bottleneck — unblocks 0B/0C/0D."
+    },
+    {
+      "id": "FEAT-V1-R3F-P6-0B",
+      "title": "retire legacy source guard.ui + text-guard tests (P6)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "review",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "infra"
+      ],
+      "issue": {
+        "number": 180,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/180"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P6-0A"
+      ],
+      "acceptance_criteria": [
+        "every one of the 12 guard.ui.test.mjs assertions (p5-design §8) has a corresponding RTL/component test, mapped explicitly in the PR description",
+        "test/guard.ui.test.mjs is deleted once the mapping is verified",
+        "other legacy-source text-guards are deleted only for assertions whose source file was removed in P6-0A; guards over surviving source are kept or ported",
+        "coverage floor does not drop versus the pre-deletion baseline",
+        "typecheck + lint + test + build green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md",
+        "p5-design.md"
+      ],
+      "summary": "Delete test/guard.ui.test.mjs + the other legacy-source text-guards once RTL/R3F coverage proves ≥ the 12 guard.ui assertions (p5-design §8); ensure the coverage floor doesn't drop."
+    },
+    {
+      "id": "FEAT-V1-R3F-P6-0C",
+      "title": "Vercel vite-build/dist output + retire supabase-config gen (P6)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "review",
+      "priority": "P1",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "infra"
+      ],
+      "issue": {
+        "number": 181,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/181"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P6-0A"
+      ],
+      "acceptance_criteria": [
+        "vercel.json: buildCommand \"vite build\", outputDirectory \"dist\"",
+        "COOP same-origin + COEP headers, cleanUrls: true, and the SPA rewrite are all still present post-change",
+        "scripts/gen-supabase-config.mjs is deleted; Supabase config is read from VITE_SUPABASE_* via import.meta.env at build time",
+        ".env.example documents the required VITE_SUPABASE_* vars",
+        "PWA manifest + icons are emitted into dist/ and the app is installable from a vite build && vite preview run",
+        "SEO/OG metadata (title/description/OG tags, sitemap.xml, robots.txt, llms.txt) is unchanged",
+        "vite build + vite preview serves the app with COOP/COEP headers intact"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Point vercel.json at buildCommand: vite build / outputDirectory: dist, preserve COOP same-origin/COEP + cleanUrls + SPA rewrite, keep PWA installable + SEO/OG unchanged, and retire gen-supabase-config.mjs in favor of VITE_SUPABASE_* env vars."
+    },
+    {
+      "id": "FEAT-V1-R3F-P6-0D",
+      "title": "epic-wide adversarial Opus review + merge gate (P6, checkpoint #4)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "infra",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "infra"
+      ],
+      "issue": {
+        "number": 182,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/182"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P6-0A",
+        "FEAT-V1-R3F-P6-0B",
+        "FEAT-V1-R3F-P6-0C"
+      ],
+      "acceptance_criteria": [
+        "fresh adversarial multi-lens Opus review run against the full feat/epic-100-integration diff vs main",
+        "every finding is fixed or explicitly cleared by an agent other than the one who authored the flagged code",
+        "per-feature parity checklist (spells/items/characters/mobs/arenas/P2P/social/onboarding/HUD) walked and signed off, with replay/screenshot parity evidence linked",
+        "typecheck + lint + test + build all green on the epic branch",
+        "autonomous-merge gate (Hard rule 5 / fleet-loop.md §8) holds: Opus approval + all local gates green + mergeable + no fleet:blocked/hold:owner label",
+        "evidence posted as comments on this issue and/or the epic→main PR before merge"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md",
+        "AGENTS.md",
+        ".agents/harness/fleet-loop.md"
+      ],
+      "summary": "Checkpoint #4 (pre-cutover): fresh adversarial multi-lens Opus review of the whole epic branch, every finding cleared by a different agent, per-feature parity checklist signed — the Hard-rule-5 gate for the epic→main PR."
     }
   ]
 }

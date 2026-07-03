@@ -1,0 +1,19 @@
+/* R3F's <Canvas> renders its <canvas> inside a wrapping <div> that receives
+   className/style props directly (the inner canvas itself is auto-sized to
+   fill it). !important: R3F sets `position:relative;width:100%;height:100%`
+   as an INLINE style on that div (spreading a caller `style` prop over it,
+   not a className), so a plain class rule loses on specificity — without
+   this, the canvas renders at the browser's unstyled-<canvas> default
+   300x150 intrinsic size, not the viewport (verified via a P4 boot check,
+   and again when this rule's original home — src/style.css — was deleted at
+   P6 and the parity gate's canvas-resize wait started timing out).
+
+   Plain (non-CSS-Module) file, not colocated in UiRoot's CSS-Module tree —
+   this targets the literal `"r3f-canvas"` className string GameCanvas.tsx
+   passes to <Canvas>, which scripts/parity.mjs's `.r3f-canvas canvas`
+   selector also depends on staying unhashed. */
+.r3f-canvas {
+  position: fixed !important;
+  inset: 0 !important;
+  display: block;
+}

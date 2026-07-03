@@ -1,16 +1,11 @@
 // Integration tests for Phase 3 player physics: fall-stun, collision push-out,
 // and sim.js map-layout wiring.  Run with: node test/physics.test.mjs
+import { test } from "vitest";
 import assert from "node:assert";
 import { Simulation, PHASE } from "../src/sim.js";
 import { CFG } from "../src/config.js";
 import { MapQuery } from "../src/arena-query.js";
 import { generateMap } from "../src/mapgen.js";
-
-let passed = 0;
-function test(name, fn) {
-  try { fn(); console.log("  ok  -", name); passed++; }
-  catch (e) { console.error("  FAIL-", name, "\n", e.message); process.exitCode = 1; }
-}
 
 function advance(sim, seconds, dt = 1 / CFG.TICK_RATE) {
   for (let t = 0; t < seconds; t += dt) sim.step(dt);
@@ -499,4 +494,3 @@ test("snapshot sends explicit null layout on returnToLobby even without version 
   assert.strictEqual(snap.mapLayout, null, "lobby snapshot must carry explicit null to signal mesh clear");
 });
 
-console.log(`\n${passed} tests passed.`);

@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import assert from "node:assert";
 import { SPELLS } from "../src/config.js";
 import {
@@ -9,12 +10,6 @@ import {
   locomotionState,
   CastAnimator,
 } from "../src/animations.js";
-
-let passed = 0;
-function test(name, fn) {
-  try { fn(); console.log("  ok  -", name); passed++; }
-  catch (e) { console.error("  FAIL-", name, "\n", e.message); process.exitCode = 1; }
-}
 
 console.log("Animation system tests:");
 
@@ -178,4 +173,3 @@ test("CastAnimator retriggering restarts the timer with the new archetype", () =
   assert.strictEqual(a.active, true);
 });
 
-console.log(`\n${passed} animation tests passed.`);

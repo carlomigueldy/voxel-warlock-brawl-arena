@@ -2,16 +2,10 @@
 // per-sender rate limiter. These are the plan's sim-testable social surface
 // (mute-list / voice / UI depend on browser globals and are verified in the
 // manual playtest instead).
+import { test } from "vitest";
 import assert from "node:assert";
 import { sanitizeChat, makeChatRateLimiter } from "../src/net.js";
 import { CFG } from "../src/config.js";
-
-let passed = 0;
-function test(name, fn) {
-  fn();
-  console.log(`  ok  - ${name}`);
-  passed++;
-}
 
 console.log("Social chat tests:");
 
@@ -49,4 +43,3 @@ test("rate limiter is independent per sender", () => {
   assert.strictEqual(allow("b"), true, "a different sender has its own budget");
 });
 
-console.log(`\n${passed} social tests passed.`);

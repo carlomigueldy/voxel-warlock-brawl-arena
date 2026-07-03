@@ -1,0 +1,36 @@
+/* Port of src/style.css L107-130 (.panel) — the "forged panel" every P5
+   screen/overlay is built on (design §4 partition: forged panel -> shared
+   Panel primitive). animation references the global `panelIn` keyframe
+   defined in styles/fx.css (not re-declared here — see that file's header). */
+.panel {
+  position: relative;
+  background: linear-gradient(180deg, rgba(40, 32, 78, 0.92), rgba(15, 11, 33, 0.96));
+  border: 1px solid var(--line-strong);
+  border-radius: 20px;
+  padding: 34px 38px 28px;
+  box-shadow: var(--shadow-panel);
+  max-width: 940px;
+  width: 100%;
+  text-align: center;
+  animation: panelIn 0.6s var(--ease-spring) both;
+}
+.panel::before {
+  /* forged corner bevels */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  pointer-events: none;
+  box-shadow: var(--bezel);
+  background: radial-gradient(60% 40% at 50% 0%, rgba(108, 76, 255, 0.16), transparent 70%);
+}
+
+.compact { padding: 22px 24px 20px; text-align: left; }
+
+@media (prefers-reduced-motion: reduce) {
+  .panel { animation: none; }
+}
+
+@media (max-width: 480px) {
+  .panel { padding: 24px 20px 20px; border-radius: 16px; }
+}

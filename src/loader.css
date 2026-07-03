@@ -1,0 +1,109 @@
+/* The #loader splash — port of the (P6-deleted) legacy style.css's
+   "LOADING SCREEN" section. #loader lives in index.html OUTSIDE the React
+   root (App.tsx's useAppBootstrap drives it imperatively before <UiRoot/>
+   ever mounts — see that file's header), so its CSS can't live in a
+   CSS-Module scoped to a React component; this is a plain global stylesheet,
+   imported directly by main.tsx so it's live before the loader ever paints.
+
+   Reuses tokens.css's custom properties (--void/--text/--ember/--arcane/
+   --muted/--line/--font-display/--font-ui/--ease-spring) and fx.css's
+   titleDrop/fadeDown keyframes — both load synchronously in the same
+   App -> UiRoot import chain main.tsx triggers, and CSS custom-property/
+   keyframe resolution isn't order-sensitive the way JS evaluation is, so
+   this doesn't need its own copies. */
+.loader-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--void);
+  display: flex; align-items: center; justify-content: center;
+  /* Subtle voxel-grid background — same as the menu overlay's own ::after. */
+  background-image:
+    linear-gradient(rgba(108, 76, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(108, 76, 255, 0.04) 1px, transparent 1px);
+  background-size: 44px 44px;
+  background-color: var(--void);
+}
+
+.loader-inner {
+  display: flex; flex-direction: column; align-items: center; gap: 22px;
+  text-align: center;
+}
+
+.loader-title {
+  font-family: var(--font-display);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  line-height: 1.05;
+}
+.loader-line:nth-child(1) {
+  font-size: clamp(18px, 3.5vw, 36px);
+  color: var(--text);
+  animation: titleDrop 0.55s var(--ease-spring) both 0.1s;
+}
+.loader-line:nth-child(2) {
+  font-size: clamp(22px, 4.5vw, 48px);
+  color: var(--ember);
+  text-shadow: 0 0 28px rgba(255, 90, 60, 0.65), 0 4px 0 rgba(0,0,0,0.5);
+  animation: titleDrop 0.55s var(--ease-spring) both 0.25s;
+}
+.loader-line:nth-child(3) {
+  font-size: clamp(18px, 3.5vw, 36px);
+  color: var(--arcane);
+  text-shadow: 0 0 28px rgba(108, 76, 255, 0.65), 0 4px 0 rgba(0,0,0,0.5);
+  animation: titleDrop 0.55s var(--ease-spring) both 0.4s;
+}
+
+.loader-bar-wrap {
+  width: min(400px, 82vw); height: 6px;
+  background: rgba(108, 76, 255, 0.12);
+  border: 1px solid var(--line);
+  border-radius: 999px; overflow: hidden;
+  animation: fadeDown 0.4s ease both 0.6s;
+}
+.loader-bar {
+  width: 0%; height: 100%;
+  background: linear-gradient(90deg, var(--arcane), var(--ember));
+  border-radius: 999px;
+  box-shadow: 0 0 14px rgba(255, 90, 60, 0.55);
+  transition: width 0.28s ease;
+}
+
+.loader-pct {
+  font-family: var(--font-ui); font-size: 12px; letter-spacing: 3px;
+  color: var(--muted);
+  animation: fadeDown 0.4s ease both 0.7s;
+}
+
+.loader-enter {
+  font-family: var(--font-display);
+  font-size: clamp(10px, 1.8vw, 14px);
+  color: var(--text); letter-spacing: 5px;
+  animation: enterPulse 1.5s ease-in-out infinite;
+  margin-top: 6px;
+}
+@keyframes enterPulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; text-shadow: 0 0 18px rgba(255,90,60,0.7); }
+}
+
+/* Fade the loader out when dismissed (App.tsx's useAppBootstrap adds this
+   class, then `.hidden` — global.css owns `.hidden`). */
+.loader-fade-out {
+  opacity: 0 !important;
+  pointer-events: none;
+  transition: opacity 0.52s ease !important;
+}
+
+/* Loader-specific reduced-motion overrides. global.css's generic catch-all
+   (animation-duration: 0.001ms on everything) shortens these animations but
+   does NOT cancel their animation-delay — a reduced-motion user would still
+   see a blank opacity:0 beat for up to 0.7s before the near-instant
+   animation fires. Neutralize outright instead so the loader UI is visible
+   immediately. */
+@media (prefers-reduced-motion: reduce) {
+  .loader-bar { transition: none !important; }
+  .loader-line, .loader-bar-wrap, .loader-pct {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  .loader-enter { animation: none !important; opacity: 1; }
+  .loader-fade-out { transition: none !important; opacity: 0 !important; }
+}

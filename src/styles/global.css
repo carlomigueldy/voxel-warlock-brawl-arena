@@ -1,0 +1,74 @@
+/* ============================================================
+   Global resets + ambient/overlay base — port of the (P6-deleted) legacy
+   style.css's universal reset, html/body base, and the ember-field/
+   grid-drift ambient atmosphere (design §4). The renderer-owned
+   `.r3f-canvas` rule is NOT here — this file is UI-surface only — it lives
+   in src/three/GameCanvas.css, imported directly by GameCanvas.tsx.
+
+   The global prefers-reduced-motion catch-all also lives here: it is
+   the single rule every P5 module relies on to kill CSS animation
+   without a per-component media query (`useFx` gates JS-driven motion
+   separately — see hooks/useFx.ts).
+   ============================================================ */
+@import "./tokens.css";
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-user-select: none; user-select: none;
+  touch-action: none;
+}
+
+/* ---------- Overlay & ambient atmosphere ---------- */
+.overlay {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  z-index: 10;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgba(108, 76, 255, 0.28), transparent 55%),
+    radial-gradient(90% 80% at 50% 120%, rgba(255, 90, 60, 0.16), transparent 60%),
+    radial-gradient(circle at 50% 40%, rgba(13, 11, 26, 0.6), rgba(7, 6, 16, 0.96));
+}
+.overlay::after {
+  /* subtle voxel grid floor */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(108, 76, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(108, 76, 255, 0.06) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at 50% 60%, #000 0%, transparent 75%);
+  animation: gridDrift 24s linear infinite;
+}
+@keyframes gridDrift { to { background-position: 44px 88px, 88px 44px; } }
+.hidden { display: none !important; }
+
+/* floating embers */
+.ember-field { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.ember-field .ember {
+  position: absolute; bottom: -12px;
+  width: var(--s, 5px); height: var(--s, 5px);
+  background: var(--c, var(--ember));
+  border-radius: 1px;
+  box-shadow: 0 0 8px var(--c, var(--ember));
+  opacity: 0;
+  animation: emberRise var(--dur, 9s) linear infinite;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes emberRise {
+  0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.7; }
+  100% { transform: translateY(-104vh) translateX(var(--drift, 20px)) rotate(220deg); opacity: 0; }
+}
+
+/* ---------- Reduced motion (global catch-all) ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  .ember-field { display: none; }
+}

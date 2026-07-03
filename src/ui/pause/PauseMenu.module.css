@@ -1,0 +1,65 @@
+/* Port of src/style.css L2156-2230 (.pause-panel/.pause-title/.pause-actions/
+   .pause-audio/.pause-controls) — design §4 partition map "pause menu" ->
+   pause-chat. Modal (ui/common) already supplies the overlay/backdrop/panel
+   chrome at z-index 200; this module only styles the pause-specific content. */
+.dialog { width: min(420px, 100%); text-align: center; }
+
+.title {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 4vw, 26px);
+  color: var(--arcane);
+  text-shadow: 0 0 18px rgba(108, 76, 255, 0.55), 0 3px 0 rgba(0, 0, 0, 0.45);
+  margin: 0 0 22px;
+}
+
+.actions { display: flex; flex-direction: column; gap: 16px; }
+.actions > * { width: 100%; }
+
+.audio { display: flex; gap: 10px; }
+.audioBtn {
+  flex: 1;
+  padding: 14px 12px;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  font-weight: 600;
+  min-height: 48px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+.audioBtn:hover { border-color: var(--arcane); }
+.audioBtn:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+.audioOff { color: var(--muted); opacity: 0.7; }
+
+.leave { color: var(--ember); border-color: rgba(255, 90, 60, 0.55); }
+.leave:hover { background: rgba(255, 90, 60, 0.14); }
+
+.controls {
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 4px 0 2px;
+  padding: 14px;
+  text-align: left;
+  background: rgba(10, 8, 24, 0.6);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  max-height: 240px; overflow-y: auto;
+}
+.controlRow {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-family: var(--font-ui); font-size: 14px; color: var(--muted);
+}
+.controlRow kbd {
+  font-family: var(--font-ui); font-size: 12px;
+  color: var(--text);
+  background: rgba(108, 76, 255, 0.18);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audioBtn { transition: none; }
+}
