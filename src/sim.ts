@@ -9,9 +9,55 @@ import { castSpell, advanceCasts, applyAoE, nearestEnemy } from "./spells.js";
 import { BotBrain, BOT_PROFILES, botSpellLoadout, closestApproach as _closestApproach } from "./bot.js";
 import { makePrng } from "./rng.js";
 import { makeMobPrng, stepMobPhysics, spawnMob } from "./mob.js";
+import type { Phase, GameEvent, ObstacleTypeId, ArenaWorld, ArenaLandSize, Snapshot } from "./types";
+
+export interface SimulationOptions {
+  seed?: number;
+  arenaWorld?: string;
+  landSize?: string;
+  enabledObstacles?: Partial<Record<ObstacleTypeId, boolean>>;
+  mobsEnabled?: boolean;
+  draftEnabled?: boolean;
+  practiceMode?: boolean;
+}
+
+/** Delayed-AoE meteor impact (spell-cast or mob-ability sourced). */
+interface Meteor {
+  id: number;
+  ownerId: string;
+  x: number;
+  z: number;
+  t: number;
+  fall: number;
+  radius: number;
+  effRadius: number;
+  kb: number;
+  dmg: number;
+  burn?: number;
+  burnDur?: number;
+  burnBy?: string;
+  stun?: number;
+  dead?: boolean;
+}
+
+/** Field-dropped item pickup (mob-death loot or world spawn). */
+interface RuntimeItem {
+  id: number;
+  itemKey: string;
+  kind: string;
+  shape: string;
+  color: number;
+  rarity: string;
+  x: number;
+  z: number;
+  _fromMob: boolean;
+}
 
 // Re-wrap so the local call sites keep their original shape (returns .x/.z midpoint too).
-function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
+function closestApproach(
+  a0x: number, a0z: number, a1x: number, a1z: number,
+  b0x: number, b0z: number, b1x: number, b1z: number
+) {
   const r = _closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z);
   // Compute midpoint at closest-approach time for the clash-event position.
   const vv0 = (a1x - a0x), vv1 = (a1z - a0z);
@@ -24,21 +70,26 @@ function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
 // A lightweight logical arena (no rendering) used by the sim.
 // Holds a MapQuery so player.step() can call groundHeightAt/blocksMovement.
 class LogicArena {
-  constructor(world, landSize) {
+  world: ArenaWorld;
+  landSize: ArenaLandSize;
+  radius: number;
+  _query: any;
+
+  constructor(world: ArenaWorld, landSize: ArenaLandSize) {
     this.world = world;
     this.landSize = landSize;
     this.radius = landSize.radius;
     this._query = new MapQuery(null);
   }
-  isOnPlatform(x, z) { return isOnArenaWorld(this.world.id, this.radius, x, z); }
+  isOnPlatform(x: number, z: number) { return isOnArenaWorld(this.world.id, this.radius, x, z); }
   // Keep the query layer's active radius in sync with the (shrinking) arena so
   // off-platform plateaus/obstacles stop blocking movement and rays.
   _sync()                          { this._query.setActiveRadius(this.radius); }
-  groundHeightAt(x, z)             { this._sync(); return this._query.groundHeightAt(x, z); }
-  blocksMovement(x, z, fromY)      { this._sync(); return this._query.blocksMovement(x, z, fromY); }
-  obstaclesBlockingRay(x0,z0,y0,x1,z1,y1) { this._sync(); return this._query.obstaclesBlockingRay(x0,z0,y0,x1,z1,y1); }
-  onRamp(x, z)                     { this._sync(); return this._query.onRamp(x, z); }
-  setLayout(layout)                { this._query.setLayout(layout); }
+  groundHeightAt(x: number, z: number)             { this._sync(); return this._query.groundHeightAt(x, z); }
+  blocksMovement(x: number, z: number, fromY: number)      { this._sync(); return this._query.blocksMovement(x, z, fromY); }
+  obstaclesBlockingRay(x0: number,z0: number,y0: number,x1: number,z1: number,y1: number) { this._sync(); return this._query.obstaclesBlockingRay(x0,z0,y0,x1,z1,y1); }
+  onRamp(x: number, z: number)                     { this._sync(); return this._query.onRamp(x, z); }
+  setLayout(layout: unknown)                { this._query.setLayout(layout); }
   reset() {
     this.radius = this.landSize.radius;
     this._query.setLayout(null); // clear layout; caller sets it again at round start
@@ -48,7 +99,7 @@ class LogicArena {
 // Step 6: Ensure a draft pick list is always padded to a full 6-slot loadout.
 // Empty picks fall back to the Burst template. Additional slots are filled from
 // Burst in order, skipping any spell already in the list.
-function completeLoadout(picks = []) {
+function completeLoadout(picks: string[] = []) {
   const out = [...new Set((picks || []).filter((id) => SPELLS[id] && id !== "fireball"))];
   const fallback = SPELL_TEMPLATES[0].spells;
   if (out.length === 0) return fallback.slice(0, CFG.SPELL_SLOT_COUNT);
@@ -59,7 +110,7 @@ function completeLoadout(picks = []) {
   return out.slice(0, CFG.SPELL_SLOT_COUNT);
 }
 
-export const PHASE = {
+export const PHASE: Record<string, Phase> = {
   LOBBY: "lobby",
   SPELL_SELECTION: "spellSelection", // Step 6: 30-second pre-match draft
   COUNTDOWN: "countdown",
@@ -70,16 +121,52 @@ export const PHASE = {
 
 const BOT_PREFIX = "bot:";
 
-function normalizeBotSkill(skill) {
+function normalizeBotSkill(skill: string) {
   return CFG.BOT_SKILLS.includes(skill) ? skill : "smart";
 }
 
-function botDisplayName(skill, index) {
+function botDisplayName(skill: string, index: number) {
   return `${skill[0].toUpperCase()}${skill.slice(1)} Bot ${index + 1}`;
 }
 
 export class Simulation {
-  constructor(options = {}) {
+  _rng: () => number;
+  world: ArenaWorld;
+  landSize: ArenaLandSize;
+  enabledObstacles: Partial<Record<ObstacleTypeId, boolean>>;
+  players: Map<string, Player>;
+  bolts: any[];
+  meteors: Meteor[];
+  runes: any[];
+  _meteorId: number;
+  items: RuntimeItem[];
+  itemSpawnTimer: number;
+  _itemId: number;
+  mobs: any[];
+  mobSpawnTimer: number;
+  _mobId: number;
+  _mobRand: (() => number) | null;
+  mobsEnabled: boolean;
+  draftEnabled: boolean;
+  practiceMode: boolean;
+  practiceNoCooldown: boolean;
+  _mobRoster: string[];
+  _mobRosterIdx: number;
+  _arenaStartR: number;
+  arena: LogicArena;
+  phase: Phase;
+  round: number;
+  phaseTimer: number;
+  playTime: number;
+  lastWinnerId: string | null;
+  matchWinnerId: string | null;
+  events: GameEvent[];
+  mapLayout: unknown;
+  mapVersion: number;
+  _lastSentMapV: number;
+  _matchSeed: number;
+
+  constructor(options: SimulationOptions = {}) {
     // Injectable RNG: pass options.seed (number) for a deterministic PRNG;
     // omit it (or pass undefined/null) to keep the default random behaviour.
     this._rng = typeof options.seed === "number" ? makePrng(options.seed) : Math.random;
@@ -145,7 +232,7 @@ export class Simulation {
    * outside PHASE.LOBBY — config is locked once the match leaves the lobby.
    * Returns the normalized config that was applied (or the current one if no-op).
    */
-  configure(options = {}) {
+  configure(options: SimulationOptions = {}) {
     if (this.phase !== PHASE.LOBBY) {
       console.warn("Simulation.configure() ignored: match is no longer in the lobby.");
       return this._currentConfig();
@@ -156,7 +243,7 @@ export class Simulation {
       const rawToggles = options.enabledObstacles || {};
       this.enabledObstacles = {};
       for (const { id } of CFG.OBSTACLE_TYPES) {
-        this.enabledObstacles[id] = rawToggles[id] !== false;
+        this.enabledObstacles[id] = (rawToggles as any)[id] !== false;
       }
     }
     if (options.mobsEnabled !== undefined) this.mobsEnabled = options.mobsEnabled !== false;
@@ -173,8 +260,8 @@ export class Simulation {
     };
   }
 
-  addPlayer(id, name, options = {}) {
-    if (this.players.has(id)) return this.players.get(id);
+  addPlayer(id: string, name: string, options: any = {}): Player {
+    if (this.players.has(id)) return this.players.get(id)!;
     const idx = this.players.size;
     const p = new Player(id, name, idx, options);
     // Draft mode: human players joining during SPELL_SELECTION get the default
@@ -198,15 +285,15 @@ export class Simulation {
     return p;
   }
 
-  setBotRoster(count, skill = "smart") {
+  setBotRoster(count: number, skill: string = "smart") {
     const botSkill = normalizeBotSkill(skill);
     const humanCount = [...this.players.values()].filter((p) => !p.isBot).length;
-    const wanted = Math.max(0, Math.min(CFG.MAX_PLAYERS - humanCount, Number.parseInt(count, 10) || 0));
+    const wanted = Math.max(0, Math.min(CFG.MAX_PLAYERS - humanCount, Number.parseInt(String(count), 10) || 0));
     for (const id of [...this.players.keys()]) {
-      if (this.players.get(id).isBot) this.players.delete(id);
+      if (this.players.get(id)!.isBot) this.players.delete(id);
     }
-    const profile = BOT_PROFILES[botSkill] || BOT_PROFILES.smart;
-    const bots = [];
+    const profile = (BOT_PROFILES as any)[botSkill] || (BOT_PROFILES as any).smart;
+    const bots: Player[] = [];
     for (let i = 0; i < wanted; i++) {
       const botId = `${BOT_PREFIX}${i + 1}`;
       const bot = this.addPlayer(botId, botDisplayName(botSkill, i), { isBot: true, botSkill });
@@ -226,13 +313,13 @@ export class Simulation {
     return [...this.players.values()].filter((p) => p.isBot);
   }
 
-  removePlayer(id) {
+  removePlayer(id: string) {
     const wasActive = this.phase === PHASE.PLAYING || this.phase === PHASE.COUNTDOWN;
     this.players.delete(id);
     if (wasActive) this.resolveRoundIfNeeded();
   }
 
-  setInput(id, input = {}) {
+  setInput(id: string, input: any = {}) {
     const p = this.players.get(id);
     if (!p) return;
     const seq = Number.isFinite(input.seq) ? input.seq : p.input.seq;
@@ -313,7 +400,7 @@ export class Simulation {
    * Host-authoritative handler for a draft action from a player.
    * No-ops when the phase is not SPELL_SELECTION or the player is unknown.
    */
-  applyDraft(id, msg = {}) {
+  applyDraft(id: string, msg: any = {}) {
     if (this.phase !== PHASE.SPELL_SELECTION) return;
     const p = this.players.get(id);
     if (!p || p.isBot) return;
@@ -337,7 +424,7 @@ export class Simulation {
     this.beginRound();
   }
 
-  spawnPoint(angle) {
+  spawnPoint(angle: number) {
     const offsets = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7, 8];
     const startRadius = this.arena.radius > CFG.ARENA_RADIUS ? this.arena.radius * 0.78 : Math.min(this.arena.radius - 3, 12);
     for (const offset of offsets) {
@@ -412,7 +499,7 @@ export class Simulation {
   }
 
   // Weighted random item key from the given rarity weight map.
-  _weightedItemKey(rng, weights) {
+  _weightedItemKey(rng: () => number, weights: Record<string, number>): string {
     const pool = Object.keys(ITEMS).filter((k) => (weights[ITEMS[k].rarity] || 0) > 0);
     const total = pool.reduce((s, k) => s + (weights[ITEMS[k].rarity] || 0), 0);
     let r = rng() * total;
@@ -421,15 +508,15 @@ export class Simulation {
   }
 
   // Mob-death loot — rarity-weighted, deterministic via the seeded _mobRand.
-  dropItem(x, z) {
-    if (this._mobRand() > CFG.ITEM_MOB_DROP_CHANCE) return null;
-    const key = this._weightedItemKey(this._mobRand, CFG.ITEM_RARITY_WEIGHTS);
+  dropItem(x: number, z: number) {
+    if (this._mobRand!() > CFG.ITEM_MOB_DROP_CHANCE) return null;
+    const key = this._weightedItemKey(this._mobRand!, CFG.ITEM_RARITY_WEIGHTS);
     return this._pushItem(key, x, z, true);
   }
 
-  _pushItem(key, x, z, fromMob = false) {
+  _pushItem(key: string, x: number, z: number, fromMob: boolean = false): RuntimeItem {
     const it = ITEMS[key];
-    const item = {
+    const item: RuntimeItem = {
       id: this._itemId++, itemKey: key, kind: it.kind, shape: it.shape,
       color: it.color, rarity: it.rarity,
       x: +x.toFixed(3), z: +z.toFixed(3), _fromMob: fromMob,
@@ -447,7 +534,7 @@ export class Simulation {
   }
 
   // Advance the world-spawn timer; cap world items to ITEM_MAX_ACTIVE.
-  stepItems(dt) {
+  stepItems(dt: number) {
     const worldCount = this.items.filter((i) => !i._fromMob).length;
     if (worldCount >= CFG.ITEM_MAX_ACTIVE) return;
     this.itemSpawnTimer -= dt;
@@ -461,7 +548,7 @@ export class Simulation {
   // on field if all slots are full so rivals can contest it.
   resolveItemPickups() {
     if (!this.items.length) return;
-    const remaining = [];
+    const remaining: RuntimeItem[] = [];
     for (const item of this.items) {
       let picked = false;
       for (const p of this.players.values()) {
@@ -518,7 +605,7 @@ export class Simulation {
   }
 
   // Advance the whole simulation by dt seconds (host authoritative).
-  step(dt) {
+  step(dt: number) {
     this.events = [];
 
     // Step 6: spell draft countdown — transitions to the first round when all
@@ -698,7 +785,7 @@ export class Simulation {
             // emit per-victim hit events, so we record here directly).
             if (meteorHit) {
               p.applyDamage(m.dmg ?? CFG.BOLT_BASE_DAMAGE, m.ownerId);
-              if (m.burn) { p.status.burn = m.burnDur; p.status.burnDps = m.burn; p.status.burnBy = m.burnBy ?? m.ownerId; }
+              if (m.burn) { p.status.burn = m.burnDur!; p.status.burnDps = m.burn; p.status.burnBy = m.burnBy ?? m.ownerId; }
               if (m.stun) { p.status.stunned = Math.max(p.status.stunned, m.stun); }
               if (m.ownerId && m.ownerId !== p.id) p.recordAttacker(m.ownerId, Date.now());
             }
@@ -767,10 +854,10 @@ export class Simulation {
   }
 
   // Pick a random on-platform position away from all players.
-  _mobSpawnPos() {
+  _mobSpawnPos(): { x: number; z: number } | null {
     for (let attempt = 0; attempt < 20; attempt++) {
-      const angle = this._mobRand() * Math.PI * 2;
-      const ring = (0.5 + this._mobRand() * 0.45) * Math.min(this.arena.radius * 0.8, CFG.RUNE_SPAWN_RADIUS);
+      const angle = this._mobRand!() * Math.PI * 2;
+      const ring = (0.5 + this._mobRand!() * 0.45) * Math.min(this.arena.radius * 0.8, CFG.RUNE_SPAWN_RADIUS);
       const x = Math.cos(angle) * ring;
       const z = Math.sin(angle) * ring;
       if (!this.arena.isOnPlatform(x, z)) continue;
@@ -784,14 +871,14 @@ export class Simulation {
 
   // Spawn a player-summoned minion (step-3 Conjure spell). Placed just behind
   // the caster; skipped silently if the position is off-platform.
-  spawnSummon(owner, ttl) {
+  spawnSummon(owner: Player, ttl: number) {
     if (!this.arena) return;
     const a = owner.aim + Math.PI;
     const x = owner.x + Math.cos(a) * 2;
     const z = owner.z + Math.sin(a) * 2;
     if (!this.arena.isOnPlatform(x, z)) return;
     const id = "mob:" + this._mobId++;
-    const m = spawnMob(id, "minion", x, z, owner.id);
+    const m: any = spawnMob(id, "minion", x, z, owner.id);
     m.ttl = ttl;
     m.summoned = true;
     m.ownerPlayerId = owner.id; // exclude owner from targeting so minion harries foes
@@ -804,12 +891,12 @@ export class Simulation {
   // an explicit position (falls back to a free spot near the player when x/z
   // are omitted). Dummies take spell damage and show HP/hit feedback exactly
   // like real mobs, but never attack — see the `mob.passive` guard in stepMobs().
-  spawnDummyMob(type, x, z) {
+  spawnDummyMob(type: string, x?: number, z?: number) {
     if (!CFG.MOB_TYPES[type]) return null;
-    let pos = { x, z };
+    let pos = { x, z } as { x: number; z: number };
     if (!Number.isFinite(x) || !Number.isFinite(z)) pos = this._mobSpawnPos() || { x: 0, z: 6 };
     const id = "mob:" + this._mobId++;
-    const mob = spawnMob(id, type, pos.x, pos.z);
+    const mob: any = spawnMob(id, type, pos.x, pos.z);
     mob.passive = true;
     mob.entering = 0;     // spawn ready to hit immediately, no cinematic entrance
     mob.spawnInvuln = 0;
@@ -836,7 +923,7 @@ export class Simulation {
   // "Change Abilities" panel while a round is in progress). No-op outside
   // practice mode. setLoadout() rebuilds spellSlots/spells and zeroes
   // cooldowns for the new set; it does not touch HP/position/status.
-  changeLoadout(id, spellIds) {
+  changeLoadout(id: string, spellIds: string[]) {
     if (!this.practiceMode) return;
     const p = this.players.get(id);
     if (!p) return;
@@ -846,7 +933,7 @@ export class Simulation {
   // Practice mode: toggle the "no cooldowns" cheat. Cooldowns only — charges
   // and other resources are untouched. Clears the local player's current
   // cooldowns immediately on enable so it takes effect right away.
-  setPracticeNoCooldown(v) {
+  setPracticeNoCooldown(v: boolean) {
     if (!this.practiceMode) return;
     this.practiceNoCooldown = !!v;
     if (this.practiceNoCooldown) {
@@ -859,7 +946,7 @@ export class Simulation {
   // Physics/lifecycle-only tick for practice-mode dummies, used instead of the
   // full stepMobs() AI loop when mobsEnabled is false (no auto-spawn roster,
   // no targeting) — mirrors the `mob.passive` branch inside stepMobs().
-  stepDummies(dt) {
+  stepDummies(dt: number) {
     if (this.phase !== PHASE.PLAYING) return;
     for (const mob of this.mobs) {
       if (!mob.alive) continue;
@@ -869,7 +956,7 @@ export class Simulation {
     this.mobs = this.mobs.filter((m) => m.alive);
   }
 
-  stepMobs(dt) {
+  stepMobs(dt: number) {
     if (this.phase !== PHASE.PLAYING) return;
 
     // ── Spawn ────────────────────────────────────────────────────────────────
@@ -888,7 +975,7 @@ export class Simulation {
       if (pos) {
         const type = this._mobRoster[this._mobRosterIdx++];
         const id = "mob:" + this._mobId++;
-        const mob = spawnMob(id, type, pos.x, pos.z);
+        const mob: any = spawnMob(id, type, pos.x, pos.z);
         // Health scaling: base * (MIN_FACTOR + PER_PLAYER * max(0, players - 2)).
         const n = this.alivePlayers().length;
         const factor = CFG.MOB_HP_MIN_FACTOR + CFG.MOB_HP_PER_PLAYER * Math.max(0, n - 2);
@@ -902,11 +989,11 @@ export class Simulation {
           x: pos.x,
           z: pos.z,
           color: CFG.MOB_TYPES[type].color,
-          entrance: CFG.MOB_TYPES[type].entrance.kind,
+          entrance: CFG.MOB_TYPES[type].entrance!.kind,
           duration: CFG.MOB_ENTRANCE,
         });
       }
-      this.mobSpawnTimer = CFG.MOB_SPAWN_MIN + this._mobRand() * (CFG.MOB_SPAWN_MAX - CFG.MOB_SPAWN_MIN);
+      this.mobSpawnTimer = CFG.MOB_SPAWN_MIN + this._mobRand!() * (CFG.MOB_SPAWN_MAX - CFG.MOB_SPAWN_MIN);
     }
 
     // ── AI + physics ─────────────────────────────────────────────────────────
@@ -944,13 +1031,13 @@ export class Simulation {
       // Entrance completion: first tick where the cinematic window closes.
       // Emit mobArrive, then apply AoE knockback for entrance kinds that have it.
       if (wasEntering > 0 && mob.entering <= 0) {
-        const ec = CFG.MOB_TYPES[mob.type].entrance;
+        const ec = CFG.MOB_TYPES[mob.type].entrance!;
         this.events.push({ type: "mobArrive", id: mob.id, mobType: mob.type, x: mob.x, z: mob.z, radius: ec.radius || 0 });
         if (ec.kb) {
           for (const p of this.players.values()) {
             if (!p.alive || p.falling || p.spectating) continue;
             const d = Math.hypot(p.x - mob.x, p.z - mob.z);
-            if (d <= ec.radius) {
+            if (d <= ec.radius!) {
               const ndx = d < 0.001 ? Math.cos(mob.aim) : (p.x - mob.x) / d;
               const ndz = d < 0.001 ? Math.sin(mob.aim) : (p.z - mob.z) / d;
               const landed = p.applyHit(ndx, ndz, ec.kb);
@@ -996,7 +1083,7 @@ export class Simulation {
         const totalMinions = this.mobs.filter(m => m.alive && m.parentId === mob.id).length;
         if (totalMinions < CFG.MOB_MAX_CHILDREN) {
           const minionId = "mob:" + this._mobId++;
-          const minion = spawnMob(minionId, "minion", action.x, action.z, mob.id);
+          const minion: any = spawnMob(minionId, "minion", action.x, action.z, mob.id);
           // Ensure minion is on platform; if not, just don't spawn.
           if (this.arena.isOnPlatform(action.x, action.z)) {
             mob.childCount++;
@@ -1012,8 +1099,10 @@ export class Simulation {
   }
 
   // Begin a telegraphed ability channel: root the mob, lock the cast point, emit telegraph.
-  _startMobChannel(mob, target) {
-    const cfg = CFG.MOB_TYPES[mob.type];
+  // `mob` (mob.ts) and its CFG.MOB_TYPES ability tunables are read dynamically per
+  // ability kind, mirroring SPELLS' per-kind tunables — widened locally to `any`.
+  _startMobChannel(mob: any, target: any) {
+    const cfg: any = CFG.MOB_TYPES[mob.type];
     // Self-centered abilities lock at mob position; others lock at target position (dodgeable).
     const selfCentered = cfg.ability === "seismicStomp" || cfg.ability === "vacuum";
     let tx = selfCentered ? mob.x : target.x;
@@ -1052,8 +1141,8 @@ export class Simulation {
     });
   }
 
-  _fireMobAbility(mob, target) {
-    const typeCfg = CFG.MOB_TYPES[mob.type];
+  _fireMobAbility(mob: any, target: any) {
+    const typeCfg: any = CFG.MOB_TYPES[mob.type];
     const ability  = typeCfg.ability;
     if (!ability) return;
 
@@ -1159,7 +1248,7 @@ export class Simulation {
 
   // Apply scaled spell damage to a single mob — player-sourced only (never called from
   // mob-ability paths, preserving the invariant that mob bolts cannot damage mobs).
-  damageMobAt(mob, { dmg, kb = 0, by }) {
+  damageMobAt(mob: any, { dmg, kb = 0, by }: { dmg: number; kb?: number; by: string }) {
     if (!mob.alive || mob.spawnInvuln > 0 || mob.entering > 0) return;
     const hits = Math.max(1, Math.round(dmg / CFG.BOLT_BASE_DAMAGE));
     if (kb > 0) {
@@ -1175,7 +1264,7 @@ export class Simulation {
 
   // Apply scaled spell damage to all living mobs within radius r of (x, z).
   // Player-sourced only — do not call from mob-ability paths.
-  damageMobsInRadius(x, z, r, { dmg, kb = 0, by }) {
+  damageMobsInRadius(x: number, z: number, r: number, { dmg, kb = 0, by }: { dmg: number; kb?: number; by: string }) {
     for (const mob of this.mobs) {
       if (!mob.alive || mob.spawnInvuln > 0 || mob.entering > 0) continue;
       const d = Math.hypot(mob.x - x, mob.z - z);
@@ -1184,7 +1273,7 @@ export class Simulation {
     }
   }
 
-  killMob(mob, cause) {
+  killMob(mob: any, cause: string) {
     mob.alive = false;
     // Decrement parent's child count if this was a minion.
     if (mob.parentId) {
@@ -1240,7 +1329,7 @@ export class Simulation {
     }
   }
 
-  endRound(winner) {
+  endRound(winner: Player | null) {
     this.lastWinnerId = winner ? winner.id : null;
     if (winner) {
       winner.score += CFG.ROUND.POINTS_FOR_WIN;
@@ -1266,7 +1355,7 @@ export class Simulation {
   // layout, leaving already-connected peers without geometry.  A non-tracking
   // snapshot always carries the full current layout (no override needed), but
   // main.js also sets `mapLayout: sim.mapLayout` explicitly for clarity.
-  snapshot(opts = {}) {
+  snapshot(opts: { trackSend?: boolean } = {}): Snapshot {
     const trackSend = opts.trackSend !== false;
     const layoutChanged = this.mapVersion !== this._lastSentMapV;
     // Include layout when: (a) this is an out-of-band welcome (always send the

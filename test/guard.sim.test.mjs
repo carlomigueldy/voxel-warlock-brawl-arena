@@ -10,7 +10,7 @@ console.log("Source guards (sim) checks:");
 
 // legacy text guard — delete in P6
 test("fireball cast events are emitted via spells.js castSpell pipeline", () => {
-  const spells = fs.readFileSync("src/spells.js", "utf8");
+  const spells = fs.readFileSync("src/spells.ts", "utf8");
   assert.match(spells, /type: "cast"[\s\S]*spell: "fireball"/);
 });
 
