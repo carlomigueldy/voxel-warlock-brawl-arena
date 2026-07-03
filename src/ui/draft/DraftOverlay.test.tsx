@@ -162,39 +162,6 @@ describe("DraftOverlay", () => {
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
   });
 
-  // #176 review finding: onNewSnapshot.ts's legacy-UI fan-out is ungated by
-  // UI_MODE, so ui.js's showSpellDraft() still builds a real legacy
-  // `#spell-draft` overlay with the SAME role="option"+aria-label cards
-  // under `?ui=react` — reproduces that duplicate here and asserts it's
-  // neutralized from the accessibility tree while this overlay is open.
-  it("neutralizes the legacy #spell-draft duplicate (inert + aria-hidden) while open, and restores it on close", async () => {
-    const legacy = document.createElement("div");
-    legacy.id = "spell-draft";
-    const legacyCard = document.createElement("button");
-    legacyCard.setAttribute("role", "option");
-    legacyCard.setAttribute("aria-label", "Lightning — Lightning that chains and slows nearby enemies.");
-    legacy.appendChild(legacyCard);
-    document.body.appendChild(legacy);
-
-    try {
-      render(<DraftOverlay />);
-      publish(makeSnap());
-
-      // Exactly one accessible "Lightning" option — the React one, not the
-      // legacy duplicate — resolves via a real role+label locator.
-      expect(screen.getAllByRole("option", { name: /Lightning/ })).toHaveLength(1);
-      expect(legacy.inert).toBe(true);
-      expect(legacy.getAttribute("aria-hidden")).toBe("true");
-
-      await nextPublishWindow();
-      publish(makeSnap({ phase: "countdown", timer: 3 }));
-      expect(legacy.inert).toBe(false);
-      expect(legacy.getAttribute("aria-hidden")).toBeNull();
-    } finally {
-      legacy.remove();
-    }
-  });
-
   it("draft-juice: a newly-filled pick fires an FX burst (school-colored particles)", async () => {
     render(<DraftOverlay />);
     publish(makeSnap());

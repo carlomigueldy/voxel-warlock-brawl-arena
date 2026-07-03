@@ -1,18 +1,14 @@
-// The React shell root (?shell=react only). RENDERER/UI_MODE are both
-// hardcoded to "legacy" in P3a (design §4) — R3F (P4) and the React UI (P5)
-// don't exist yet, so this always resolves to LegacyRendererBridge +
-// LegacyUiBridge. The flags are read here (not inlined) so P4/P5 only need
-// to add their own branch, not touch this file's structure.
+// The React shell root — P6 collapses this to the single React/R3F path
+// (the legacy prototype and its RENDERER/UI_MODE flags are deleted; this
+// file used to branch on both, now it unconditionally mounts GameCanvas +
+// UiRoot).
 import { lazy, Suspense, useEffect, useRef } from "react";
-import { RENDERER, UI_MODE } from "./config/flags";
 import { CAPTURE } from "./three/parity/determinism";
-import { getAudio, getUI } from "./services/registry";
+import { getAudio } from "./services/registry";
 import { useSessionStore } from "./store/useSessionStore";
 import { useSettingsStore } from "./store/useSettingsStore";
 import { useUiStore } from "./store/useUiStore";
 import { useGameSession } from "./loop/useGameSession";
-import { LegacyRendererBridge } from "./legacy/LegacyRendererBridge";
-import { LegacyUiBridge } from "./legacy/LegacyUiBridge";
 import { UiRoot } from "./ui/UiRoot";
 import { isEnabled } from "./supabase.js";
 import { initAuth, getUser, onAuthChange } from "./auth.js";
@@ -20,11 +16,10 @@ import { getRegion } from "./region.js";
 import { preloadAssets } from "./loader.js";
 
 // Lazy + dynamic import (not a static one) so `@react-three/fiber`/drei/the
-// whole src/three/** tree is its own code-split chunk that the default
-// `?renderer=legacy` path never fetches (design §2/CLAUDE.md quality gate:
-// "r3f chunk code-split, NOT pulled into the legacy/default path"). RENDERER
-// is read once at module load (config/flags.ts) and never flips within a
-// session, so this only ever imports when the r3f branch actually renders.
+// whole src/three/** tree stays its own code-split chunk, fetched in
+// parallel with (not blocking) the initial bundle's parse/eval — this app
+// mounts <GameCanvas/> unconditionally now (single React/R3F path, P6), but
+// the chunk split itself is still worth keeping for initial-paint latency.
 const GameCanvas = lazy(() => import("./three/GameCanvas").then((m) => ({ default: m.GameCanvas })));
 
 // Port of main.js's loading-gate IIFE (934-1005): preload assets (12s safety
@@ -89,9 +84,7 @@ function useAppBootstrap(): void {
         setTimeout(() => loaderEl.classList.add("hidden"), 560);
       }
 
-      const ui = getUI();
       const onlineEnabled = isEnabled();
-      ui.setOnlineEnabled(onlineEnabled);
       useUiStore.getState().setOnlineEnabled(onlineEnabled);
 
       const [user, region] = await Promise.allSettled([initAuth(), getRegion()]).then((results) =>
@@ -100,21 +93,17 @@ function useAppBootstrap(): void {
       if (cancelled) return;
 
       if (region) {
-        ui.setRegion(region as string);
         useSettingsStore.getState().setRegion(region as string);
       }
 
       if (onlineEnabled) {
         const activeUser = (user as ReturnType<typeof getUser>) || getUser();
-        ui.renderAuthState(activeUser);
         useUiStore.getState().setAuthView(activeUser);
         onAuthChange((updatedUser) => {
-          ui.renderAuthState(updatedUser);
           useUiStore.getState().setAuthView(updatedUser);
         });
       }
 
-      ui.showMenu();
       useSessionStore.getState().setScreen("menu");
     })();
 
@@ -139,16 +128,12 @@ export default function App() {
           fixture snapshots straight into snapshotRef (design §7), so the
           host/client loop this mounts must not also run. */}
       {!CAPTURE && <GameSession />}
-      {RENDERER === "r3f" ? (
-        <Suspense fallback={null}>
-          <GameCanvas />
-        </Suspense>
-      ) : (
-        <LegacyRendererBridge />
-      )}
+      <Suspense fallback={null}>
+        <GameCanvas />
+      </Suspense>
       {/* ?capture=1: the HUD/menu/onboarding DOM is force-hidden anyway
           (determinism.ts's hideChrome) and has nothing to wire — skip it. */}
-      {!CAPTURE && (UI_MODE === "react" ? <UiRoot /> : <LegacyUiBridge />)}
+      {!CAPTURE && <UiRoot />}
     </>
   );
 }
