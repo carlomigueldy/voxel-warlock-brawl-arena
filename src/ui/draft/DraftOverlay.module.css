@@ -213,7 +213,10 @@
   color: var(--text);
   font-family: var(--font-ui);
 }
-.spellCard:hover:not(:disabled),
+/* Matches draft-juice.js's injected rule exactly: hover excludes at-cap
+   (a dimmed, non-actionable card shouldn't also glow); focus-visible does
+   not exclude it (keyboard focus still needs a visible ring to navigate). */
+.spellCard:hover:not(:disabled):not(.atCap),
 .spellCard:focus-visible {
   border-color: var(--dj-glow, var(--arcane));
   box-shadow: 0 0 0 1px var(--dj-glow, var(--arcane)), 0 0 22px -3px var(--dj-glow, var(--arcane));

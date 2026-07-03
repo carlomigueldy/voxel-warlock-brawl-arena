@@ -79,6 +79,34 @@ export function DraftOverlay() {
   // game screen mid-celebration).
   useEffect(() => () => clearTimeout(celebrateTimeoutRef.current), []);
 
+  // Legacy-DOM duplicate-accessible-content stopgap (#176 review finding —
+  // see docs/MEMORY.md). onNewSnapshot.ts's legacy-UI fan-out is UNGATED by
+  // UI_MODE (unlike #menu/#lobby/#hud, which are hidden-by-default or only
+  // shown via UI_MODE-gated calls) — under `?ui=react` it still calls
+  // ui.js's showSpellDraft() every tick during spellSelection, which
+  // un-hides AND builds the real legacy `#spell-draft` overlay with the
+  // SAME role="option"+aria-label spell cards this component mirrors. A
+  // role+label locator (or a screen-reader rotor/virtual-cursor, not just
+  // Tab — z-index only guards pointer clicks, not the accessibility tree)
+  // would otherwise resolve TWO elements. Precedented by UiRoot's
+  // useHideLegacyMenuDom ("a targeted DOM fixup for a known frozen call
+  // site, not a MutationObserver") — neutralize the legacy node from the
+  // a11y tree for exactly as long as this overlay is open, restoring it on
+  // close/unmount so `?ui=legacy` (which never mounts this component) and
+  // the legacy node's own lifecycle stay untouched otherwise.
+  useEffect(() => {
+    const legacy = document.getElementById("spell-draft");
+    if (!legacy) return;
+    if (active) {
+      legacy.inert = true;
+      legacy.setAttribute("aria-hidden", "true");
+    }
+    return () => {
+      legacy.inert = false;
+      legacy.removeAttribute("aria-hidden");
+    };
+  }, [active]);
+
   // Lock-in burst + chord for every newly-filled slot (draft-juice.js's
   // onPipMutation, keyed off the store's picks array instead of a
   // MutationObserver on .draft-slot-pip class changes).
@@ -92,6 +120,14 @@ export function DraftOverlay() {
         const school = schoolForSpell(id);
         const r = pip.getBoundingClientRect();
         fx.burst(r.left + r.width / 2, r.top + r.height / 2, school.burst, 10);
+        // Pip scale-pulse (draft-juice.js's fireLockIn) — imperative class
+        // toggle on the ref, same re-trigger trick as legacy: force a
+        // reflow so the animation restarts even if `pipLock` is somehow
+        // still applied, then clean up once it finishes.
+        pip.classList.remove(styles.pipLock);
+        void pip.offsetWidth;
+        pip.classList.add(styles.pipLock);
+        pip.addEventListener("animationend", () => pip.classList.remove(styles.pipLock), { once: true });
       }
       menuCue("lockin");
     });
