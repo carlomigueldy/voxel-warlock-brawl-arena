@@ -4,10 +4,18 @@
 // generative ambient pad round out the immersive feel.
 import { asset } from "./asset-url.js";
 
+// webkitAudioContext is Safari's pre-standardization AudioContext global —
+// not part of lib.dom, declared ambiently here (this module only).
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+  }
+}
+
 // Map of every generated real-audio SFX key to its file under assets/audio/sfx/.
 // See assets/audio/sfx/manifest.json for the authoritative key-to-file mapping.
 const SFX_BASE = asset("assets/audio/sfx/");
-const SFX_FILES = {
+const SFX_FILES: Record<string, string> = {
   // T1
   cast: "t1-cast.mp3",
   slow: "t1-slow.mp3",
@@ -65,8 +73,41 @@ const SFX_FILES = {
   muteOff: "t3-mute-off.mp3",
 };
 
-let _instance = null;
+interface ToneOpts {
+  type?: OscillatorType;
+  f0?: number;
+  f1?: number | null;
+  dur?: number;
+  gain?: number;
+  when?: number;
+  pan?: number;
+}
+
+interface NoiseOpts {
+  dur?: number;
+  gain?: number;
+  type?: BiquadFilterType;
+  freq?: number;
+  q?: number;
+  when?: number;
+  pan?: number;
+  sweep?: number | null;
+}
+
+let _instance: AudioEngine | null = null;
 export class AudioEngine {
+  ctx: AudioContext | null;
+  master: GainNode | null;
+  musicGain: GainNode | null;
+  sfxGain: GainNode | null;
+  enabled: boolean;
+  musicOn: boolean;
+  _musicNodes: (OscillatorNode | GainNode)[];
+  _lastPlay: Record<string, number>;
+  _bufferCache: Map<string, AudioBuffer | Promise<AudioBuffer | null>>;
+  reverb?: GainNode;
+  _musicTimer?: ReturnType<typeof setInterval> | null;
+
   constructor() {
     _instance = this;
     this.ctx = null;
@@ -81,14 +122,14 @@ export class AudioEngine {
   }
 
   // Must be called from a user gesture (browser autoplay policy).
-  resume() {
+  resume(): void {
     if (!this.ctx) this._init();
-    if (this.ctx.state === "suspended") this.ctx.resume();
+    if (this.ctx!.state === "suspended") this.ctx!.resume();
   }
 
-  _init() {
+  _init(): void {
     const AC = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new AC();
+    this.ctx = new AC!();
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.9;
     this.master.connect(this.ctx.destination);
@@ -115,21 +156,21 @@ export class AudioEngine {
     this.musicGain.connect(this.master);
   }
 
-  setEnabled(on) {
+  setEnabled(on: boolean): void {
     this.enabled = on;
-    if (this.master) this.master.gain.setTargetAtTime(on ? 0.9 : 0, this.ctx.currentTime, 0.05);
+    if (this.master) this.master.gain.setTargetAtTime(on ? 0.9 : 0, this.ctx!.currentTime, 0.05);
   }
 
-  setMusic(on) {
+  setMusic(on: boolean): void {
     this.musicOn = on;
     if (!this.ctx) return;
     if (on) this.startMusic(); else this.stopMusic();
   }
 
-  _now() { return this.ctx.currentTime; }
+  _now(): number { return this.ctx!.currentTime; }
 
   // Low-level voice: oscillator with an ADSR-ish envelope and optional sweep.
-  _tone({ type = "sine", f0 = 440, f1 = null, dur = 0.2, gain = 0.5, when = 0, pan = 0 }) {
+  _tone({ type = "sine", f0 = 440, f1 = null, dur = 0.2, gain = 0.5, when = 0, pan = 0 }: ToneOpts): void {
     if (!this.ctx) return;
     const t = this._now() + when;
     const osc = this.ctx.createOscillator();
@@ -140,18 +181,18 @@ export class AudioEngine {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    let node = g;
+    let node: AudioNode = g;
     if (pan && this.ctx.createStereoPanner) {
       const p = this.ctx.createStereoPanner();
       p.pan.value = Math.max(-1, Math.min(1, pan));
       g.connect(p); node = p;
     }
-    osc.connect(g); node.connect(this.sfxGain);
+    osc.connect(g); node.connect(this.sfxGain!);
     osc.start(t); osc.stop(t + dur + 0.02);
   }
 
   // Filtered noise burst (impacts, sprays, wind).
-  _noise({ dur = 0.2, gain = 0.4, type = "bandpass", freq = 1200, q = 1, when = 0, pan = 0, sweep = null }) {
+  _noise({ dur = 0.2, gain = 0.4, type = "bandpass", freq = 1200, q = 1, when = 0, pan = 0, sweep = null }: NoiseOpts): void {
     if (!this.ctx) return;
     const t = this._now() + when;
     const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
@@ -166,43 +207,43 @@ export class AudioEngine {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(gain, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    let node = g;
+    let node: AudioNode = g;
     if (pan && this.ctx.createStereoPanner) {
       const p = this.ctx.createStereoPanner();
       p.pan.value = Math.max(-1, Math.min(1, pan));
       g.connect(p); node = p;
     }
-    src.connect(filt); filt.connect(g); node.connect(this.sfxGain);
+    src.connect(filt); filt.connect(g); node.connect(this.sfxGain!);
     src.start(t); src.stop(t + dur + 0.02);
   }
 
   // Lazily fetch+decode a real audio file and play it through the sfx bus,
   // layered on top of the procedural synthesis. Caches decoded buffers by
   // path so repeated plays are instant after the first fetch/decode.
-  _playFile(path, pan = 0, gain = 0.7) {
+  _playFile(path: string, pan = 0, gain = 0.7): void {
     if (!this.ctx || !path) return;
     const full = SFX_BASE + path;
-    const play = (buffer) => {
+    const play = (buffer: AudioBuffer | null) => {
       if (!buffer || !this.ctx) return;
       const src = this.ctx.createBufferSource();
       src.buffer = buffer;
       const g = this.ctx.createGain();
       g.gain.value = gain;
-      let node = g;
+      let node: AudioNode = g;
       if (pan && this.ctx.createStereoPanner) {
         const p = this.ctx.createStereoPanner();
         p.pan.value = Math.max(-1, Math.min(1, pan));
         g.connect(p); node = p;
       }
-      src.connect(g); node.connect(this.sfxGain);
+      src.connect(g); node.connect(this.sfxGain!);
       src.start();
     };
     const cached = this._bufferCache.get(full);
     if (cached instanceof AudioBuffer) { play(cached); return; }
     if (cached) { cached.then(play); return; } // already loading, chain onto it
-    const pending = fetch(full)
+    const pending: Promise<AudioBuffer | null> = fetch(full)
       .then((r) => r.arrayBuffer())
-      .then((ab) => this.ctx.decodeAudioData(ab))
+      .then((ab) => this.ctx!.decodeAudioData(ab))
       .then((buf) => { this._bufferCache.set(full, buf); return buf; })
       .catch(() => { this._bufferCache.delete(full); return null; });
     this._bufferCache.set(full, pending);
@@ -210,7 +251,7 @@ export class AudioEngine {
   }
 
   // Play the file mapped to a SFX_FILES key, layered on the procedural voice.
-  _playKeyFile(key, pan = 0, gain = 0.7) {
+  _playKeyFile(key: string, pan = 0, gain = 0.7): void {
     const path = SFX_FILES[key];
     if (path) this._playFile(path, pan, gain);
   }
@@ -218,13 +259,13 @@ export class AudioEngine {
   // Randomly pick one of several SFX_FILES keys and play its file — used for
   // spells that share one procedural sfx name but each have their own
   // generated audio file (varies which file plays call to call).
-  _playRandomKeyFile(keys, pan = 0, gain = 0.7) {
+  _playRandomKeyFile(keys: string[], pan = 0, gain = 0.7): void {
     const key = keys[Math.floor(Math.random() * keys.length)];
     this._playKeyFile(key, pan, gain);
   }
 
   // Public: play a named sound. `pan` in [-1,1] from world x position.
-  play(name, pan = 0) {
+  play(name: string, pan = 0): void {
     if (!this.enabled || !this.ctx) return;
     // Throttle to avoid machine-gun stacking of identical sounds.
     const now = this._now();
@@ -405,7 +446,7 @@ export class AudioEngine {
   }
 
   // Public: play a short UI/menu sting by name. Respects the SFX mute toggle.
-  menuCue(name) {
+  menuCue(name: string): void {
     if (!this.enabled || !this.ctx) return;
     switch (name) {
       case "hover":
@@ -460,7 +501,7 @@ export class AudioEngine {
   }
 
   // Generative ambient music pad: a slow minor arpeggio under a drone.
-  startMusic() {
+  startMusic(): void {
     if (!this.ctx || !this.musicOn || this._musicNodes.length) return;
     const root = 110; // A2
     const scale = [0, 3, 5, 7, 10, 12]; // minor pentatonic-ish
@@ -470,7 +511,7 @@ export class AudioEngine {
     dg.gain.value = 0.05;
     const lp = this.ctx.createBiquadFilter();
     lp.type = "lowpass"; lp.frequency.value = 500;
-    drone.connect(lp); lp.connect(dg); dg.connect(this.musicGain);
+    drone.connect(lp); lp.connect(dg); dg.connect(this.musicGain!);
     drone.start();
     this._musicNodes.push(drone, dg);
 
@@ -480,24 +521,24 @@ export class AudioEngine {
       const semi = scale[Math.floor(Math.random() * scale.length)] + (Math.random() < 0.3 ? 12 : 0);
       const f = root * Math.pow(2, semi / 12);
       const t = this._now();
-      const osc = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
+      const osc = this.ctx!.createOscillator();
+      const g = this.ctx!.createGain();
       osc.type = "triangle"; osc.frequency.value = f;
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(0.08, t + 0.05);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
-      osc.connect(g); g.connect(this.musicGain); g.connect(this.reverb);
+      osc.connect(g); g.connect(this.musicGain!); g.connect(this.reverb!);
       osc.start(t); osc.stop(t + 1.3);
       step++;
     }, 620);
   }
 
-  stopMusic() {
+  stopMusic(): void {
     if (this._musicTimer) { clearInterval(this._musicTimer); this._musicTimer = null; }
-    for (const n of this._musicNodes) { try { n.stop && n.stop(); n.disconnect(); } catch {} }
+    for (const n of this._musicNodes) { try { (n as OscillatorNode).stop?.(); n.disconnect(); } catch {} }
     this._musicNodes = [];
   }
 }
 
 // Module-level accessor so other ES modules can fire menu cues without the instance.
-export function menuCue(name) { return _instance?.menuCue(name); }
+export function menuCue(name: string) { return _instance?.menuCue(name); }

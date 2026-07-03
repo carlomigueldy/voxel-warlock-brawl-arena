@@ -8,7 +8,7 @@ console.log("Source guards (assets) checks:");
 
 // legacy text guard — delete in P6
 test("projectile clash events trigger dedicated VFX and SFX (audio half)", () => {
-  const audio = fs.readFileSync("src/audio.js", "utf8");
+  const audio = fs.readFileSync("src/audio.ts", "utf8");
   assert.match(audio, /case "projectileClash"/);
 });
 

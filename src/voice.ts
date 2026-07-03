@@ -9,8 +9,57 @@
 //
 // Not wired into main.js yet — this module is additive and self-contained.
 
+// Narrow local surface of the PeerJS media APIs this module uses (call/answer/
+// on) — deliberately not the full `peerjs` package types, to avoid pulling in
+// a heavy dependency for a self-contained module (brief instruction).
+interface VoiceMediaConnection {
+  peer: string;
+  answer(stream?: MediaStream): void;
+  close(): void;
+  on(event: "stream", cb: (remoteStream: MediaStream) => void): void;
+  on(event: "close" | "error", cb: () => void): void;
+}
+
+interface VoicePeer {
+  id: string;
+  call(id: string, stream?: MediaStream): VoiceMediaConnection | null | undefined;
+  on(event: "call", cb: (call: VoiceMediaConnection) => void): void;
+}
+
+interface VoicePrefs {
+  micEnabled?: boolean;
+  masterVolume?: number;
+}
+
+interface VoiceChatOptions {
+  getPeer?: () => VoicePeer | null;
+  getRoster?: () => string[];
+  isMuted?: (peerId: string) => boolean;
+  onSpeakingChange?: (on: boolean) => void;
+  getPrefs?: () => VoicePrefs;
+}
+
+interface VoiceConnEntry {
+  call: VoiceMediaConnection;
+  audioEl: HTMLAudioElement | null;
+}
+
 export class VoiceChat {
-  constructor({ getPeer, getRoster, isMuted, onSpeakingChange, getPrefs } = {}) {
+  getPeer: () => VoicePeer | null;
+  getRoster: () => string[];
+  isMuted: (peerId: string) => boolean;
+  onSpeakingChange: (on: boolean) => void;
+  getPrefs: () => VoicePrefs;
+
+  _stream: MediaStream | null;
+  _track: MediaStreamTrack | null;
+  _available: boolean;
+  _initAttempted: boolean;
+  _transmitting: boolean;
+  _conns: Map<string, VoiceConnEntry>;
+  _callHandlerBound: boolean;
+
+  constructor({ getPeer, getRoster, isMuted, onSpeakingChange, getPrefs }: VoiceChatOptions = {}) {
     this.getPeer = getPeer || (() => null);
     this.getRoster = getRoster || (() => []);
     this.isMuted = isMuted || (() => false);
@@ -28,7 +77,7 @@ export class VoiceChat {
 
   // Requests mic permission and captures ONE track, kept disabled until PTT.
   // Resolves false (never throws) when permission is denied or unavailable.
-  async init() {
+  async init(): Promise<boolean> {
     if (this._initAttempted) return this._available;
     this._initAttempted = true;
     this._bindIncomingCalls();
@@ -59,7 +108,7 @@ export class VoiceChat {
 
   // Answers every inbound call, unless voice chat is currently opted out (in
   // which case we refuse rather than silently listen in — see updateRoster).
-  _bindIncomingCalls() {
+  _bindIncomingCalls(): void {
     if (this._callHandlerBound) return;
     const peer = this.getPeer?.();
     if (!peer) return;
@@ -74,10 +123,10 @@ export class VoiceChat {
     });
   }
 
-  _attach(peerId, call) {
+  _attach(peerId: string, call: VoiceMediaConnection): void {
     const prior = this._conns.get(peerId);
     if (prior) this._teardownConn(peerId);
-    const entry = { call, audioEl: null };
+    const entry: VoiceConnEntry = { call, audioEl: null };
     this._conns.set(peerId, entry);
     call.on("stream", (remoteStream) => {
       const el = document.createElement("audio");
@@ -93,7 +142,7 @@ export class VoiceChat {
     call.on("error", () => this._teardownConn(peerId));
   }
 
-  _teardownConn(peerId) {
+  _teardownConn(peerId: string): void {
     const entry = this._conns.get(peerId);
     if (!entry) return;
     try { entry.call?.close(); } catch {}
@@ -108,7 +157,7 @@ export class VoiceChat {
   // dropped ones. Dedupe glare: only *initiate* to ids that sort after ours
   // (lexical compare of PeerJS ids); we always answer inbound calls regardless,
   // so exactly one audio path forms per pair either way.
-  updateRoster(peers) {
+  updateRoster(peers?: string[]): void {
     const peer = this.getPeer?.();
     if (!peer) return;
     // Voice chat is opt-in (settings toggle "Voice chat (push-to-talk)"). If
@@ -141,7 +190,7 @@ export class VoiceChat {
 
   // Enables/disables the local mic track (push-to-talk) and fires the hook
   // so callers can broadcast a SPEAK state message.
-  setTransmitting(on) {
+  setTransmitting(on: boolean): void {
     const next = !!on;
     if (this._transmitting === next) return;
     this._transmitting = next;
@@ -150,13 +199,13 @@ export class VoiceChat {
   }
 
   // Mutes/unmutes a single remote's <audio> sink (local-only, per social.js).
-  setMuted(peerId, muted) {
+  setMuted(peerId: string, muted: boolean): void {
     const entry = this._conns.get(peerId);
     if (entry?.audioEl) entry.audioEl.muted = !!muted;
   }
 
   // Applies master volume to every remote <audio> sink.
-  setMasterVolume(v01) {
+  setMasterVolume(v01: number): void {
     const vol = Math.max(0, Math.min(1, v01 ?? 1));
     for (const entry of this._conns.values()) {
       if (entry.audioEl) entry.audioEl.volume = vol;
@@ -164,7 +213,7 @@ export class VoiceChat {
   }
 
   // True once mic permission was granted (init() succeeded).
-  isAvailable() {
+  isAvailable(): boolean {
     return this._available;
   }
 
@@ -173,7 +222,7 @@ export class VoiceChat {
   // by updateRoster() when the player opts out mid-session. Resets
   // _initAttempted so a later re-enable calls getUserMedia() again instead of
   // silently staying unavailable forever.
-  _stopLocalCapture() {
+  _stopLocalCapture(): void {
     this.setTransmitting(false);
     if (this._track) { try { this._track.stop(); } catch {} }
     if (this._stream) { for (const t of this._stream.getTracks()) { try { t.stop(); } catch {} } }
@@ -184,7 +233,7 @@ export class VoiceChat {
   }
 
   // Releases the mic and closes every media connection + <audio> sink.
-  teardown() {
+  teardown(): void {
     for (const id of [...this._conns.keys()]) this._teardownConn(id);
     this._conns.clear();
     this._stopLocalCapture();
