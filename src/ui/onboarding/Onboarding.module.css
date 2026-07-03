@@ -1,0 +1,157 @@
+/* Port of src/style.css's onboarding-* rules (~L2789-2977) — a section the
+   design §4 partition table doesn't call out by name (its line ranges land
+   inside the table's "FX layer" row by proximity only), so this file is a
+   from-scratch component-scoped module rather than an entry on that map.
+   var(--token) only, per the design floor. */
+
+.panel {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  /* max-width matches Modal's own .dialog (640px) — legacy's non-stage
+     .onboarding-panel width, so no override is needed; listed here only as
+     documentation of the intentional match. */
+}
+
+.header { display: flex; flex-direction: column; gap: 14px; align-items: center; text-align: center; }
+.eyebrow {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--arcane);
+  font-weight: 700;
+  padding: 5px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(108, 76, 255, 0.1);
+}
+.title {
+  font-family: var(--font-display);
+  font-size: clamp(15px, 3vw, 22px);
+  color: var(--text);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 18px rgba(108, 76, 255, 0.5), 0 3px 0 rgba(0, 0, 0, 0.45);
+  margin: 4px 0 0;
+}
+
+/* ---- Progress rail ---- */
+.rail { display: flex; align-items: center; gap: 6px; list-style: none; width: 100%; max-width: 420px; }
+.railStep { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--muted); position: relative; }
+.railStep:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--line);
+  z-index: 0;
+}
+.railDot {
+  position: relative;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--slot);
+  border: 2px solid var(--line-strong);
+  transition: background 0.25s, border-color 0.25s, box-shadow 0.25s, transform 0.25s var(--ease-spring);
+}
+.railLabel { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; transition: color 0.25s; }
+.railStepDone .railDot { background: var(--rune); border-color: var(--rune); box-shadow: 0 0 10px rgba(124, 255, 90, 0.6); }
+.railStepDone:not(:first-child)::before { background: var(--rune); }
+.railStepActive .railDot { background: var(--arcane); border-color: var(--arcane); box-shadow: var(--glow-arcane); transform: scale(1.25); }
+.railStepActive .railLabel,
+.railStepDone .railLabel { color: var(--text); }
+
+/* ---- Step body ---- */
+.body { position: relative; min-height: 220px; }
+.step { display: flex; flex-direction: column; gap: 16px; animation: onbStepIn 0.36s var(--ease-spring) both; }
+@keyframes onbStepIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.stepTitle { font-size: 19px; font-weight: 800; color: var(--text); }
+.stepDesc { color: var(--muted); font-size: 14px; line-height: 1.45; }
+
+/* ---- Name step ---- */
+.field { display: flex; flex-direction: column; gap: 8px; }
+.fieldLabel { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.runeField { position: relative; }
+.runeField input {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  padding: 13px 16px;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.runeField input::placeholder { color: rgba(154, 147, 199, 0.55); font-weight: 500; }
+.runeField input:focus { border-color: var(--arcane); box-shadow: var(--glow-arcane); background: #150f30; }
+.runeFieldLine {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: var(--arcane); transform: scaleX(0); transform-origin: left; transition: transform 0.25s var(--ease-spring);
+}
+.runeField input:focus ~ .runeFieldLine { transform: scaleX(1); }
+
+/* ---- Character step (adapted — see CharacterStep.tsx header) ---- */
+.charBlurb { color: var(--muted); font-size: 13px; margin-top: -8px; }
+.charCards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+/* ---- Goal step ---- */
+.goalCards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.goalCard {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px 14px; display: flex; flex-direction: column; gap: 6px;
+}
+.goalIcon { font-size: 22px; }
+.goalCard h4 { font-size: 13px; font-weight: 800; color: var(--text); }
+.goalCard p { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+/* ---- Hotkeys step ---- */
+.hotkeys { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.hotkeySlot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px;
+}
+.hotkeyName { font-size: 12px; font-weight: 700; color: var(--text); }
+.hotkeyChip {
+  appearance: none; cursor: pointer; min-width: 44px; min-height: 44px; /* design floor: touch targets >= 44px */
+  text-align: center;
+  font-family: var(--font-ui); font-weight: 800; font-size: 13px; letter-spacing: 0.5px;
+  color: var(--text); background: var(--slot); border: 1px solid var(--line-strong);
+  border-radius: 8px; padding: 6px 10px;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.hotkeyChip:hover { border-color: var(--arcane); }
+.hotkeyChip:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+.hotkeyChipCapturing {
+  background: rgba(108, 76, 255, 0.22); border-color: var(--arcane); box-shadow: var(--glow-arcane);
+  animation: onbChipPulse 0.9s ease-in-out infinite;
+}
+@keyframes onbChipPulse { 0%, 100% { box-shadow: var(--glow-arcane); } 50% { box-shadow: 0 0 4px rgba(108, 76, 255, 0.3); } }
+.hotkeysReset { align-self: flex-start; }
+.hotkeysFeedback { min-height: 16px; font-size: 12px; color: var(--gold); }
+
+/* ---- Footer ---- */
+.footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.footerNav { display: flex; gap: 10px; }
+.skip { opacity: 0.7; }
+.skip:hover { opacity: 1; }
+
+@media (max-width: 620px) {
+  .goalCards { grid-template-columns: 1fr; }
+  .hotkeys { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  .footer { flex-direction: column-reverse; align-items: stretch; }
+  .footerNav { justify-content: stretch; }
+  .footerNav > * { flex: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step { animation: none; }
+  .railDot { transition: none; }
+  .hotkeyChipCapturing { animation: none; }
+}
