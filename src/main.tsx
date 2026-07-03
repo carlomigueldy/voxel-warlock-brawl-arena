@@ -1,8 +1,9 @@
-// React shell entry — loaded ONLY behind ?shell=react (see index.html's
-// bootstrap script); the default (no query param) path still loads
-// src/main.js untouched. No <StrictMode>: a double-invoke would construct
-// two Peers / two rAF loops / two AudioContexts through the singletons in
-// src/services/registry.ts (design §10 risk 2).
+// React shell entry — the only entry point since P6 (index.html loads this
+// unconditionally; the legacy ?shell=react-branching bootstrap and
+// src/main.js it used to alternate with are deleted). No <StrictMode>: a
+// double-invoke would construct two Peers / two rAF loops / two
+// AudioContexts through the singletons in src/services/registry.ts (design
+// §10 risk 2).
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { resetServices } from "./services/registry";
