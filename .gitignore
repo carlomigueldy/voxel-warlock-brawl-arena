@@ -11,3 +11,8 @@ dist/
 !.env.example
 supabase/.temp/
 .mcp.json
+
+# Parity harness evidence (scripts/parity.mjs) — regenerated per run, not
+# committed; each P4 PR attaches the golden/candidate/diff PNGs it needs to
+# its own PR description/comments instead.
+test/parity/.output/

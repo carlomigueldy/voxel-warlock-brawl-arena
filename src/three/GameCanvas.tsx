@@ -11,6 +11,7 @@
 import { useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./Scene";
+import { CAPTURE } from "./parity/determinism";
 
 export function GameCanvas() {
   useEffect(() => {
@@ -26,11 +27,15 @@ export function GameCanvas() {
   return (
     <Canvas
       className="r3f-canvas"
-      gl={{ antialias: true }}
-      dpr={[1, 2]}
+      // ?capture=1 (design §7): preserveDrawingBuffer so canvas.screenshot()
+      // reads the drawn frame instead of a cleared buffer; frameloop="never"
+      // + dpr=1 hand frame-by-frame control to test/parity/replayDriver.ts
+      // (advance(t) with a fixed synthetic dt) instead of the real rAF/DPR.
+      gl={{ antialias: true, preserveDrawingBuffer: CAPTURE }}
+      dpr={CAPTURE ? 1 : [1, 2]}
       shadows="soft"
       camera={{ fov: 55, near: 0.1, far: 300, position: [0, 28, 24] }}
-      frameloop="always"
+      frameloop={CAPTURE ? "never" : "always"}
     >
       <Scene />
     </Canvas>

@@ -154,6 +154,32 @@ npm test
 
 Covers simulation lifecycle, charge-scaled knockback, edge death, round resolution, malformed input handling, stale snapshot protection, and UI/network source checks.
 
+### Parity harness (P4 — R3F migration)
+
+P4 replaces the imperative `renderer.js` with a declarative `src/three/**`
+(React Three Fiber) scene, gated behind `?renderer=r3f` until every entity/VFX
+issue lands. Every P4 render PR proves it hasn't regressed the golden legacy
+renderer with the replay→screenshot parity harness:
+
+```bash
+# Full gate: determinism (both renderers) + legacy-vs-legacy (load-bearing)
+# + r3f-vs-legacy baseline, across every test/replay/fixtures/*.json fixture.
+npm run parity
+
+# Single-fixture PR evidence (golden/candidate/diff PNGs under
+# test/parity/.output/<fixture>/) for whatever feature a specific PR adds:
+node scripts/parity.mjs --fixture spell-cast-seed42 --renderer both
+
+node scripts/parity.mjs --help
+```
+
+Not part of `npm test` (it drives a real headless Chromium via Playwright and
+a production `vite build` + `vite preview`, so it's slower and needs
+`playwright install chromium` once). See `src/three/parity/determinism.ts`
+(seeded RNG + fixed dt + `preserveDrawingBuffer` capture patches) and
+`test/parity/replayDriver.ts` (drives the exact same `test/replay/
+run-replay.mjs` fixtures both renderers consume).
+
 ## Tech stack
 
 - HTML5 Canvas + WebGL

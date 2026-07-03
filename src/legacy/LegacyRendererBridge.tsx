@@ -7,6 +7,8 @@ import { useEffect } from "react";
 import { getRenderer, getAudio } from "../services/registry";
 import { aimBridge } from "../store/aimBridge";
 import { snapshotRef } from "../store/snapshotRef";
+import { CAPTURE } from "../three/parity/determinism";
+import { registerCaptureStep, unregisterCaptureStep } from "../three/parity/captureStep";
 
 export function LegacyRendererBridge(): null {
   useEffect(() => {
@@ -20,9 +22,8 @@ export function LegacyRendererBridge(): null {
     aimBridge.attach(renderer);
     renderer.setLocalId(snapshotRef.localId);
 
-    let raf = 0;
     let lastLocalId = snapshotRef.localId;
-    const render = () => {
+    const step = () => {
       // Re-sync localId when it changes (assigned asynchronously by
       // useGameSession's Host onReady / Client onWelcome) — cheap reference
       // check, not a store subscription, so this stays a plain rAF read.
@@ -39,6 +40,23 @@ export function LegacyRendererBridge(): null {
           console.error("[legacyRender]", err);
         }
       }
+    };
+
+    // ?capture=1 (design §7 / issue #138): the parity harness drives frames
+    // one-per-pushed-snapshot via test/parity/replayDriver.ts, so this loop
+    // must NOT free-run — see captureStep.ts for why. Register the exact
+    // per-frame body instead and let the harness call it explicitly.
+    if (CAPTURE) {
+      registerCaptureStep("legacy", step);
+      return () => {
+        unregisterCaptureStep("legacy");
+        aimBridge.attach(null);
+      };
+    }
+
+    let raf = 0;
+    const render = () => {
+      step();
       raf = requestAnimationFrame(render);
     };
     raf = requestAnimationFrame(render);
