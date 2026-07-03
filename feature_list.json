@@ -1799,7 +1799,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "infra",
-      "status": "todo",
+      "status": "review",
       "priority": "P0",
       "labels": [
         "sub-issue",
