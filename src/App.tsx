@@ -3,7 +3,7 @@
 // don't exist yet, so this always resolves to LegacyRendererBridge +
 // LegacyUiBridge. The flags are read here (not inlined) so P4/P5 only need
 // to add their own branch, not touch this file's structure.
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { RENDERER, UI_MODE } from "./config/flags";
 import { getAudio, getUI } from "./services/registry";
 import { useSessionStore } from "./store/useSessionStore";
@@ -16,6 +16,14 @@ import { isEnabled } from "./supabase.js";
 import { initAuth, getUser, onAuthChange } from "./auth.js";
 import { getRegion } from "./region.js";
 import { preloadAssets } from "./loader.js";
+
+// Lazy + dynamic import (not a static one) so `@react-three/fiber`/drei/the
+// whole src/three/** tree is its own code-split chunk that the default
+// `?renderer=legacy` path never fetches (design §2/CLAUDE.md quality gate:
+// "r3f chunk code-split, NOT pulled into the legacy/default path"). RENDERER
+// is read once at module load (config/flags.ts) and never flips within a
+// session, so this only ever imports when the r3f branch actually renders.
+const GameCanvas = lazy(() => import("./three/GameCanvas").then((m) => ({ default: m.GameCanvas })));
 
 // Port of main.js's loading-gate IIFE (934-1005): preload assets (12s safety
 // race), wait for the loader-enter reveal + a real user gesture (browsers
@@ -120,7 +128,13 @@ export default function App() {
   return (
     <>
       <GameSession />
-      {RENDERER === "r3f" ? null /* P4: <GameCanvas/> */ : <LegacyRendererBridge />}
+      {RENDERER === "r3f" ? (
+        <Suspense fallback={null}>
+          <GameCanvas />
+        </Suspense>
+      ) : (
+        <LegacyRendererBridge />
+      )}
       {UI_MODE === "react" ? null /* P5: <UiRoot/> */ : <LegacyUiBridge />}
     </>
   );
