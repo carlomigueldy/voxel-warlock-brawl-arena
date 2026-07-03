@@ -22,6 +22,7 @@ import { useSessionStore } from "../store/useSessionStore";
 import { MenuRoot } from "./menu/MenuRoot";
 import { LobbyRoot } from "./lobby/LobbyRoot";
 import { Hud } from "./hud/Hud";
+import { DraftOverlay } from "./draft/DraftOverlay";
 import { PauseMenu } from "./pause/PauseMenu";
 import { ChatPanel } from "./chat/ChatPanel";
 import { Onboarding } from "./onboarding/Onboarding";
@@ -70,14 +71,14 @@ export function UiRoot() {
         </div>
       )}
       {screen === "game" && <Hud />}
+      {screen === "game" && <DraftOverlay />}
       {/* always-mounted overlays (gate internally on their own store flags) */}
       <Onboarding />
       <Juice />
       <PauseMenu />
       <ChatPanel />
-      {/* remaining Wave-2 regions: game overlays (#164 draft / #167 touch)
-          — each sibling adds its own line here per design §9's UiRoot
-          render contract. */}
+      {/* remaining Wave-2 region: game overlay #167 touch adds its line here
+          per design §9's UiRoot render contract. */}
     </div>
   );
 }
