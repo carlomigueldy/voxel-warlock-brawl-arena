@@ -1,0 +1,44 @@
+/* Port of src/style.css's overlay/pause-overlay pattern (.overlay + .panel),
+   generalized into a reusable dialog primitive (design §4 partition: shared
+   primitives). The backdrop reuses the global `.overlay` ambient class from
+   styles/global.css for the radial-gradient/grid-drift chrome; this module
+   only adds the dialog-specific positioning + backdrop-blur/close affordance. */
+.backdrop {
+  z-index: 200; /* above onboarding (150) — dialogs opened from any screen win */
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.dialog {
+  position: relative;
+  max-width: 640px;
+}
+
+.dialog:focus-visible,
+.dialog:focus {
+  outline: none; /* the panel itself is the focus target on open; no visible ring needed on the container */
+}
+
+.close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.close:hover { color: var(--text); border-color: var(--arcane); }
+.close:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .close { transition: none; }
+}

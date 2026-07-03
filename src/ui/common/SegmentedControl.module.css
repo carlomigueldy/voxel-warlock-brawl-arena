@@ -1,0 +1,54 @@
+/* Port of src/style.css L230-255 (.segmented/.seg-option) — used for land
+   size / bot skill (design §4 partition: controls -> shared primitives). */
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  background: var(--slot);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px;
+}
+.sm { padding: 3px; }
+
+.option {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 1px;
+  min-height: 44px; /* design floor: touch targets >= 44px */
+  padding: 10px 6px;
+  border-radius: 9px;
+  text-transform: uppercase;
+  transition: color 0.2s, transform 0.12s;
+  position: relative;
+  z-index: 1;
+}
+.sm .option { font-size: 11px; padding: 8px 4px; min-height: 36px; }
+.option:hover { color: var(--text); }
+.option:active { transform: translateY(1px); }
+.option:focus-visible { outline: 2px solid var(--arcane); outline-offset: 2px; }
+
+.optionActive { color: #fff; }
+.optionActive::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--arcane), var(--ember));
+  box-shadow: var(--glow-arcane);
+  animation: segPop 0.3s var(--ease-spring);
+}
+@keyframes segPop { from { transform: scale(0.85); opacity: 0.4; } to { transform: scale(1); opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .option { transition: none; }
+  .optionActive::before { animation: none; }
+}

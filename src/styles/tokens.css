@@ -1,0 +1,42 @@
+/* ============================================================
+   "Arcane Voxel Forge" design tokens — verbatim port of
+   src/style.css L6-38 (design §4 / PARTITION.md). This file is the
+   P5 source of truth for every custom property; style.css itself is
+   untouched (still golden for ?ui=legacy) and keeps its own copy
+   until P6 deletes it. The two must never drift — if you touch a
+   value here, mirror it in style.css's :root block too, or you will
+   break screenshot parity between the legacy DOM and the React UI.
+   ============================================================ */
+:root {
+  --void: #0a0814;
+  --bg: #0a0814;
+  --obsidian: #16112e;
+  --panel: #181433;
+  --panel-2: #120d28;
+  --slot: #0f0c22;
+  --ember: #ff5a3c;
+  --accent: #ff5a3c;
+  --arcane: #6c4cff;
+  --accent2: #6c4cff;
+  --rune: #7cff5a;
+  --gold: #ffd23c;
+  --pink: #ff4ca8;
+  --cyan: #4cc9ff;
+  --text: #ece9ff;
+  --muted: #9a93c7;
+  --line: rgba(124, 108, 196, 0.22);
+  --line-strong: rgba(108, 76, 255, 0.55);
+  --glow-arcane: 0 0 24px rgba(108, 76, 255, 0.45);
+  --glow-ember: 0 0 24px rgba(255, 90, 60, 0.5);
+  --shadow-panel: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(108, 76, 255, 0.12);
+  --bezel: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -2px 0 rgba(0, 0, 0, 0.4);
+  --font-display: "Press Start 2P", "Trebuchet MS", monospace;
+  --font-ui: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* FX juice tokens (src/fx.js / hooks/useFx.ts) */
+  --fx-vignette-dmg: rgba(255, 90, 60, 0);
+  --fx-vignette-lowhp: rgba(255, 40, 40, 0.35);
+  --fx-flash-victory: rgba(255, 210, 60, 0.6);
+  --shake-amp: 0px;
+  --aberration-offset: 0px;
+}

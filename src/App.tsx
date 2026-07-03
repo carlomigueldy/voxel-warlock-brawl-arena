@@ -13,6 +13,7 @@ import { useUiStore } from "./store/useUiStore";
 import { useGameSession } from "./loop/useGameSession";
 import { LegacyRendererBridge } from "./legacy/LegacyRendererBridge";
 import { LegacyUiBridge } from "./legacy/LegacyUiBridge";
+import { UiRoot } from "./ui/UiRoot";
 import { isEnabled } from "./supabase.js";
 import { initAuth, getUser, onAuthChange } from "./auth.js";
 import { getRegion } from "./region.js";
@@ -147,7 +148,7 @@ export default function App() {
       )}
       {/* ?capture=1: the HUD/menu/onboarding DOM is force-hidden anyway
           (determinism.ts's hideChrome) and has nothing to wire — skip it. */}
-      {!CAPTURE && (UI_MODE === "react" ? null /* P5: <UiRoot/> */ : <LegacyUiBridge />)}
+      {!CAPTURE && (UI_MODE === "react" ? <UiRoot /> : <LegacyUiBridge />)}
     </>
   );
 }

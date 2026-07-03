@@ -26,6 +26,7 @@ import { getUI, getAudio, getInput, getRenderer } from "../services/registry";
 import { snapshotRef, setLocalId, resetSnapshotRef } from "../store/snapshotRef";
 import { useSessionStore } from "../store/useSessionStore";
 import { useUiStore } from "../store/useUiStore";
+import { getUiInputs } from "./getUiInputs";
 import { onNewSnapshot } from "./onNewSnapshot";
 import { useHostLoop } from "./useHostLoop";
 import { useClientLoop } from "./useClientLoop";
@@ -121,7 +122,7 @@ export function useGameSession(): GameSessionIntents {
     const meta = snapshotRef.meta.get(relay.fromId);
     const color = CFG.COLORS[(meta?.colorIndex ?? 0) % CFG.COLORS.length];
     ui.addChatLine(meta?.name || "warlock", relay.text, color, relay.fromId === localIdRef.current);
-    if (ui.getSocialPrefs().showBubbles) getRendererMaybe()?.showChatBubble(relay.fromId, relay.text, color);
+    if (getUiInputs().socialPrefs.showBubbles) getRendererMaybe()?.showChatBubble(relay.fromId, relay.text, color);
   };
 
   // LegacyRendererBridge constructs the renderer; chat bubbles are a
@@ -137,16 +138,15 @@ export function useGameSession(): GameSessionIntents {
 
   function ensureVoice(): VoiceChat {
     if (voiceRef.current) return voiceRef.current;
-    const ui = getUI();
     const voice = new VoiceChat({
       getPeer: () => (hostRef.current?.peer || clientRef.current?.peer) || null,
       getRoster: () => lastRosterRef.current,
       isMuted: isPeerMuted,
       onSpeakingChange: (on) => socialSendRef.current?.speak(on),
-      getPrefs: () => ui.getSocialPrefs(),
+      getPrefs: () => getUiInputs().socialPrefs,
     });
     voiceRef.current = voice;
-    if (ui.getSocialPrefs().micEnabled) voice.init();
+    if (getUiInputs().socialPrefs.micEnabled) voice.init();
     voice.updateRoster(lastRosterRef.current);
     return voice;
   }
@@ -205,7 +205,7 @@ export function useGameSession(): GameSessionIntents {
         syncBotMeta();
         return;
       }
-      const { count, skill } = ui.getBotSettings();
+      const { count, skill } = getUiInputs().botSettings;
       sim.setBotRoster(count, skill);
       syncBotMeta();
     }
@@ -562,14 +562,14 @@ export function useGameSession(): GameSessionIntents {
     quickMatch() {
       if (!isEnabled()) { getUI().setMenuStatus("Online play requires a Supabase project."); return; }
       const ui = getUI();
-      const name = ui.getName();
+      const name = getUiInputs().name;
       if (!name) { ui.setMenuStatus("Enter a name first."); return; }
       if (regionQueueRef.current) return;
       onlineRef.current = { isOnline: false, region: null, matchResultSubmitted: false };
 
       const regionQueue = new RegionQueue({
         homeRegion: currentRegionRef.current,
-        player: { name, character: ui.getCharacter() ?? undefined },
+        player: { name, character: getUiInputs().character ?? undefined },
         regions: CFG.REGIONS,
         onStatus: (status) => {
           if (regionQueueRef.current !== regionQueue) return;
@@ -584,10 +584,11 @@ export function useGameSession(): GameSessionIntents {
           onlineRef.current.isOnline = true;
           onlineRef.current.region = match.region;
           onlineRef.current.matchResultSubmitted = false;
+          const { mobsEnabled, character, arenaSettings } = getUiInputs();
           startHosting(name, {
-            mobsEnabled: ui.mobsEnabled(),
-            character: ui.getCharacter() ?? undefined,
-            ...ui.getArenaSettings(),
+            mobsEnabled,
+            character: character ?? undefined,
+            ...arenaSettings,
             matchmaking: { matchId: match.matchId, allowedQueueIds: [match.guestQueueId] },
             onHostReady: async (code) => {
               if (regionQueueRef.current !== regionQueue) return false;
@@ -621,7 +622,7 @@ export function useGameSession(): GameSessionIntents {
           onlineRef.current.matchResultSubmitted = false;
           await regionQueue.cancel();
           if (regionQueueRef.current === regionQueue) regionQueueRef.current = null;
-          startJoining(name, code, ui.getCharacter(), {
+          startJoining(name, code, getUiInputs().character, {
             region: match.region,
             matchmaking: { matchId: match.matchId, queueId: regionQueue.queueId },
           });
@@ -672,8 +673,8 @@ export function useGameSession(): GameSessionIntents {
       hostPushLobbyRef.current?.();
     },
     configChange() {
-      const ui = getUI();
-      sessionSimRef.current?.configure({ ...ui.getArenaSettings(), mobsEnabled: ui.mobsEnabled() });
+      const { arenaSettings, mobsEnabled } = getUiInputs();
+      sessionSimRef.current?.configure({ ...arenaSettings, mobsEnabled });
       hostPushLobbyRef.current?.();
     },
     // Port of main.js's ui.on("start", () => { applyBotSettings(); beginMatch(); }).
