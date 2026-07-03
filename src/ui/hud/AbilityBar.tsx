@@ -6,8 +6,24 @@
 // snapshot's per-player stun flag (`me.st`), which the frozen useHudStore
 // HudView (design §2) does not surface — extending that store was out of
 // scope for this PR (see PR description).
+//
+// Touch tap-to-select (#167/#178): a standalone touch-only ability strip in
+// TouchControls.tsx visually duplicated/overlapped this very bar on narrow
+// phones (measured — no collision-free space left once both bars wrap), so
+// the fix wires THIS bar's own slots tappable on touch instead of rendering
+// a second one. `isTouch` is read once via lazy useState init (mirrors
+// src/ui/touch/detectTouch.ts / TouchControls.tsx's own pattern) — a
+// one-time capability check, not a subscription, so it never causes a
+// re-render and doesn't touch this component's HUD_HZ-throttled contract.
+// onSelect calls `getInput().setSelectedSpell` directly — the exact channel
+// legacy's own slot click and TouchControls' fire button already use — with
+// no new local state, so this component's re-render profile (and Hud.tsx's
+// own re-render-count guard test) is unaffected.
+import { useState } from "react";
 import { CFG, SPELLS } from "../../config.js";
 import { spellIconSvg } from "../../spell-icons.js";
+import { getInput } from "../../services/registry";
+import { detectTouch } from "../touch/detectTouch";
 import type { CooldownMap } from "../../types";
 import { toHexColor } from "./hudColor";
 import { SpellSlot } from "./SpellSlot";
@@ -22,6 +38,7 @@ export interface AbilityBarProps {
 }
 
 export function AbilityBar({ spellSlots, cooldowns, hotkeys }: AbilityBarProps) {
+  const [isTouch] = useState(detectTouch);
   const slots = [];
   for (let i = 0; i < CFG.SPELL_SLOT_COUNT; i++) {
     const id = spellSlots[i];
@@ -49,6 +66,7 @@ export function AbilityBar({ spellSlots, cooldowns, hotkeys }: AbilityBarProps) 
         cdLabel={!empty && remain > 0 ? String(Math.ceil(remain)) : ""}
         empty={empty}
         ready={ready}
+        onSelect={isTouch && !empty ? () => getInput().setSelectedSpell(id!) : undefined}
       />,
     );
   }

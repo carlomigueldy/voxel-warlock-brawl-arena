@@ -1,24 +1,23 @@
 // @vitest-environment jsdom
 // RTL coverage for the P5 touch/mobile control layer (design §9 #167
-// p5-touch). Covers the brief's three buckets: renders under emulated touch,
-// hidden on non-touch, and its buttons dispatch the same InputController
-// intents legacy's `#touch-controls` does (design §2/§167: "do NOT invent a
-// new input channel" — asserted directly against the real `getInput()`
-// singleton, not a mock, so this proves the actual wiring).
+// p5-touch). Covers: renders under emulated touch, hidden on non-touch, and
+// its controls dispatch the same InputController intents legacy's
+// `#touch-controls` does (design §2/§167: "do NOT invent a new input
+// channel" — asserted directly against the real `getInput()` singleton, not
+// a mock, so this proves the actual wiring). Ability-select coverage moved
+// to AbilityBar.test.tsx (#178's fix) — this file no longer owns that UI.
 //
 // The touch/non-touch split is driven by `vi.doMock("./detectTouch", ...)` +
 // a dynamic re-import (same technique UiRoot.test.tsx uses for `CAPTURE`),
 // not by mutating the real jsdom `window`/`navigator` — jsdom always defines
 // `window.ontouchstart` (unlike a real non-touch browser), so the "false"
 // branch of detectTouch() isn't reachable by mutating the ambient globals
-// alone; see detectTouch.ts's own comment. `useHudStore` is re-imported
-// dynamically too, after the same reset, for the same reason UiRoot.test.tsx
-// re-imports useSessionStore: a static top-of-file import would be a stale,
-// pre-reset copy, decoupled from the one the freshly-mounted component reads
-// (getInput()'s InputController is exempt — services/registry.ts keys it off
-// globalThis precisely so it survives module resets, per its own comment).
+// alone; see detectTouch.ts's own comment. (getInput()'s InputController is
+// exempt from the module-reset staleness concern — services/registry.ts
+// keys it off globalThis precisely so it survives module resets, per its
+// own comment.)
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { getInput } from "../../services/registry";
 
 beforeEach(() => {
@@ -35,9 +34,7 @@ afterEach(() => {
 async function renderTouchControls(touch: boolean) {
   vi.doMock("./detectTouch", () => ({ detectTouch: () => touch }));
   const { TouchControls } = await import("./TouchControls");
-  const { useHudStore } = await import("../../store/useHudStore");
-  useHudStore.getState().reset();
-  return { ...render(<TouchControls />), useHudStore };
+  return render(<TouchControls />);
 }
 
 describe("TouchControls", () => {
@@ -52,11 +49,6 @@ describe("TouchControls", () => {
     expect(screen.getByTestId("touch-controls")).toBeInTheDocument();
     expect(screen.getByTestId("touch-joystick")).toBeInTheDocument();
     expect(screen.getByTestId("touch-fire")).toBeInTheDocument();
-  });
-
-  it("does not render an ability strip until spellSlots are published", async () => {
-    await renderTouchControls(true);
-    expect(screen.queryByTestId("touch-ability-strip")).toBeNull();
   });
 
   it("dragging the joystick sets InputController.touchMove, normalized and clamped to its own radius", async () => {
@@ -83,34 +75,9 @@ describe("TouchControls", () => {
     expect(getInput().touchMove).toEqual([0, 0]);
   });
 
-  it("tapping an ability icon selects it, then tapping Fire queues a cast for it", async () => {
-    const { useHudStore } = await renderTouchControls(true);
-    act(() => {
-      useHudStore.getState().publish(
-        {
-          t: 1, phase: "playing", round: 1, timer: 0, playTime: 1, arenaR: 20, arenaWorld: "circle",
-          landSize: "medium", enabledObstacles: {}, winner: null, matchWinner: null,
-          players: [
-            {
-              id: "p1", hp: 100, mhp: 100, c: 0, ca: 0, cds: {},
-              spellSlots: ["fireball", "lightning", null, null, null, null],
-              items: [], k: 0, d: 0, s: 0, al: true,
-            } as never,
-          ],
-          bolts: [], meteors: [], runes: [], items: [], mobs: [], spellSlotsEnabled: true, events: [], mapV: 0,
-        } as never,
-        "p1",
-        new Map(),
-      );
-    });
-
-    const strip = screen.getByTestId("touch-ability-strip");
-    const lightningBtn = screen.getByRole("button", { name: "Select Lightning" });
-    expect(strip.querySelectorAll("button")).toHaveLength(2); // 2 equipped, empty slots excluded
-
-    fireEvent.click(lightningBtn);
-    expect(lightningBtn).toHaveAttribute("aria-pressed", "true");
-    expect(getInput().selectedSpell).toBe("lightning");
+  it("tapping Fire queues a cast for whatever spell is currently selected", async () => {
+    await renderTouchControls(true);
+    getInput().selectedSpell = "lightning";
 
     const queueCast = vi.spyOn(getInput(), "queueCast");
     fireEvent.click(screen.getByTestId("touch-fire"));

@@ -1,11 +1,11 @@
 /* Port of src/style.css's "Touch" block (L1039-1054) — design §9
    #167 p5-touch. `.touchControls`/`.joystick`/`.joystickKnob`/`.fireBtn`
    mirror `#touch-controls`/`#joystick`/`#joystick-knob`/`#fire-btn` almost
-   value-for-value (var(--token) only, per design §4/§7). `.abilityStrip`
-   and friends are this PR's own addition (TouchControls.tsx's header
-   comment explains why) — new chrome, not a legacy port, so it borrows the
-   ability-bar's own token vocabulary (--line-strong bezel, --rune ready
-   glow) rather than inventing a new palette. */
+   value-for-value (var(--token) only, per design §4/§7). Ability selection
+   used to have its own strip here; #178's review found it overlapping the
+   HUD's own ability bar on narrow phones, so that chrome moved to
+   AbilityBar.tsx/SpellSlot.module.css instead (see TouchControls.tsx's
+   header comment) — this file is back to a near-literal legacy port. */
 .touchControls {
   position: fixed;
   inset: 0;
@@ -59,58 +59,25 @@
   filter: brightness(0.92);
 }
 
-.abilityStrip {
-  position: absolute;
-  right: 20px;
-  bottom: 165px;
-  display: flex;
-  flex-wrap: wrap-reverse;
-  gap: 8px;
-  justify-content: flex-end;
-  max-width: 45vw;
-  pointer-events: auto;
-}
-
-.abilityBtn {
-  width: 48px;
-  height: 48px;
-  min-width: 44px; /* design §7 floor: touch targets >=44px */
-  min-height: 44px;
-  border-radius: 50%;
-  background: linear-gradient(180deg, rgba(30, 25, 58, 0.92), rgba(15, 12, 34, 0.92));
-  border: 1px solid var(--line-strong);
-  box-shadow: var(--bezel);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
-}
-.abilityBtn:active {
-  transform: scale(0.94);
-}
-.abilityBtnActive {
-  border-color: var(--rune);
-  box-shadow: var(--bezel), 0 0 10px rgba(124, 255, 90, 0.4);
-}
-.abilityIcon {
-  width: 24px;
-  height: 24px;
-  display: block;
-  color: var(--text);
-}
-.abilityIcon svg {
-  width: 100%;
-  height: 100%;
-}
-
-@media (max-width: 400px) {
+/* 480px, not 400px: the HUD's ability bar (Hud.module.css .abilityBar,
+   width:max-content;max-width:96vw, container `bottom:120px`) wraps to 2
+   rows (~135px tall) and stretches near-full-width on any phone-class
+   viewport, not just the narrowest ones — measured (real
+   getBoundingClientRect, #178's fix) colliding with the full-size
+   joystick/fire-button at 428px (iPhone 14 Pro Max) even though 400px
+   already looked "narrow enough". `bottom` here is chosen so
+   `bottom + height` clears the ability bar's own `bottom:120px` with a
+   small margin (96+16=112, 80+30=110 -- both < 120), not bumped up
+   further "for safety" the way an earlier revision of this fix did (that
+   pushed `bottom+height` back OVER 120 and re-introduced the very overlap
+   it was trying to fix) -- re-verified collision-free at both 390px and
+   428px against the real rendered ability-bar rect. */
+@media (max-width: 480px) {
   .joystick {
     width: 96px;
     height: 96px;
     left: 20px;
-    bottom: 24px;
+    bottom: 16px;
   }
   .joystickKnob {
     width: 42px;
@@ -123,19 +90,10 @@
     bottom: 30px;
     font-size: 15px;
   }
-  .abilityStrip {
-    right: 12px;
-    bottom: 120px;
-    max-width: 55vw;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fireBtn,
-  .abilityBtn {
+  .fireBtn {
     transition: none;
-  }
-  .abilityBtn:active {
-    transform: none;
   }
 }
