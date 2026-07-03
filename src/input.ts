@@ -2,18 +2,29 @@
 // that gets sent to the host (or applied directly if we are the host).
 import { CFG, SPELLS, SPELL_ORDER, ITEMS, ITEM_SLOT_HOTKEY_STORAGE_KEY } from "./config.js";
 import { isSelfAim } from "./vfx/reticles.js";
+import type { InputState, CastCmd } from "./types";
+
+// Minimal surface of GameRenderer (src/renderer.js, not yet converted) that
+// InputController talks to — kept narrow/local rather than typing the whole
+// untyped renderer module.
+interface InputRenderer {
+  setAimSpell?: (spell: string | null) => void;
+  setCursor?: (x: number, y: number) => void;
+  screenToPoint?: (x: number, y: number) => { x: number; z: number } | null;
+  screenToAim: (x: number, y: number) => number;
+}
 
 export const SPELL_SLOT_HOTKEY_STORAGE_KEY = "vwb-spell-slot-hotkeys";
 export const PTT_KEY_STORAGE_KEY = "vwb-ptt-key";
 
-export function keyToCode(key) {
+export function keyToCode(key?: string | null): string | null {
   const k = String(key || "").trim().toUpperCase();
   if (/^[0-9]$/.test(k)) return "Digit" + k;
   if (/^[A-Z]$/.test(k)) return "Key" + k;
   return null;
 }
 
-export function normalizeSpellSlotHotkeys(value) {
+export function normalizeSpellSlotHotkeys(value: unknown): string[] {
   const source = Array.isArray(value) ? value : [];
   return CFG.DEFAULT_SPELL_SLOT_HOTKEYS.map((fallback, i) => {
     const key = String(source[i] || fallback).trim().toUpperCase();
@@ -21,7 +32,7 @@ export function normalizeSpellSlotHotkeys(value) {
   });
 }
 
-function loadSpellSlotHotkeys() {
+function loadSpellSlotHotkeys(): string[] {
   try {
     return normalizeSpellSlotHotkeys(JSON.parse(localStorage.getItem(SPELL_SLOT_HOTKEY_STORAGE_KEY) || "[]"));
   } catch {
@@ -39,7 +50,7 @@ function loadSpellSlotHotkeys() {
 // logic runs).
 const RESERVED_PTT_CODES = new Set(["Escape", "Enter", "Tab", "Space", "NumpadEnter"]);
 const SPELL_HOTKEY_CODES = new Set(Object.keys(buildKeyMap()));
-function isValidKeyCode(code) {
+function isValidKeyCode(code: unknown): code is string {
   return typeof code === "string" && /^[A-Za-z][A-Za-z0-9]*$/.test(code)
     && !RESERVED_PTT_CODES.has(code) && !SPELL_HOTKEY_CODES.has(code);
 }
@@ -47,11 +58,11 @@ function isValidKeyCode(code) {
 // Exported so the rebind-capture UI (ui.js) can reject reserved codes (and
 // give feedback) before ever persisting/displaying them, instead of only
 // failing silently deeper in setPttKey().
-export function isValidPttKey(code) {
+export function isValidPttKey(code: unknown): code is string {
   return isValidKeyCode(code);
 }
 
-export function loadPttKey() {
+export function loadPttKey(): string {
   try {
     const stored = localStorage.getItem(PTT_KEY_STORAGE_KEY);
     return isValidKeyCode(stored) ? stored : CFG.SOCIAL.PTT_DEFAULT_KEY;
@@ -60,7 +71,7 @@ export function loadPttKey() {
   }
 }
 
-export function setPttKey(code) {
+export function setPttKey(code: unknown): boolean {
   if (!isValidKeyCode(code)) return false;
   try {
     localStorage.setItem(PTT_KEY_STORAGE_KEY, code);
@@ -70,7 +81,7 @@ export function setPttKey(code) {
   return true;
 }
 
-export function normalizeItemSlotHotkeys(value) {
+export function normalizeItemSlotHotkeys(value: unknown): string[] {
   const source = Array.isArray(value) ? value : [];
   return CFG.DEFAULT_ITEM_SLOT_HOTKEYS.map((fallback, i) => {
     const key = String(source[i] || fallback).trim().toUpperCase();
@@ -78,7 +89,7 @@ export function normalizeItemSlotHotkeys(value) {
   });
 }
 
-function loadItemSlotHotkeys() {
+function loadItemSlotHotkeys(): string[] {
   try {
     return normalizeItemSlotHotkeys(JSON.parse(localStorage.getItem(ITEM_SLOT_HOTKEY_STORAGE_KEY) || "[]"));
   } catch {
@@ -87,8 +98,8 @@ function loadItemSlotHotkeys() {
 }
 
 // Map keyboard codes to spell ids from the spellbook definition.
-function buildKeyMap() {
-  const map = {};
+function buildKeyMap(): Record<string, string> {
+  const map: Record<string, string> = {};
   for (const id of SPELL_ORDER) {
     const s = SPELLS[id];
     if (!s) continue;
@@ -99,7 +110,33 @@ function buildKeyMap() {
 }
 
 export class InputController {
-  constructor(renderer) {
+  renderer: InputRenderer;
+  keys: Record<string, boolean>;
+  mouseX: number;
+  mouseY: number;
+  seq: number;
+  castId: number;
+  pendingCasts: CastCmd[];
+  _castWindow: { c: CastCmd; ttl: number }[];
+  keyMap: Record<string, string>;
+  spellSlotHotkeys: string[];
+  spellSlots: (string | null)[];
+  itemSlotHotkeys: string[];
+  itemSlots: (string | null)[];
+  touchMove: [number, number];
+  onCast: ((spell: string) => void) | null;
+  selectedSpell: string;
+  paused: boolean;
+  _aimSpell: string | null;
+  chatting: boolean;
+  ptt: boolean;
+  onPtt: ((on: boolean) => void) | null;
+  onAfkChange: ((idle: boolean) => void) | null;
+  _afkIdle: boolean;
+  _lastActivityAt: number;
+  pttKey: string;
+
+  constructor(renderer: InputRenderer) {
     this.renderer = renderer;
     this.keys = {};
     this.mouseX = window.innerWidth / 2;
@@ -133,7 +170,7 @@ export class InputController {
   }
 
   _bind() {
-    addEventListener("keydown", (e) => {
+    addEventListener("keydown", (e: KeyboardEvent) => {
       this.keys[e.code] = true;
       // Push-to-talk is checked first and never fires while the chat box is
       // open (typing "`" etc. must not transmit voice).
@@ -161,7 +198,7 @@ export class InputController {
       this._aimSpell = spell;
       this.renderer?.setAimSpell?.(spell);
     });
-    addEventListener("keyup", (e) => {
+    addEventListener("keyup", (e: KeyboardEvent) => {
       this.keys[e.code] = false;
       // Release push-to-talk regardless of the aim state below.
       if (e.code === this.pttKey && this.ptt) {
@@ -179,7 +216,7 @@ export class InputController {
       if (this.paused || this.chatting) return; // pause/chat guard: cancel the aim, no cast
       this.queueCast(spell);
     });
-    addEventListener("mousemove", (e) => {
+    addEventListener("mousemove", (e: MouseEvent) => {
       this.mouseX = e.clientX;
       this.mouseY = e.clientY;
       this.renderer?.setCursor?.(e.clientX, e.clientY);
@@ -187,18 +224,18 @@ export class InputController {
     });
     // No mouse-button casting: LMB/RMB do not fire spells (spell-only combat via
     // ability hotkeys). Mouse clicks still count as activity for auto-AFK.
-    addEventListener("mousedown", (e) => {
+    addEventListener("mousedown", (e: MouseEvent) => {
       if (this.paused || this.chatting) return;
       this._activity();
     });
     // Suppress the RMB context menu so right-drag camera/aim gestures stay clean.
-    addEventListener("contextmenu", (e) => e.preventDefault());
+    addEventListener("contextmenu", (e: MouseEvent) => e.preventDefault());
 
     this._bindTouch();
   }
 
   // Records real player activity; clears auto-AFK idle state and notifies main.js.
-  _activity() {
+  _activity(): void {
     this._lastActivityAt = performance.now();
     if (this._afkIdle) {
       this._afkIdle = false;
@@ -210,29 +247,29 @@ export class InputController {
   // stale _lastActivityAt (frozen while paused/chatting, since sample() and
   // the keydown/mousedown gates never touch it) doesn't immediately re-trip
   // auto-AFK before the player does anything new.
-  resetActivity() { this._activity(); }
+  resetActivity(): void { this._activity(); }
 
   // Touch ability selection. The reticle for the selected spell is shown
   // continuously while it stays selected (Fire button casts it on tap, no
   // hold-to-aim gesture on touch) — the renderer's own SELF_BUFF builder
   // starts hidden, so selecting a self-buff spell is a harmless no-op here.
-  setSelectedSpell(id) {
+  setSelectedSpell(id: string): void {
     if (!SPELLS[id]) return;
     this.selectedSpell = id;
     if (!this.paused) this.renderer?.setAimSpell?.(id);
   }
 
-  setSpellSlots(slots = []) {
+  setSpellSlots(slots: (string | null)[] = []): void {
     this.spellSlots = Array.from({ length: CFG.SPELL_SLOT_COUNT }, (_, i) => slots[i] || null);
   }
 
   // Map equipped active-item keys → their granted spells for hotkey dispatch.
   // Passive items produce null so their slot is a no-op on keypress.
-  setItemSlots(itemKeys = []) {
+  setItemSlots(itemKeys: (string | null)[] = []): void {
     this.itemSlots = Array.from({ length: CFG.ITEM_SLOT_COUNT }, (_, i) => itemKeys[i] || null);
   }
 
-  setSpellSlotHotkey(index, key) {
+  setSpellSlotHotkey(index: number, key: string): boolean {
     if (index < 0 || index >= CFG.SPELL_SLOT_COUNT) return false;
     const normalized = normalizeSpellSlotHotkeys(Object.assign([...this.spellSlotHotkeys], { [index]: key }));
     this.spellSlotHotkeys = normalized;
@@ -240,7 +277,7 @@ export class InputController {
     return true;
   }
 
-  setItemSlotHotkey(index, key) {
+  setItemSlotHotkey(index: number, key: string): boolean {
     if (index < 0 || index >= CFG.ITEM_SLOT_COUNT) return false;
     const normalized = normalizeItemSlotHotkeys(Object.assign([...this.itemSlotHotkeys], { [index]: key }));
     this.itemSlotHotkeys = normalized;
@@ -248,7 +285,7 @@ export class InputController {
     return true;
   }
 
-  spellForCode(code) {
+  spellForCode(code: string): string | null | undefined {
     // Item slot hotkeys take priority only when an active item actually occupies
     // the slot. If the slot is empty or the item is passive, fall through to the
     // spell-slot lookup so direct spell hotkeys (e.g. Digit8 → meteor) still work.
@@ -267,7 +304,7 @@ export class InputController {
   }
 
   // Queue a spell cast aimed at the current cursor's ground point.
-  queueCast(spell) {
+  queueCast(spell: string): void {
     if (!SPELLS[spell]) return;
     const pt = this.renderer.screenToPoint
       ? this.renderer.screenToPoint(this.mouseX, this.mouseY)
@@ -281,26 +318,26 @@ export class InputController {
     if (this.onCast) this.onCast(spell);
   }
 
-  _bindTouch() {
+  _bindTouch(): void {
     const joystick = document.getElementById("joystick");
-    const knob = document.getElementById("joystick-knob");
-    const fireBtn = document.getElementById("fire-btn");
+    const knob = document.getElementById("joystick-knob") as HTMLElement;
+    const fireBtn = document.getElementById("fire-btn") as HTMLElement;
     if (!joystick) return;
 
     let active = false, originX = 0, originY = 0;
     const radius = 50;
 
-    const start = (e) => {
+    const start = (e: TouchEvent | MouseEvent) => {
       active = true;
-      const t = e.touches ? e.touches[0] : e;
+      const t = "touches" in e && e.touches ? e.touches[0] : (e as MouseEvent);
       const rect = joystick.getBoundingClientRect();
       originX = rect.left + rect.width / 2;
       originY = rect.top + rect.height / 2;
       e.preventDefault();
     };
-    const move = (e) => {
+    const move = (e: TouchEvent | MouseEvent) => {
       if (!active) return;
-      const t = e.touches ? e.touches[0] : e;
+      const t = "touches" in e && e.touches ? e.touches[0] : (e as MouseEvent);
       let dx = t.clientX - originX;
       let dy = t.clientY - originY;
       const len = Math.hypot(dx, dy);
@@ -309,21 +346,21 @@ export class InputController {
       this.touchMove = [dx / radius, dy / radius];
       e.preventDefault();
     };
-    const end = (e) => {
+    const end = (_e: TouchEvent) => {
       active = false;
       knob.style.transform = "translate(0,0)";
       this.touchMove = [0, 0];
     };
 
-    joystick.addEventListener("touchstart", start, { passive: false });
-    joystick.addEventListener("touchmove", move, { passive: false });
-    joystick.addEventListener("touchend", end);
+    joystick.addEventListener("touchstart", start as EventListener, { passive: false });
+    joystick.addEventListener("touchmove", move as EventListener, { passive: false });
+    joystick.addEventListener("touchend", end as EventListener);
 
     fireBtn.addEventListener("touchstart", (e) => { this.queueCast(this.selectedSpell); e.preventDefault(); }, { passive: false });
   }
 
   // Build the current input snapshot to send/apply.
-  sample() {
+  sample(): InputState {
     const aimNow = this.renderer.screenToAim(this.mouseX, this.mouseY);
     // Paused or chatting: emit a neutral input so the warlock idles and no
     // queued cast fires, but keep the stream alive (seq still advances).

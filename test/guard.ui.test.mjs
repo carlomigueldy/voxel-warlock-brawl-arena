@@ -7,7 +7,7 @@ import fs from "node:fs";
 console.log("Source guards (ui) checks:");
 
 const ui = fs.readFileSync("src/ui.js", "utf8");
-const input = fs.readFileSync("src/input.js", "utf8");
+const input = fs.readFileSync("src/input.ts", "utf8");
 const html = fs.readFileSync("index.html", "utf8");
 const css = fs.readFileSync("src/style.css", "utf8");
 
