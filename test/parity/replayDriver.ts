@@ -13,7 +13,7 @@
 //
 // Exposes `window.__parity`, the page-level API scripts/parity.mjs drives
 // via Playwright's page.evaluate().
-import { advance } from "@react-three/fiber";
+import { advance, flushSync } from "@react-three/fiber";
 import { runReplay } from "../replay/run-replay.mjs";
 import { RENDERER } from "../../src/config/flags";
 import { CAPTURE_FIXED_DT } from "../../src/three/parity/determinism";
