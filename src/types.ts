@@ -522,3 +522,37 @@ export type WireMsg =
   | "afk"
   | "speak"
   | "roster";
+
+// ─── Matchmaking (src/matchmaking.ts) ──────────────────────────────────────
+
+/** Supabase Realtime presence payload a RegionQueue tracks for itself (src/matchmaking.ts `_presencePayload`). */
+export interface QueueCandidate {
+  queueId: string;
+  name?: string;
+  character?: string;
+  region: string;
+  joinedAt: number;
+  status: string;
+}
+
+/** A paired-up match, built once two `QueueCandidate`s are selected from presence state. */
+export interface Match {
+  matchId: string;
+  region: string;
+  players: QueueCandidate[];
+  host: QueueCandidate;
+  guest: QueueCandidate;
+  hostQueueId: string;
+  guestQueueId: string;
+  localQueueId: string;
+  remoteQueueId: string | null;
+}
+
+/** Broadcast payload the elected hidden host sends to the guest (src/matchmaking.ts `sendOffer`/`_handleOffer`). */
+export interface MatchOffer {
+  matchId: string;
+  region: string;
+  code: string;
+  fromQueueId: string;
+  toQueueId: string;
+}
