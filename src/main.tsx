@@ -1,12 +1,18 @@
-// React shell entry — loaded ONLY behind ?shell=react (see index.html's
-// bootstrap script); the default (no query param) path still loads
-// src/main.js untouched. No <StrictMode>: a double-invoke would construct
-// two Peers / two rAF loops / two AudioContexts through the singletons in
-// src/services/registry.ts (design §10 risk 2).
+// React shell entry — the only entry point since P6 (index.html loads this
+// unconditionally; the legacy ?shell=react-branching bootstrap and
+// src/main.js it used to alternate with are deleted). No <StrictMode>: a
+// double-invoke would construct two Peers / two rAF loops / two
+// AudioContexts through the singletons in src/services/registry.ts (design
+// §10 risk 2).
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { resetServices } from "./services/registry";
 import { CAPTURE, installDeterminism } from "./three/parity/determinism";
+// #loader lives in index.html OUTSIDE the React root (App.tsx's
+// useAppBootstrap drives it before <UiRoot/> ever mounts), so its CSS is a
+// plain global stylesheet imported here rather than a CSS Module — see that
+// file's own header for why it isn't just a copy sitting in global.css.
+import "./loader.css";
 
 // ?capture=1 (design §7 / issue #138): every Math.random()/Clock.getDelta()/
 // getContext() patch must be live before ANY scene-building code runs.
@@ -23,9 +29,8 @@ root.render(<App />);
 // (scripts/parity.mjs via Playwright) drives. Dynamic import so the parity
 // driver — and the sim/replay modules it pulls in — never ships in the
 // default (non-capture) bundle; resolving asynchronously is fine because it
-// only needs to run after React's initial commit (LegacyRendererBridge
-// registers its capture step / R3F's <Canvas> registers its root during that
-// same commit), never before.
+// only needs to run after React's initial commit (R3F's <Canvas> registers
+// its root during that same commit), never before.
 if (CAPTURE) {
   void import("../test/parity/replayDriver").then((m) => m.installParityHarness());
 }

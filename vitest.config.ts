@@ -9,6 +9,6 @@ export default defineConfig({
     // import time — so this is safe for the "node"-environment tests too
     // (design §4/P5: every RTL suite gets toBeInTheDocument/toHaveAttribute/... for free).
     setupFiles: ["test/setup/jest-dom.ts"],
-    // guard tests fs.readFileSync("src/main.js")/("index.html") relative to cwd=repo root — do NOT set a custom root.
+    // guard tests fs.readFileSync() source files relative to cwd=repo root — do NOT set a custom root.
   },
 });

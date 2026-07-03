@@ -14,7 +14,7 @@ import { useHudStore } from "../store/useHudStore";
 import { useDraftStore } from "../store/useDraftStore";
 import { useSocialRosterStore } from "../store/useSocialRosterStore";
 import { useSessionStore } from "../store/useSessionStore";
-import { getUI, getAudio, getInput } from "../services/registry";
+import { getAudio, getInput } from "../services/registry";
 
 function syncLocalSpellSlots(snap: Snapshot, localId: string | null): void {
   const me = snap.players.find((p) => p.id === localId);
@@ -69,16 +69,6 @@ export function onNewSnapshot(snap: Snapshot, localId: string | null): void {
     }
     syncLocalSpellSlots(snap, localId);
     audioTransitions(snap, localId);
-
-    // Legacy-UI-only: drives the actual DOM (ui.js owns display; useHudStore
-    // above is the React-facing summary P5 will subscribe to instead).
-    if (snap.phase !== PHASE.LOBBY) {
-      const ui = getUI();
-      ui.updateHUD(snap, localId, snapshotRef.meta);
-      ui.handleEvents(snap.events, snap.t);
-      ui.updateAbilityBar(snap, localId);
-      ui.updateItemBar(snap, localId);
-    }
   } catch (err) {
     console.error("[onNewSnapshot] fan-out error (continuing):", err);
   }

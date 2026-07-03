@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "node scripts/gen-supabase-config.mjs",
-  "outputDirectory": ".",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
   "cleanUrls": true,
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }

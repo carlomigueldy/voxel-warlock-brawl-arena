@@ -1,14 +1,16 @@
 // The session hook — ports main.js's startHosting/startJoining/matchmaking/
 // social wiring (design §6.5) into a React hook that mounts useHostLoop XOR
-// useClientLoop. Host/Client/Simulation/voice are per-match; the imperative
-// legacy engines (renderer/ui/audio/input) are page-lifetime singletons from
-// src/services/registry.ts (design §10 risk 2).
+// useClientLoop. Host/Client/Simulation/voice are per-match; audio/input are
+// page-lifetime singletons from src/services/registry.ts (design §10 risk
+// 2). P6 deletes the legacy renderer/ui engines that registry used to also
+// own — every intent below now writes React store state directly instead of
+// dual-writing a legacy `ui` object.
 //
-// Non-React code (wireLegacyUiToStores, driven by ui.js's DOM event
-// handlers) needs to call these intents too, so — like snapshotRef/
-// aimBridge/registry — the intents object is ALSO published to a
-// module-level ref (`gameSessionRef`) on mount. <GameSession/> is the only
-// component that ever calls this hook, so there is exactly one writer.
+// React UI components (DraftOverlay, PauseMenu, ...) call these intents via
+// gameSessionRef rather than a prop, so — like snapshotRef/aimBridge/
+// registry — the intents object is published to a module-level ref on
+// mount. <GameSession/> is the only component that ever calls this hook, so
+// there is exactly one writer.
 import { useEffect, useRef, useState } from "react";
 import { CFG, MSG, getCharacter } from "../config.js";
 import { Simulation, PHASE } from "../sim.js";
@@ -22,7 +24,7 @@ import { RegionQueue } from "../matchmaking.js";
 import type { Match } from "../types";
 import { submitMatchResult } from "../leaderboard.js";
 import type { PlayerMeta, Snapshot } from "../types";
-import { getUI, getAudio, getInput, getRenderer } from "../services/registry";
+import { getAudio, getInput } from "../services/registry";
 import { snapshotRef, setLocalId, resetSnapshotRef } from "../store/snapshotRef";
 import { useSessionStore } from "../store/useSessionStore";
 import { useUiStore } from "../store/useUiStore";
@@ -119,30 +121,19 @@ export function useGameSession(): GameSessionIntents {
 
   const applyChat = (relay: { fromId: string; text: string; kind: string; t: number }): void => {
     if (isPeerMuted(relay.fromId)) return;
-    const ui = getUI();
     const meta = snapshotRef.meta.get(relay.fromId);
     const color = CFG.COLORS[(meta?.colorIndex ?? 0) % CFG.COLORS.length];
     const isSelf = relay.fromId === localIdRef.current;
-    ui.addChatLine(meta?.name || "warlock", relay.text, color, isSelf);
-    // Additive store half of the same dual-write every other field in this
-    // file already does (menuStatus/lobbyStatus/queue/paused/chatOpen -> both
-    // a store AND a legacy ui.* call) — chat had only the legacy-DOM half
-    // until now, leaving ?ui=react with no source of truth to render chat
-    // history from (see useChatStore.ts's header).
+    // Sole write since P6 — this used to also dual-write the legacy DOM via
+    // ui.addChatLine(); useChatStore is now the only source of truth chat
+    // history renders from (see useChatStore.ts's header). In-world chat
+    // bubbles (legacy renderer.js's showChatBubble, gated on
+    // socialPrefs.showBubbles) have no R3F equivalent and are dropped here —
+    // no entity in src/three/entities/** renders text over a player's head;
+    // tracked as an intentional feature gap (owner-decided separately, see
+    // PR notes), not a regression to silently paper over.
     useChatStore.getState().addMessage({ name: meta?.name || "warlock", text: relay.text, color, isSelf });
-    if (getUiInputs().socialPrefs.showBubbles) getRendererMaybe()?.showChatBubble(relay.fromId, relay.text, color);
   };
-
-  // LegacyRendererBridge constructs the renderer; chat bubbles are a
-  // renderer-only nicety, so no-op (not throw) if it hasn't mounted yet
-  // (e.g. renderer=r3f, P4) or the registry hasn't been touched at all.
-  function getRendererMaybe() {
-    try {
-      return getRenderer();
-    } catch {
-      return null;
-    }
-  }
 
   function ensureVoice(): VoiceChat {
     if (voiceRef.current) return voiceRef.current;
@@ -180,8 +171,7 @@ export function useGameSession(): GameSessionIntents {
   function startHosting(name: string, options: HostStartOptions = {}): void {
     useSessionStore.getState().startSession("host");
     resetSnapshotRef();
-    const ui = getUI();
-    ui.setMenuStatus("Creating room…");
+    useUiStore.getState().setMenuStatus("Creating room…");
     clearMatchmakingHostTimeout();
 
     const sim = new Simulation({
@@ -234,23 +224,21 @@ export function useGameSession(): GameSessionIntents {
         mobsEnabled: sim.mobsEnabled,
       };
       host.broadcast({ type: MSG.LOBBY, players, hostId: localIdRef.current, config });
-      ui.renderPlayerList(players, localIdRef.current);
-      const btnStart = ui.el.btnStart as HTMLButtonElement | null;
-      btnStart?.classList.toggle("hidden", !!options.matchmaking);
-      if (btnStart) btnStart.disabled = !!options.matchmaking || !sim.canStartMatch();
+      // player list / start-button enablement: already driven reactively —
+      // LobbyRoot.tsx computes playerCount from useRosterStore (kept in sync
+      // every host-loop tick via onNewSnapshot, including during LOBBY
+      // phase) and disables Start Brawl itself when playerCount < 2.
     }
 
     function beginMatch(): boolean {
       if (!sim.startMatch()) {
-        ui.setLobbyStatus("Need at least 2 warlocks to start.");
+        useUiStore.getState().setLobbyStatus("Need at least 2 warlocks to start.");
         return false;
       }
       clearMatchmakingHostTimeout();
       host.broadcast({ type: MSG.START, round: sim.round });
       lastRosterRef.current = host.emitRoster();
       ensureVoice().updateRoster(lastRosterRef.current);
-      ui.showGame();
-      ui.maybeShowConduct();
       useSessionStore.getState().setInGame(true);
       useSessionStore.getState().setScreen("game");
       return true;
@@ -273,7 +261,7 @@ export function useGameSession(): GameSessionIntents {
         return;
       }
       const e = err as { type?: string; message?: string };
-      ui.setMenuStatus("Host error: " + (e?.type || e?.message || String(err)));
+      useUiStore.getState().setMenuStatus("Host error: " + (e?.type || e?.message || String(err)));
     }
 
     const host = new Host({
@@ -291,21 +279,22 @@ export function useGameSession(): GameSessionIntents {
           character: options.character || CFG.DEFAULT_CHARACTER,
           userId: getUser()?.id || null,
         });
+        // showGame()/showLobby()/maybeShowConduct() are dropped throughout
+        // this function — each is already paired with the useSessionStore
+        // write right beside it (screen drives <UiRoot>'s screen switch);
+        // maybeShowConduct's one-time disclaimer is now owned by
+        // PauseMenu.tsx, which auto-shows ConductModal on first "game" entry
+        // (see that file's header).
         if (options.practice) {
           if (sim.startMatch()) {
             host.broadcast({ type: MSG.START, round: sim.round });
-            ui.showGame(true);
             useSessionStore.getState().setInGame(true);
             useSessionStore.getState().setScreen("game");
           } else {
-            ui.showLobby(code, { isHost: true });
-            ui.maybeShowConduct();
             pushLobby();
             useSessionStore.getState().setScreen("lobby");
           }
         } else {
-          ui.showLobby(code, { isHost: true });
-          ui.maybeShowConduct();
           pushLobby();
           useSessionStore.getState().setScreen("lobby");
           const hostReady = options.onHostReady?.(code);
@@ -333,11 +322,11 @@ export function useGameSession(): GameSessionIntents {
           const welcomeSnap = sim.snapshot({ trackSend: false });
           host.sendTo(peerId, { type: MSG.STATE, ...welcomeSnap, mapLayout: sim.mapLayout });
         }
-        ui.setLobbyStatus(`${pname} joined.`);
+        useUiStore.getState().setLobbyStatus(`${pname} joined.`);
         getAudio().play("playerJoin");
         if (options.matchmaking && sim.phase === PHASE.LOBBY && humanPlayers() >= 2) {
           clearMatchmakingHostTimeout();
-          ui.setLobbyStatus("Opponent connected. Starting match...");
+          useUiStore.getState().setLobbyStatus("Opponent connected. Starting match...");
           beginMatch();
         }
       },
@@ -349,11 +338,17 @@ export function useGameSession(): GameSessionIntents {
         lastRosterRef.current = host.emitRoster();
         voiceRef.current?.updateRoster(lastRosterRef.current);
         if (sim.phase === PHASE.LOBBY) {
+          // sim.resolveRoundIfNeeded() can drop the match back to LOBBY
+          // phase mid-game (e.g. a 2-player match where one player leaves) —
+          // ui.showLobby() used to be the only thing that flipped the
+          // visible screen back; nothing else derives `screen` from `phase`
+          // reactively (see useSessionStore.ts's header), so this write must
+          // stay even though the rest of this handler's ui.* calls don't.
           applyBotSettings();
-          ui.showLobby(host.code, { isHost: true });
           useSessionStore.getState().setInGame(false);
+          useSessionStore.getState().setScreen("lobby");
         }
-        if (m) ui.setLobbyStatus(`${m.name} left.`);
+        if (m) useUiStore.getState().setLobbyStatus(`${m.name} left.`);
         getAudio().play("playerLeave");
       },
       onError: (err) => handleHostError(err),
@@ -395,8 +390,7 @@ export function useGameSession(): GameSessionIntents {
   function startJoining(name: string, code: string, character?: string | null, extra: { userId?: string | null; region?: string | null; matchmaking?: { matchId: string; queueId: string } } = {}): void {
     useSessionStore.getState().startSession("client");
     resetSnapshotRef();
-    const ui = getUI();
-    ui.setMenuStatus("Connecting to room " + code + "…");
+    useUiStore.getState().setMenuStatus("Connecting to room " + code + "…");
 
     const client = new Client({
       name, code, character,
@@ -410,9 +404,7 @@ export function useGameSession(): GameSessionIntents {
           name, colorIndex: 0, character: getCharacter(character ?? undefined).id,
           userId: extra.userId || getUser()?.id || null,
         });
-        ui.showLobby(code, { isHost: false });
-        ui.maybeShowConduct();
-        ui.setLobbyStatus("Connected! Waiting for host to start…");
+        useUiStore.getState().setLobbyStatus("Connected! Waiting for host to start…");
         useSessionStore.getState().setRoom(code, false);
         useSessionStore.getState().setScreen("lobby");
       },
@@ -424,13 +416,18 @@ export function useGameSession(): GameSessionIntents {
             character: p.character || CFG.DEFAULT_CHARACTER, userId: p.userId || null,
           });
         }
-        ui.renderPlayerList(msg.players, msg.hostId);
-        if (msg.config) ui.renderLobbyConfig(msg.config, { isHost: false });
+        // player list: reactive via useRosterStore, same as the host side
+        // (see startHosting's pushLobby comment). msg.config (the host's
+        // chosen arena/land/mobs settings) has NO store home yet — a joined
+        // client's MatchSetupPanel/BattlegroundHero read their OWN local
+        // useLobbyConfigStore, not the host's broadcast. This is a
+        // pre-existing P5 gap (MatchSetupPanel.tsx's own header already
+        // documents it as a deferred follow-up, predating this PR), not one
+        // P6 introduces — flagged again here so it isn't lost now that the
+        // legacy ui.renderLobbyConfig() DOM fallback is gone too.
       },
       onStart: () => {
         ensureVoice();
-        ui.showGame();
-        ui.maybeShowConduct();
         useSessionStore.getState().setInGame(true);
         useSessionStore.getState().setScreen("game");
       },
@@ -438,8 +435,6 @@ export function useGameSession(): GameSessionIntents {
         if (snapshotRef.current && snap.t <= snapshotRef.current.t) return;
         if (!useSessionStore.getState().inGame && snap.phase !== PHASE.LOBBY) {
           ensureVoice();
-          ui.showGame();
-          ui.maybeShowConduct();
           useSessionStore.getState().setScreen("game");
           useSessionStore.getState().setInGame(true);
         }
@@ -449,17 +444,15 @@ export function useGameSession(): GameSessionIntents {
       onRoster: (msg) => { lastRosterRef.current = msg.peers || []; voiceRef.current?.updateRoster(lastRosterRef.current); },
       onError: (err) => {
         const t = err?.type || "";
-        if (t === "peer-unavailable") ui.setMenuStatus("Room not found. Check the code.");
-        else if (t === "room-full") ui.setMenuStatus("Room is full.");
-        else if (t === "matchmaking-rejected") ui.setMenuStatus("Matchmaking join rejected. Search again.");
-        else ui.setMenuStatus("Connection error: " + (t || err?.message || err));
+        if (t === "peer-unavailable") useUiStore.getState().setMenuStatus("Room not found. Check the code.");
+        else if (t === "room-full") useUiStore.getState().setMenuStatus("Room is full.");
+        else if (t === "matchmaking-rejected") useUiStore.getState().setMenuStatus("Matchmaking join rejected. Search again.");
+        else useUiStore.getState().setMenuStatus("Connection error: " + (t || err?.message || err));
         teardown();
-        ui.showMenu();
       },
       onClose: () => {
         teardown();
-        ui.setMenuStatus("Disconnected from host.");
-        ui.showMenu();
+        useUiStore.getState().setMenuStatus("Disconnected from host.");
       },
     });
 
@@ -511,8 +504,12 @@ export function useGameSession(): GameSessionIntents {
   // rAF; this function does the rest (imperative peer/voice teardown).
   function teardown(): void {
     clearMatchmakingHostTimeout();
-    const ui = getUI();
-    ui.hidePause();
+    // hidePause()/closeChat() are dropped, not replaced — PauseMenu.tsx's own
+    // "defensive reset" effect (keyed on `screen !== "game"`) already resets
+    // useUiStore.paused/chatOpen to false on every path back to the menu,
+    // explicitly documented as mirroring this exact pair of legacy calls
+    // (see that file's comment right above the effect). endSession() below
+    // sets screen back to "menu", which fires that effect.
     const input = getInput();
     input.paused = false;
     input.chatting = false;
@@ -524,9 +521,7 @@ export function useGameSession(): GameSessionIntents {
     voiceRef.current = null;
     socialSendRef.current = null;
     lastRosterRef.current = [];
-    ui.closeChat();
-    ui.clearChatLog();
-    useChatStore.getState().clear(); // additive store half of clearChatLog(), see applyChat() above
+    useChatStore.getState().clear(); // sole write since P6 (used to also dual-write ui.clearChatLog())
     resetSnapshotRef();
     onlineRef.current = { isOnline: false, region: null, matchResultSubmitted: false };
     localIdRef.current = null;
@@ -569,10 +564,9 @@ export function useGameSession(): GameSessionIntents {
       startHosting(name, { ...options, practice: true });
     },
     quickMatch() {
-      if (!isEnabled()) { getUI().setMenuStatus("Online play requires a Supabase project."); return; }
-      const ui = getUI();
+      if (!isEnabled()) { useUiStore.getState().setMenuStatus("Online play requires a Supabase project."); return; }
       const name = getUiInputs().name;
-      if (!name) { ui.setMenuStatus("Enter a name first."); return; }
+      if (!name) { useUiStore.getState().setMenuStatus("Enter a name first."); return; }
       if (regionQueueRef.current) return;
       onlineRef.current = { isOnline: false, region: null, matchResultSubmitted: false };
 
@@ -604,7 +598,6 @@ export function useGameSession(): GameSessionIntents {
               const sent = await regionQueue.sendOffer(match, { code });
               if (!sent) {
                 teardown();
-                ui.showMenu();
                 useUiStore.getState().setQueue({ searching: false, status: "Match offer failed. Search again.", canCancel: false });
                 return false;
               }
@@ -614,12 +607,10 @@ export function useGameSession(): GameSessionIntents {
             onHostError: async () => {
               if (regionQueueRef.current === regionQueue) await cancelRegionQueue({ clearStatus: false });
               teardown();
-              ui.showMenu();
               useUiStore.getState().setQueue({ searching: false, status: "Quick Match host failed. Search again.", canCancel: false });
             },
             onMatchmakingTimeout: () => {
               teardown();
-              ui.showMenu();
               useUiStore.getState().setQueue({ searching: false, status: "Opponent did not connect. Search again.", canCancel: false });
             },
           });
@@ -648,12 +639,11 @@ export function useGameSession(): GameSessionIntents {
     },
     async cancelQueue() {
       await cancelRegionQueue();
-      getUI().setMenuStatus("Matchmaking canceled.");
+      useUiStore.getState().setMenuStatus("Matchmaking canceled.");
     },
     async leaveMatch() {
       await cancelRegionQueue();
-      teardown();
-      getUI().showMenu();
+      teardown(); // endSession() already returns screen to "menu"
     },
     resume() {
       const input = getInput();
@@ -699,7 +689,10 @@ export function useGameSession(): GameSessionIntents {
       const m = snapshotRef.meta.get(peerId);
       const muted = social.toggleMute(peerId, m?.userId || null);
       voiceRef.current?.setMuted(peerId, muted);
-      getUI().refreshRosterMute(peerId, muted);
+      // refreshRosterMute() dropped, not replaced — SocialSettingsModal.tsx
+      // reads social.isMuted() live at render time (its own comment
+      // documents this), so it re-renders correctly on its own re-render
+      // after this call, no store write needed.
     },
     clearMutes(peerIds) {
       for (const id of peerIds) voiceRef.current?.setMuted(id, false);

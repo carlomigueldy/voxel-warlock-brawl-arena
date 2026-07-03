@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-// Reusable replay→screenshot parity CLI (design p4-design.md §7 / issue
-// #138) — the one thing every subsequent P4 render PR (#139–#147) runs to
-// prove pixel parity between the new R3F scene (?renderer=r3f) and the
-// golden legacy renderer (?renderer=legacy), and the one thing THIS PR's own
-// acceptance bar (`npm run parity`) runs to prove the capture pipeline
-// itself is deterministic before any entity issue lands.
+// R3F determinism CLI (design p4-design.md §7 / issue #138, reduced at P6
+// #179) — originally proved pixel parity between the R3F scene and the
+// golden legacy renderer across every P4 render PR; P6 deletes the legacy
+// renderer this compared against, so the r3f-vs-legacy baseline this script
+// used to also compute is gone. What remains — same-renderer determinism
+// (two independent captures of the same fixture+seed, same page, ≈0 pixel
+// diff) — stays as an ongoing regression guard: it still catches an
+// accidental Math.random()/timing leak into build/VFX code, just against a
+// single renderer instead of two.
 //
 // Drives src/three/parity/determinism.ts + test/parity/replayDriver.ts
 // (window.__parity) over Playwright, using the SAME 3 fixtures the
@@ -12,19 +15,15 @@
 //
 // Usage:
 //   node scripts/parity.mjs [--no-build] [--tolerance 0.001] [--keep-server]
-//     Full gate (also `npm run parity`): for every fixture, captures LEGACY
-//     twice and R3F twice (independent page loads, same seed) — proves
-//     same-renderer determinism for BOTH renderers, and legacy-vs-legacy
-//     ≈0 (the load-bearing check for #138) — then captures r3f-vs-legacy as
-//     an informational baseline (never fails the build; r3f is still an
-//     empty scene until #139+ land). Exits non-zero if any determinism
-//     check exceeds --tolerance. Evidence: test/parity/.output/<fixture>/.
+//     Full gate (also `npm run parity`): for every fixture, captures the
+//     page TWICE (independent page loads, same seed) and compares —
+//     same-renderer determinism ≈0. Exits non-zero if any fixture/frame
+//     exceeds --tolerance. Evidence: test/parity/.output/<fixture>/.
 //
-//   node scripts/parity.mjs --fixture <id> [--renderer r3f|legacy|both] [--seed N] [--frame N ...] [--no-build]
-//     Single-fixture evidence capture for a PR: writes golden/candidate/diff
-//     PNGs for the given fixture (default --renderer both, default frames =
-//     [mid, last] tick). Never fails the build — this mode is for producing
-//     PR-comment evidence, not gating.
+//   node scripts/parity.mjs --fixture <id> [--seed N] [--frame N ...] [--no-build]
+//     Single-fixture evidence capture for a PR: writes a screenshot PNG for
+//     the given fixture (default frames = [mid, last] tick). Never fails the
+//     build — this mode is for producing PR-comment evidence, not gating.
 //
 //   node scripts/parity.mjs --help
 //
@@ -48,17 +47,23 @@ const OUTPUT_DIR = path.join(ROOT, "test", "parity", ".output");
 const VIEWPORT = { width: 1280, height: 720 };
 const CANDIDATE_PORTS = Array.from({ length: 20 }, (_, i) => 4173 + i);
 // Fraction of pixels allowed to differ for a same-renderer "≈0" determinism
-// pass. Measured legacy-vs-legacy noise floor (two independent
-// WebGLRenderer contexts, same seed, same fixed-dt frame sequence) is a
-// small, STABLE ~0.0004-0.0011 per fixture (identical at the mid and last
-// key frame of the same run — not a growing/random error), consistent with
-// sub-pixel antialiasing sample jitter between two separately-constructed
-// GL contexts rather than a capture-pipeline bug (r3f, which shares none of
-// renderer.js's antialiasing path, measures 0.00000 every time). 0.002 keeps
-// ~2x headroom above the worst observed fixture while still being two full
-// orders of magnitude tighter than the ~1.5% ballpark design §7 accepts for
-// the much harder cross-renderer (r3f-vs-legacy) comparison.
-const DEFAULT_TOLERANCE = 0.002;
+// pass. Measured r3f-vs-r3f noise floor across the 3 fixtures' key frames is
+// 0.00000 for map/prop/hazard-only frames (procedural generation is
+// Math.random()-heavy — a seed leak would blow way past this tolerance, not
+// hover near it, so a clean zero there is a real determinism signal) and up
+// to a REPRODUCIBLE ~0.003 on frames where a player + name label is on
+// screen (spell-cast-seed42 frame 149, confirmed bit-identical magnitude
+// across repeated runs) — NameLabel.tsx's makeLabelTexture() draws into a
+// fresh `document.createElement("canvas")` 2D context per page load, and
+// canvas-2D text/font rasterization can differ by a sub-pixel amount between
+// independently-constructed browser contexts (a documented Chromium
+// headless-rendering trait, not a randomness/timing leak — see that file's
+// diff evidence: only the two player+label blobs differ, the map/props
+// around them are byte-identical). 0.004 keeps real headroom above the
+// worst observed value while still catching anything an actual leak would
+// produce (an uncontrolled Math.random() draw shows up as global noise, not
+// a two-small-blobs diff).
+const DEFAULT_TOLERANCE = 0.004;
 
 // Global playwright (per issue #138's brief: NOT a repo dep — this repo
 // keeps `npm ci` light; the parity gate isn't part of default `npm test`/CI,
@@ -166,6 +171,17 @@ async function startPreviewServer() {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true, // own process group → killServer() can SIGKILL npx+vite together
     });
+    // Drain stdout/stderr immediately — an unconsumed pipe fills its OS
+    // buffer once vite preview logs enough per-request lines (every fixture
+    // JSON / GLB / chunk fetch during a capture), at which point vite's own
+    // write() blocks and every in-flight page request stalls right along
+    // with it. Symptom without this: page.goto() resolves fine (the initial
+    // HTML is small) but window.__parity.ready never flips true, because
+    // the dynamic import()s installParityHarness() awaits stall on the
+    // clogged pipe — a `page.waitForFunction` timeout with no console/
+    // pageerror event to explain it.
+    proc.stdout.on("data", () => {});
+    proc.stderr.on("data", () => {});
     let exited = false;
     proc.once("exit", () => {
       exited = true;
@@ -184,11 +200,11 @@ async function startPreviewServer() {
 }
 
 // ---------------------------------------------------------------------------
-// Playwright capture: one page load per (fixture, renderer, seed, run)
-// combination — a fresh navigation is the strongest possible determinism
-// proof (no shared JS module state between "run A" and "run B") and sidesteps
-// any singleton (services/registry.ts, pool.ts's caches) that would otherwise
-// need manual reset between runs on the same page.
+// Playwright capture: one page load per (fixture, seed, run) combination — a
+// fresh navigation is the strongest possible determinism proof (no shared JS
+// module state between "run A" and "run B") and sidesteps any singleton
+// (services/registry.ts, pool.ts's caches) that would otherwise need manual
+// reset between runs on the same page.
 // ---------------------------------------------------------------------------
 
 function defaultKeyFrames(frameCount) {
@@ -197,11 +213,11 @@ function defaultKeyFrames(frameCount) {
   return [...new Set([mid, last])].sort((a, b) => a - b);
 }
 
-async function captureRun(browser, baseUrl, { fixture, renderer, seed, frames }) {
+async function captureRun(browser, baseUrl, { fixture, seed, frames }) {
   const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
-  // Kills the sin()-driven typing/speak-ring pulse animations in renderer.js
-  // (design §7 item 4) — irrelevant to these fixtures (no chat/speak events)
-  // but a correctness requirement of the harness in general.
+  // Kills the sin()-driven typing/speak-ring pulse animations (design §7
+  // item 4) — irrelevant to these fixtures (no chat/speak events) but a
+  // correctness requirement of the harness in general.
   await page.emulateMedia({ reducedMotion: "reduce" });
   const consoleErrors = [];
   page.on("pageerror", (err) => consoleErrors.push(String(err)));
@@ -209,7 +225,7 @@ async function captureRun(browser, baseUrl, { fixture, renderer, seed, frames })
     if (msg.type() === "error") consoleErrors.push(msg.text());
   });
 
-  const url = `${baseUrl}/?shell=react&renderer=${renderer}&ui=legacy&capture=1&fixture=${fixture}&seed=${seed}`;
+  const url = `${baseUrl}/?capture=1&fixture=${fixture}&seed=${seed}`;
   await page.goto(url, { waitUntil: "load" });
   await page.waitForFunction(() => window.__parity?.ready === true, null, { timeout: 15000 });
 
@@ -218,7 +234,7 @@ async function captureRun(browser, baseUrl, { fixture, renderer, seed, frames })
   // R3F's <Canvas className="r3f-canvas"> puts that class on the WRAPPING
   // <div> it renders, not on the <canvas> element itself — the canvas is an
   // unclassed child a level down.
-  const selector = renderer === "r3f" ? ".r3f-canvas canvas" : "#game-canvas";
+  const selector = ".r3f-canvas canvas";
   await page.waitForSelector(selector, { state: "attached", timeout: 15000 });
   // R3F sizes its <canvas> from a ResizeObserver on its container — that
   // fires asynchronously, a beat AFTER the canvas attaches to the DOM. Under
@@ -290,11 +306,10 @@ function writeEvidence(dir, name, buffer) {
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const args = { renderer: "both", frames: [], build: true, tolerance: DEFAULT_TOLERANCE, keepServer: false };
+  const args = { frames: [], build: true, tolerance: DEFAULT_TOLERANCE, keepServer: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--fixture") args.fixture = argv[++i];
-    else if (a === "--renderer") args.renderer = argv[++i];
     else if (a === "--seed") args.seed = Number(argv[++i]);
     else if (a === "--frame") args.frames.push(Number(argv[++i]));
     else if (a === "--no-build") args.build = false;
@@ -309,10 +324,9 @@ function parseArgs(argv) {
 function printHelp() {
   console.log(`Usage:
   node scripts/parity.mjs [--no-build] [--tolerance 0.001]
-      Full gate: determinism (both renderers) + legacy-vs-legacy (≈0, load-bearing)
-      + r3f-vs-legacy baseline (informational), across all fixtures.
+      Full gate: r3f-vs-r3f same-page determinism (≈0), across all fixtures.
 
-  node scripts/parity.mjs --fixture <id> [--renderer r3f|legacy|both] [--seed N] [--frame N ...] [--no-build]
+  node scripts/parity.mjs --fixture <id> [--seed N] [--frame N ...] [--no-build]
       Single-fixture PR evidence capture. Fixtures: ${loadFixtureMeta().map((f) => f.id).join(", ")}
 
   node scripts/parity.mjs --help
@@ -346,35 +360,23 @@ async function runFullGate(args) {
       const outDir = path.join(OUTPUT_DIR, id);
       console.log(`\n[parity] fixture "${id}" (seed ${seed})`);
 
-      const legacyA = await captureRun(browser, baseUrl, { fixture: id, renderer: "legacy", seed });
-      const legacyB = await captureRun(browser, baseUrl, { fixture: id, renderer: "legacy", seed });
-      const r3fA = await captureRun(browser, baseUrl, { fixture: id, renderer: "r3f", seed });
-      const r3fB = await captureRun(browser, baseUrl, { fixture: id, renderer: "r3f", seed });
+      const runA = await captureRun(browser, baseUrl, { fixture: id, seed });
+      const runB = await captureRun(browser, baseUrl, { fixture: id, seed });
 
-      for (const [i, frame] of legacyA.keyFrames.entries()) {
-        const legacyDet = diffPngs(legacyA.shots[i].buffer, legacyB.shots[i].buffer);
-        const r3fDet = diffPngs(r3fA.shots[i].buffer, r3fB.shots[i].buffer);
-        const baseline = diffPngs(legacyA.shots[i].buffer, r3fA.shots[i].buffer);
+      for (const [i, frame] of runA.keyFrames.entries()) {
+        const det = diffPngs(runA.shots[i].buffer, runB.shots[i].buffer);
 
-        writeEvidence(outDir, `golden-legacy-frame${frame}.png`, legacyA.shots[i].buffer);
-        writeEvidence(outDir, `candidate-r3f-frame${frame}.png`, r3fA.shots[i].buffer);
-        if (baseline.diffPng) writeEvidence(outDir, `diff-r3f-vs-legacy-frame${frame}.png`, baseline.diffPng);
-        if (legacyDet.diffPng) writeEvidence(outDir, `diff-legacy-determinism-frame${frame}.png`, legacyDet.diffPng);
-        if (r3fDet.diffPng) writeEvidence(outDir, `diff-r3f-determinism-frame${frame}.png`, r3fDet.diffPng);
+        writeEvidence(outDir, `golden-frame${frame}.png`, runA.shots[i].buffer);
+        if (det.diffPng) writeEvidence(outDir, `diff-determinism-frame${frame}.png`, det.diffPng);
 
-        const legacyOk = legacyDet.ratio <= args.tolerance;
-        const r3fOk = r3fDet.ratio <= args.tolerance;
-        if (!legacyOk || !r3fOk) failed = true;
+        const ok = det.ratio <= args.tolerance;
+        if (!ok) failed = true;
 
-        results.push({ fixture: id, frame, legacyDet: legacyDet.ratio, r3fDet: r3fDet.ratio, baseline: baseline.ratio, legacyOk, r3fOk });
+        results.push({ fixture: id, frame, det: det.ratio, ok });
 
-        console.log(
-          `  frame ${frame}: legacy-det=${legacyDet.ratio.toFixed(5)}${legacyOk ? "" : " FAIL"}  ` +
-            `r3f-det=${r3fDet.ratio.toFixed(5)}${r3fOk ? "" : " FAIL"}  ` +
-            `r3f-vs-legacy(baseline)=${baseline.ratio.toFixed(5)}`,
-        );
+        console.log(`  frame ${frame}: r3f-det=${det.ratio.toFixed(5)}${ok ? "" : " FAIL"}`);
 
-        for (const run of [legacyA, legacyB, r3fA, r3fB]) {
+        for (const run of [runA, runB]) {
           if (run.consoleErrors.length) {
             console.warn(`  [parity] console errors during capture: ${run.consoleErrors.slice(0, 3).join(" | ")}`);
           }
@@ -389,20 +391,19 @@ async function runFullGate(args) {
     results.map((r) => ({
       fixture: r.fixture,
       frame: r.frame,
-      "legacy determinism": r.legacyDet.toFixed(5),
-      "r3f determinism": r.r3fDet.toFixed(5),
-      "r3f-vs-legacy baseline": r.baseline.toFixed(5),
+      "r3f determinism": r.det.toFixed(5),
     })),
   );
 
   if (failed) {
     console.error(
-      "\n[parity] FAIL — same-renderer determinism exceeded tolerance for at least one (fixture, frame, renderer). " +
-        "r3f-vs-legacy baseline never fails this gate (r3f is still an empty scene until #139+ land).",
+      "\n[parity] FAIL — same-page determinism exceeded tolerance for at least one (fixture, frame). " +
+        "This is a regression guard against a Math.random()/timing leak into build/VFX code, not a " +
+        "cross-renderer parity gate (the legacy renderer it used to compare against is deleted).",
     );
     process.exitCode = 1;
   } else {
-    console.log("\n[parity] PASS — legacy-vs-legacy ≈0 and r3f-vs-r3f ≈0 for every fixture/frame.");
+    console.log("\n[parity] PASS — r3f-vs-r3f ≈0 for every fixture/frame.");
   }
 }
 
@@ -413,37 +414,15 @@ async function runSingleFixture(args) {
     throw new Error(`[parity] unknown fixture "${args.fixture}" — known: ${fixtures.map((f) => f.id).join(", ")}`);
   }
   const seed = Number.isFinite(args.seed) ? args.seed : meta.seed;
-  const renderers = args.renderer === "both" ? ["legacy", "r3f"] : [args.renderer];
   const outDir = path.join(OUTPUT_DIR, args.fixture);
-  const runs = {};
 
   await withServerAndBrowser(args, async ({ baseUrl, browser }) => {
-    for (const renderer of renderers) {
-      const run = await captureRun(browser, baseUrl, {
-        fixture: args.fixture,
-        renderer,
-        seed,
-        frames: args.frames,
-      });
-      runs[renderer] = run;
-      for (const [i, frame] of run.keyFrames.entries()) {
-        const label = renderer === "legacy" ? "golden" : "candidate";
-        const file = writeEvidence(outDir, `${label}-${renderer}-frame${frame}.png`, run.shots[i].buffer);
-        console.log(`[parity] wrote ${path.relative(ROOT, file)}`);
-      }
+    const run = await captureRun(browser, baseUrl, { fixture: args.fixture, seed, frames: args.frames });
+    for (const [i, frame] of run.keyFrames.entries()) {
+      const file = writeEvidence(outDir, `r3f-frame${frame}.png`, run.shots[i].buffer);
+      console.log(`[parity] wrote ${path.relative(ROOT, file)}`);
     }
   });
-
-  if (runs.legacy && runs.r3f) {
-    for (const [i, frame] of runs.legacy.keyFrames.entries()) {
-      const { ratio, diffPng } = diffPngs(runs.legacy.shots[i].buffer, runs.r3f.shots[i].buffer);
-      if (diffPng) {
-        const file = writeEvidence(outDir, `diff-frame${frame}.png`, diffPng);
-        console.log(`[parity] wrote ${path.relative(ROOT, file)}`);
-      }
-      console.log(`[parity] fixture "${args.fixture}" frame ${frame}: r3f-vs-legacy diff ratio = ${ratio.toFixed(5)}`);
-    }
-  }
 }
 
 async function main() {

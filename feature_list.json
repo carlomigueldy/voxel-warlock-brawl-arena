@@ -2972,7 +2972,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "infra",
-      "status": "todo",
+      "status": "review",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -3017,7 +3017,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "infra",
-      "status": "todo",
+      "status": "review",
       "priority": "P1",
       "labels": [
         "sub-issue",

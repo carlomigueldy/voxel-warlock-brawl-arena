@@ -1,9 +1,9 @@
 /* ============================================================
-   Global resets + ambient/overlay base — port of src/style.css's
-   universal reset, html/body base, and the ember-field/grid-drift
-   ambient atmosphere (design §4 / PARTITION.md). Renderer-owned rules
-   (#game-canvas, .r3f-canvas) stay in style.css / are R3F territory —
-   not duplicated here, this file is UI-surface only.
+   Global resets + ambient/overlay base — port of the (P6-deleted) legacy
+   style.css's universal reset, html/body base, and the ember-field/
+   grid-drift ambient atmosphere (design §4). The renderer-owned
+   `.r3f-canvas` rule is NOT here — this file is UI-surface only — it lives
+   in src/three/GameCanvas.css, imported directly by GameCanvas.tsx.
 
    The global prefers-reduced-motion catch-all also lives here: it is
    the single rule every P5 module relies on to kill CSS animation
@@ -15,11 +15,12 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
-  width: 100%; height: 100%;
+  width: 100%; height: 100%; overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
   -webkit-user-select: none; user-select: none;
+  touch-action: none;
 }
 
 /* ---------- Overlay & ambient atmosphere ---------- */
