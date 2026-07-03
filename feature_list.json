@@ -1495,7 +1495,11 @@
         "FEAT-V1-R3F-P0-00",
         "FEAT-V1-R3F-P0-01",
         "FEAT-V1-R3F-P0-02",
-        "FEAT-V1-R3F-P0-03"
+        "FEAT-V1-R3F-P0-03",
+        "FEAT-V1-R3F-P1-0A",
+        "FEAT-V1-R3F-P1-0B",
+        "FEAT-V1-R3F-P1-0C",
+        "FEAT-V1-R3F-P1-0D"
       ],
       "acceptance_criteria": [
         "npm run dev/build/preview serve the game; no CDN runtime dependency",
@@ -1518,7 +1522,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "infra",
-      "status": "in_progress",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -1551,7 +1555,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "infra",
-      "status": "todo",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -1587,7 +1591,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "infra",
-      "status": "todo",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -1621,7 +1625,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "infra",
-      "status": "todo",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -1649,6 +1653,140 @@
         "keen-fluttering-pudding.md"
       ],
       "summary": "Deterministic seeded sim-replay harness: the foundation of the zero-regression visual-parity safety net."
+    },
+    {
+      "id": "FEAT-V1-R3F-P1-0A",
+      "title": "config.ts + shared domain types + typecheck gate",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 109,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/109"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P0-01",
+        "FEAT-V1-R3F-P0-02",
+        "FEAT-V1-R3F-P0-03"
+      ],
+      "acceptance_criteria": [
+        "config.ts fully typed, all exports preserved",
+        "src/types.ts shared domain types published",
+        "npm run typecheck (tsc --noEmit) added + green",
+        "all 451 Vitest tests + vite build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert config.js->config.ts with full types + add src/types.ts shared domain types + a typecheck gate. Bottleneck for P1 (config imported by ~30 modules)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P1-0B",
+      "title": "Convert leaf/support logic to TS (rng, arena-query, mapgen, animations, social, spell-icons)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 110,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/110"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A"
+      ],
+      "acceptance_criteria": [
+        "each renamed .ts + typed, runtime identical",
+        "typecheck + tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert DOM/Three-free leaf/support modules to TypeScript; no importer changes (Vite resolves .js->.ts)."
+    },
+    {
+      "id": "FEAT-V1-R3F-P1-0C",
+      "title": "Convert combat entities to TS (bolt, bot, mob)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 111,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/111"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A"
+      ],
+      "acceptance_criteria": [
+        "bolt/bot/mob renamed .ts + typed, runtime identical",
+        "typecheck + tests (esp mobs) + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert projectile/AI/mob logic to TypeScript."
+    },
+    {
+      "id": "FEAT-V1-R3F-P1-0D",
+      "title": "Convert core sim to TS (player, spells, sim)",
+      "type": "sub-issue",
+      "phase": "v1",
+      "area": "gameplay",
+      "status": "todo",
+      "priority": "P0",
+      "labels": [
+        "sub-issue",
+        "v1",
+        "migration",
+        "gameplay"
+      ],
+      "issue": {
+        "number": 112,
+        "url": "https://github.com/carlomigueldy/voxel-warlock-brawl-arena/issues/112"
+      },
+      "parent": "EPIC-V1-R3F",
+      "dependencies": [
+        "FEAT-V1-R3F-P1-0A",
+        "FEAT-V1-R3F-P1-0B",
+        "FEAT-V1-R3F-P1-0C"
+      ],
+      "acceptance_criteria": [
+        "player/spells/sim renamed .ts + typed, runtime identical; guard.sim readFileSync updated for spells.ts",
+        "typecheck + all 451 tests + build + lint green"
+      ],
+      "source_docs": [
+        "README.md",
+        "keen-fluttering-pudding.md"
+      ],
+      "summary": "Convert core simulation to TypeScript; spells.js is text-guarded so update guard.sim readFileSync path."
     }
   ]
 }
