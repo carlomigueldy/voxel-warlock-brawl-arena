@@ -6,8 +6,10 @@ import type { InputState, CastCmd } from "./types";
 
 // Minimal surface of GameRenderer (src/renderer.js, not yet converted) that
 // InputController talks to — kept narrow/local rather than typing the whole
-// untyped renderer module.
-interface InputRenderer {
+// untyped renderer module. Exported (P3a) so src/store/aimBridge.ts can
+// implement it: one InputController works under either renderer flag by
+// talking to aimBridge instead of GameRenderer directly.
+export interface InputRenderer {
   setAimSpell?: (spell: string | null) => void;
   setCursor?: (x: number, y: number) => void;
   screenToPoint?: (x: number, y: number) => { x: number; z: number } | null;
