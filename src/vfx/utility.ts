@@ -34,11 +34,57 @@
 // nothing is ever added to the scene twice.
 import * as THREE from "three";
 import { SPELLS } from "../config.js";
-import { facetedDuo, brighten } from "./duotone.js";
+import { facetedDuo, brighten, type FacetedDuoBuilder, type FacetedDuoOpts } from "./duotone.js";
 import {
   facetedOrb, facetedShard, facetedCrystal, facetedPuff, facetedAura,
   facetedCylinder, facetedTorus,
 } from "../lowpoly.js";
+
+// ---------------------------------------------------------------------------
+// Local types
+// ---------------------------------------------------------------------------
+
+// ctx passed to cast()/impact() — the subset of the (future p4-vfx-events)
+// EventFxCtx every builder below actually reads. Kept local rather than
+// importing duotone.ts's intentionally-loose VfxCtx (design §5) — same
+// rationale as projectiles.ts's ProjectileFxCtx.
+export interface UtilityFxCtx {
+  x: number;
+  z: number;
+  y?: number;
+  color: number;
+  addEffect(effect: THREE.Object3D | null): void;
+  burstAt(x: number, z: number, color: number, opts: { count?: number; speed?: number; life?: number }, y?: number): THREE.Object3D;
+  ringPulse(x: number, z: number, radius: number, color: number): THREE.Object3D;
+}
+
+export interface UtilityVfxEntry {
+  color: number;
+  buildCore: (color: number) => THREE.Group;
+  cast: (ctx: UtilityFxCtx) => THREE.Object3D | null;
+  impact: (ctx: UtilityFxCtx) => THREE.Object3D | null;
+}
+
+/** A THREE.Group wired to the renderer's transient-VFX contract via
+ * _effect() below: userData.update(dt), userData.done, userData.dispose(). */
+type TransientGroup = THREE.Group & {
+  userData: {
+    t: number;
+    life: number;
+    done: boolean;
+    update: (dt: number) => void;
+    dispose: () => void;
+  };
+};
+
+/** Anything with a userData.dispose() — facetedDuo groups, or plain meshes
+ * wrapped via _addPlain. */
+interface Disposable {
+  userData: { dispose?: () => void };
+}
+
+type EffectTick = (k: number, dt: number) => void;
+type EffectBuildFn = (g: THREE.Group, disposables: Disposable[]) => EffectTick | undefined;
 
 // ---------------------------------------------------------------------------
 // Transient-effect scaffold — every cast()/impact() builder below wires a
@@ -56,14 +102,14 @@ import {
 //           `disposables` so geometry/materials are freed on cull. The
 //           returned tick(k, dt) (k = elapsed/life, clamped 0..1) runs every
 //           frame; omit it for a static one-shot shape that just times out.
-function _effect(life, buildFn) {
-  const g = new THREE.Group();
-  const disposables = [];
+function _effect(life: number, buildFn: EffectBuildFn): TransientGroup {
+  const g = new THREE.Group() as TransientGroup;
+  const disposables: Disposable[] = [];
   const tick = buildFn(g, disposables);
   g.userData.t = 0;
   g.userData.life = life;
   g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k = Math.min(1, g.userData.t / life);
     tick?.(k, dt);
@@ -77,7 +123,16 @@ function _effect(life, buildFn) {
 
 // Add a facetedDuo() child (builder-mode: geometry is instance-owned and
 // freed on dispose) at a local offset, track it for disposal, return it.
-function _duo(g, disposables, builder, color, opts, x = 0, y = 0, z = 0) {
+function _duo(
+  g: THREE.Group,
+  disposables: Disposable[],
+  builder: FacetedDuoBuilder,
+  color: number,
+  opts: FacetedDuoOpts,
+  x = 0,
+  y = 0,
+  z = 0,
+) {
   const d = facetedDuo(builder, color, opts);
   d.position.set(x, y, z);
   g.add(d);
@@ -88,21 +143,25 @@ function _duo(g, disposables, builder, color, opts, x = 0, y = 0, z = 0) {
 // Add a plain lowpoly.js mesh (not wrapped in facetedDuo — used for lone
 // translucent accents like windWalk's wind puffs) and register its
 // geometry/material for disposal alongside the facetedDuo children.
-function _addPlain(g, disposables, mesh) {
+function _addPlain(g: THREE.Group, disposables: Disposable[], mesh: THREE.Mesh) {
   g.add(mesh);
-  disposables.push({ userData: { dispose: () => { mesh.geometry?.dispose(); mesh.material?.dispose(); } } });
+  disposables.push({ userData: { dispose: () => { mesh.geometry?.dispose(); (mesh.material as THREE.Material)?.dispose?.(); } } });
   return mesh;
 }
 
 // Fade both layers of a facetedDuo child together. Only fades the primary if
 // its material was built with `transparent: true` (buildCore pieces stay
 // opaque by design; cast()/impact() pieces that need to fade pass it).
-function _fadeDuo(d, o) {
-  if (d.userData.primary.material.transparent) d.userData.primary.material.opacity = o;
-  d.userData.secondary.material.opacity = 0.45 * o;
+function _fadeDuo(d: THREE.Group, o: number) {
+  const primary = d.userData.primary as THREE.Mesh;
+  const secondary = d.userData.secondary as THREE.Mesh;
+  const primaryMat = primary.material as THREE.Material & { transparent?: boolean; opacity?: number };
+  const secondaryMat = secondary.material as THREE.Material & { opacity?: number };
+  if (primaryMat.transparent) primaryMat.opacity = o;
+  secondaryMat.opacity = 0.45 * o;
 }
 
-function _spellColor(id, fallback) {
+function _spellColor(id: string, fallback: number): number {
   return SPELLS[id]?.color ?? fallback;
 }
 
@@ -111,13 +170,21 @@ function _spellColor(id, fallback) {
 // speed and windWalk. Shards are elongated along local X (via sx) then
 // rotated about Y so their long axis points radially, and they fly outward
 // while shrinking/fading over the effect's life.
-function _streakFan(g, disposables, color, opts = {}) {
+interface StreakFanOpts {
+  count?: number;
+  length?: number;
+  speed?: number;
+  spread?: number;
+  angle?: number;
+}
+
+function _streakFan(g: THREE.Group, disposables: Disposable[], color: number, opts: StreakFanOpts = {}): EffectTick {
   const count = opts.count ?? 4;
   const length = opts.length ?? 0.42;
   const speed = opts.speed ?? 5.5;
   const spread = opts.spread ?? Math.PI * 0.6;
   const baseAngle = opts.angle ?? Math.random() * Math.PI * 2;
-  const shards = [];
+  const shards: THREE.Group[] = [];
   for (let i = 0; i < count; i++) {
     const a = baseAngle + (Math.random() - 0.5) * spread;
     const d = _duo(g, disposables, (c, o) => facetedShard(length, c, {
@@ -140,11 +207,11 @@ function _streakFan(g, disposables, color, opts = {}) {
 // teleport — nested faceted diamonds: a shrinking departure gem (cast) and a
 // blooming arrival gem (impact), matching the icon's two connected diamonds.
 // ---------------------------------------------------------------------------
-function _teleportCore(color) {
+function _teleportCore(color: number): THREE.Group {
   return facetedDuo((c, o) => facetedCrystal(0.32, c, { sx: 0.85, sy: 1.05, sz: 0.85, ...o }), color, {});
 }
 
-function _teleportCast(ctx) {
+function _teleportCast(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.3, (g, disposables) => {
     const gem = _duo(g, disposables, (c, o) => facetedCrystal(0.45, c, {
@@ -162,7 +229,7 @@ function _teleportCast(ctx) {
   return null;
 }
 
-function _teleportImpact(ctx) {
+function _teleportImpact(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.35, (g, disposables) => {
     const gem = _duo(g, disposables, (c, o) => facetedCrystal(0.45, c, {
@@ -185,11 +252,11 @@ function _teleportImpact(ctx) {
 // blink — a tighter, faster teleport: same nested-diamond language, smaller
 // and quicker for a short instant hop.
 // ---------------------------------------------------------------------------
-function _blinkCore(color) {
+function _blinkCore(color: number): THREE.Group {
   return facetedDuo((c, o) => facetedCrystal(0.22, c, { sx: 0.8, sy: 0.95, sz: 0.8, ...o }), color, {});
 }
 
-function _blinkPop(ctx, grow) {
+function _blinkPop(ctx: UtilityFxCtx, grow: boolean): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.18, (g, disposables) => {
     const gem = _duo(g, disposables, (c, o) => facetedCrystal(0.3, c, {
@@ -207,27 +274,27 @@ function _blinkPop(ctx, grow) {
   ctx.addEffect(ctx.burstAt(ctx.x, ctx.z, brighten(color, 0.25), { count: 6, speed: 4, life: 0.22 }, ctx.y ?? 1.0));
   return null;
 }
-const _blinkCast = (ctx) => _blinkPop(ctx, false);
-const _blinkImpact = (ctx) => _blinkPop(ctx, true);
+const _blinkCast = (ctx: UtilityFxCtx) => _blinkPop(ctx, false);
+const _blinkImpact = (ctx: UtilityFxCtx) => _blinkPop(ctx, true);
 
 // ---------------------------------------------------------------------------
 // swap — twin faceted orbs flashing (the icon's two circles), each ringed by
 // a short counter-orbiting spark arc echoing the icon's opposing arrows.
 // ---------------------------------------------------------------------------
-function _swapCore(color) {
+function _swapCore(color: number): THREE.Group {
   const g = new THREE.Group();
   const a = facetedDuo((c, o) => facetedOrb(0.18, c, o), color, {});
   const b = facetedDuo((c, o) => facetedOrb(0.18, c, o), color, {});
   a.position.x = -0.32; b.position.x = 0.32;
   g.add(a, b);
-  g.userData.recolor = (nc) => { a.userData.recolor(nc); b.userData.recolor(nc); };
+  g.userData.recolor = (nc: number) => { a.userData.recolor(nc); b.userData.recolor(nc); };
   g.userData.dispose = () => { a.userData.dispose(); b.userData.dispose(); };
   return g;
 }
 
 // Two thin shards sweep opposite directions around a central flash orb,
 // echoing the icon's opposing swap arrows.
-function _swapFlash(ctx) {
+function _swapFlash(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.35, (g, disposables) => {
     const orb = _duo(g, disposables, (c, o) => facetedOrb(0.3, c, { transparent: true, ...o }), color, {}, 0, 1, 0);
@@ -252,11 +319,11 @@ const _swapImpact = _swapFlash;
 // thrust — forward-fanning streak shards on cast, a faceted debris shockwave
 // on impact (the shockKb/shockRadius blast landing).
 // ---------------------------------------------------------------------------
-function _thrustCore(color) {
+function _thrustCore(color: number): THREE.Group {
   return facetedDuo((c, o) => facetedShard(0.55, c, { sx: 0.55, sy: 0.16, sz: 0.16, ...o }), color, {});
 }
 
-function _thrustCast(ctx) {
+function _thrustCast(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.3, (g, disposables) => _streakFan(g, disposables, color, { count: 4, length: 0.5, speed: 7, spread: Math.PI * 0.4 }));
   eff.position.set(ctx.x, ctx.y ?? 1.0, ctx.z);
@@ -265,11 +332,11 @@ function _thrustCast(ctx) {
   return null;
 }
 
-function _thrustImpact(ctx) {
+function _thrustImpact(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.45, (g, disposables) => {
     const count = 6;
-    const bits = [];
+    const bits: THREE.Group[] = [];
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2;
       const d = _duo(g, disposables, (c, o) => facetedShard(0.22, c, { sx: 0.22, sy: 0.1, sz: 0.1, ry: -a, transparent: true, ...o }), color, {}, 0, 0, 0);
@@ -294,46 +361,46 @@ function _thrustImpact(ctx) {
 // rush — a burst of forward streak shards on cast (sprint start); no impact
 // (duration buff, resolves via server-side movement, not a VFX moment).
 // ---------------------------------------------------------------------------
-function _rushCore(color) {
+function _rushCore(color: number): THREE.Group {
   const g = new THREE.Group();
   const a = facetedDuo((c, o) => facetedShard(0.5, c, { sx: 0.5, sy: 0.14, sz: 0.14, ...o }), color, {});
   const b = facetedDuo((c, o) => facetedShard(0.3, c, { sx: 0.3, sy: 0.1, sz: 0.1, ...o }), color, {});
   a.position.x = 0.05; b.position.x = -0.4;
   g.add(a, b);
-  g.userData.recolor = (nc) => { a.userData.recolor(nc); b.userData.recolor(nc); };
+  g.userData.recolor = (nc: number) => { a.userData.recolor(nc); b.userData.recolor(nc); };
   g.userData.dispose = () => { a.userData.dispose(); b.userData.dispose(); };
   return g;
 }
 
-function _rushCast(ctx) {
+function _rushCast(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.35, (g, disposables) => _streakFan(g, disposables, color, { count: 5, length: 0.6, speed: 8, spread: Math.PI * 0.3 }));
   eff.position.set(ctx.x, ctx.y ?? 1.0, ctx.z);
   ctx.addEffect(eff);
   return null;
 }
-const _rushImpact = () => null;
+const _rushImpact = (): THREE.Object3D | null => null;
 
 // ---------------------------------------------------------------------------
 // windWalk — a swirl of translucent wind puffs orbiting outward alongside a
 // central streak arrow, matching the icon's curved wind lines + arrow.
 // ---------------------------------------------------------------------------
-function _windWalkCore(color) {
+function _windWalkCore(color: number): THREE.Group {
   const g = new THREE.Group();
   const arrow = facetedDuo((c, o) => facetedShard(0.45, c, { sx: 0.45, sy: 0.13, sz: 0.13, ...o }), color, {});
   const puff = facetedPuff(0.3, color, { opacity: 0.3 });
   puff.position.x = -0.3;
   g.add(arrow, puff);
-  g.userData.recolor = (nc) => arrow.userData.recolor(nc);
-  g.userData.dispose = () => { arrow.userData.dispose(); puff.geometry.dispose(); puff.material.dispose(); };
+  g.userData.recolor = (nc: number) => arrow.userData.recolor(nc);
+  g.userData.dispose = () => { arrow.userData.dispose(); puff.geometry.dispose(); (puff.material as THREE.Material).dispose(); };
   return g;
 }
 
-function _windWalkCast(ctx) {
+function _windWalkCast(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.5, (g, disposables) => {
     const arrow = _duo(g, disposables, (c, o) => facetedShard(0.5, c, { sx: 0.5, sy: 0.14, sz: 0.14, transparent: true, ...o }), color, {});
-    const puffs = [];
+    const puffs: { mesh: THREE.Mesh; a0: number }[] = [];
     for (let i = 0; i < 3; i++) {
       const p = facetedPuff(0.22, color, { opacity: 0.35 });
       _addPlain(g, disposables, p);
@@ -346,7 +413,7 @@ function _windWalkCast(ctx) {
         const a = p.a0 + k * Math.PI * 2.5;
         const r = 0.25 + k * 0.9;
         p.mesh.position.set(Math.cos(a) * r, k * 0.5, Math.sin(a) * r);
-        p.mesh.material.opacity = 0.35 * (1 - k);
+        (p.mesh.material as THREE.Material & { opacity: number }).opacity = 0.35 * (1 - k);
         p.mesh.scale.setScalar(Math.max(0.1, 1 - k * 0.5));
       }
     };
@@ -355,23 +422,23 @@ function _windWalkCast(ctx) {
   ctx.addEffect(eff);
   return null;
 }
-const _windWalkImpact = () => null;
+const _windWalkImpact = (): THREE.Object3D | null => null;
 
 // ---------------------------------------------------------------------------
 // speed (Haste) — a tight double-chevron streak burst (the icon's ">>").
 // ---------------------------------------------------------------------------
-function _speedCore(color) {
+function _speedCore(color: number): THREE.Group {
   const g = new THREE.Group();
   const a = facetedDuo((c, o) => facetedShard(0.4, c, { sx: 0.4, sy: 0.12, sz: 0.12, ...o }), color, {});
   const b = facetedDuo((c, o) => facetedShard(0.4, c, { sx: 0.4, sy: 0.12, sz: 0.12, ...o }), color, {});
   a.position.x = 0.18; b.position.x = -0.22;
   g.add(a, b);
-  g.userData.recolor = (nc) => { a.userData.recolor(nc); b.userData.recolor(nc); };
+  g.userData.recolor = (nc: number) => { a.userData.recolor(nc); b.userData.recolor(nc); };
   g.userData.dispose = () => { a.userData.dispose(); b.userData.dispose(); };
   return g;
 }
 
-function _speedCast(ctx) {
+function _speedCast(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.32, (g, disposables) => _streakFan(g, disposables, color, { count: 3, length: 0.4, speed: 7, spread: Math.PI * 0.15 }));
   eff.position.set(ctx.x, ctx.y ?? 1.0, ctx.z);
@@ -381,17 +448,17 @@ function _speedCast(ctx) {
   ctx.addEffect(eff2);
   return null;
 }
-const _speedImpact = () => null;
+const _speedImpact = (): THREE.Object3D | null => null;
 
 // ---------------------------------------------------------------------------
 // shield — a faceted shell aura that rises on cast and flashes/contracts
 // when it absorbs a hit, echoing the icon's kite shape + top-right sparkle.
 // ---------------------------------------------------------------------------
-function _shieldCore(color) {
+function _shieldCore(color: number): THREE.Group {
   return facetedDuo((c, o) => facetedCrystal(0.4, c, { sx: 0.9, sy: 1.25, sz: 0.55, ...o }), color, {});
 }
 
-function _shieldCast(ctx) {
+function _shieldCast(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.5, (g, disposables) => {
     const shell = _duo(g, disposables, (c, o) => facetedAura(0.6, c, { opacity: 0.3, transparent: true, ...o }), color, {}, 0, 1, 0);
@@ -410,7 +477,7 @@ function _shieldCast(ctx) {
   return null;
 }
 
-function _shieldImpact(ctx) {
+function _shieldImpact(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.3, (g, disposables) => {
     const flash = _duo(g, disposables, (c, o) => facetedCrystal(0.5, c, { sx: 0.9, sy: 1.25, sz: 0.55, transparent: true, ...o }), brighten(color, 0.3), {}, 0, 1, 0);
@@ -429,18 +496,18 @@ function _shieldImpact(ctx) {
 // heal — a rising faceted plus-shard (the icon's diamond + cross), fading as
 // it drifts up. Fired once per heal channel tick.
 // ---------------------------------------------------------------------------
-function _healCore(color) {
+function _healCore(color: number): THREE.Group {
   const g = new THREE.Group();
   const gem = facetedDuo((c, o) => facetedCrystal(0.28, c, o), color, {});
   const barA = facetedDuo((c, o) => facetedShard(0.42, c, o), color, {});
   const barB = facetedDuo((c, o) => facetedShard(0.42, c, { rz: Math.PI / 2, ...o }), color, {});
   g.add(gem, barA, barB);
-  g.userData.recolor = (nc) => { gem.userData.recolor(nc); barA.userData.recolor(nc); barB.userData.recolor(nc); };
+  g.userData.recolor = (nc: number) => { gem.userData.recolor(nc); barA.userData.recolor(nc); barB.userData.recolor(nc); };
   g.userData.dispose = () => { gem.userData.dispose(); barA.userData.dispose(); barB.userData.dispose(); };
   return g;
 }
 
-function _healCast(ctx) {
+function _healCast(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.55, (g, disposables) => {
     const barA = _duo(g, disposables, (c, o) => facetedShard(0.3, c, { sx: 0.09, sy: 0.3, sz: 0.09, transparent: true, ...o }), color, {}, 0, 1, 0);
@@ -457,21 +524,21 @@ function _healCast(ctx) {
   ctx.addEffect(ctx.burstAt(ctx.x, ctx.z, color, { count: 6, speed: 3, life: 0.4 }, ctx.y ?? 1.0));
   return null;
 }
-const _healImpact = () => null;
+const _healImpact = (): THREE.Object3D | null => null;
 
 // ---------------------------------------------------------------------------
 // invisible — a faceted veil aura shrinking to near-zero opacity, scattering
 // faint dash-shards (the icon's dashed silhouette lines).
 // ---------------------------------------------------------------------------
-function _invisibleCore(color) {
+function _invisibleCore(color: number): THREE.Group {
   return facetedDuo((c, o) => facetedCrystal(0.3, c, { sx: 0.75, sy: 1.3, sz: 0.6, ...o }), color, { secondaryOpacity: 0.25 });
 }
 
-function _invisibleCast(ctx) {
+function _invisibleCast(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.45, (g, disposables) => {
     const veil = _duo(g, disposables, (c, o) => facetedAura(0.55, c, { opacity: 0.4, transparent: true, ...o }), color, {}, 0, 1, 0);
-    const dashes = [];
+    const dashes: THREE.Group[] = [];
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2;
       const d = _duo(g, disposables, (c, o) => facetedShard(0.18, c, { sx: 0.18, sy: 0.06, sz: 0.06, ry: -a, transparent: true, ...o }), color, {}, 0, 1, 0);
@@ -492,24 +559,24 @@ function _invisibleCast(ctx) {
   ctx.addEffect(eff);
   return null;
 }
-const _invisibleImpact = () => null;
+const _invisibleImpact = (): THREE.Object3D | null => null;
 
 // ---------------------------------------------------------------------------
 // summon — a faceted hex sigil disc scaling in, with a rune-diamond pop
 // above it (the icon's nested hexagon + small rune diamond).
 // ---------------------------------------------------------------------------
-function _summonCore(color) {
+function _summonCore(color: number): THREE.Group {
   const g = new THREE.Group();
   const disc = facetedDuo((c, o) => facetedCylinder(0.42, 0.42, 0.1, c, { segments: 6, ...o }), color, {});
   const rune = facetedDuo((c, o) => facetedCrystal(0.16, c, o), color, {});
   rune.position.y = 0.32;
   g.add(disc, rune);
-  g.userData.recolor = (nc) => { disc.userData.recolor(nc); rune.userData.recolor(nc); };
+  g.userData.recolor = (nc: number) => { disc.userData.recolor(nc); rune.userData.recolor(nc); };
   g.userData.dispose = () => { disc.userData.dispose(); rune.userData.dispose(); };
   return g;
 }
 
-function _summonCast(ctx) {
+function _summonCast(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.5, (g, disposables) => {
     const disc = _duo(g, disposables, (c, o) => facetedCylinder(0.55, 0.55, 0.1, c, { segments: 6, transparent: true, ...o }), color, {}, 0, 0.08, 0);
@@ -530,27 +597,27 @@ function _summonCast(ctx) {
   ctx.addEffect(ctx.ringPulse(ctx.x, ctx.z, 2.0, color));
   return null;
 }
-const _summonImpact = () => null;
+const _summonImpact = (): THREE.Object3D | null => null;
 
 // ---------------------------------------------------------------------------
 // timeShift / pocketWatch — a faceted clock ring with a shard "hand" swept
 // via direct position trig (simpler & more predictable than nested Euler
 // rotations), echoing the icon's ring + rewind/reset sweep arrows.
 // ---------------------------------------------------------------------------
-function _clockCore(color) {
+function _clockCore(color: number): THREE.Group {
   const g = new THREE.Group();
   const ring = facetedDuo((c, o) => facetedTorus(0.4, 0.06, c, { rx: Math.PI / 2, radialSegments: 6, tubularSegments: 10, ...o }), color, {});
   const hand = facetedDuo((c, o) => facetedShard(0.28, c, { sx: 0.28, sy: 0.06, sz: 0.06, ...o }), color, {});
   hand.position.x = 0.14;
   g.add(ring, hand);
-  g.userData.recolor = (nc) => { ring.userData.recolor(nc); hand.userData.recolor(nc); };
+  g.userData.recolor = (nc: number) => { ring.userData.recolor(nc); hand.userData.recolor(nc); };
   g.userData.dispose = () => { ring.userData.dispose(); hand.userData.dispose(); };
   return g;
 }
 
 // direction = +1 sweeps hand forward (pocketWatch reset), -1 sweeps it
 // backward (timeShift rewind) — matches the icon's two opposing arc arrows.
-function _clockSweep(ctx, life, turns, direction, ringPulseR) {
+function _clockSweep(ctx: UtilityFxCtx, life: number, turns: number, direction: number, ringPulseR: number): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(life, (g, disposables) => {
     const ring = _duo(g, disposables, (c, o) => facetedTorus(0.5, 0.07, c, { rx: Math.PI / 2, radialSegments: 6, tubularSegments: 10, transparent: true, ...o }), color, {}, 0, 1, 0);
@@ -571,27 +638,27 @@ function _clockSweep(ctx, life, turns, direction, ringPulseR) {
   return null;
 }
 
-const _timeShiftCast = (ctx) => _clockSweep(ctx, 0.55, 1.4, -1, 0);
+const _timeShiftCast = (ctx: UtilityFxCtx) => _clockSweep(ctx, 0.55, 1.4, -1, 0);
 // timeShift's actual rewind resolves later ("timeshiftReturn") — a brighter,
 // faster snap-back flash to sell the position rewind landing.
-const _timeShiftImpact = (ctx) => _clockSweep(ctx, 0.35, 2.2, -1, 2.0);
-const _pocketWatchCast = (ctx) => _clockSweep(ctx, 0.5, 1.6, 1, 2.0);
-const _pocketWatchImpact = () => null;
+const _timeShiftImpact = (ctx: UtilityFxCtx) => _clockSweep(ctx, 0.35, 2.2, -1, 2.0);
+const _pocketWatchCast = (ctx: UtilityFxCtx) => _clockSweep(ctx, 0.5, 1.6, 1, 2.0);
+const _pocketWatchImpact = (): THREE.Object3D | null => null;
 
 // ---------------------------------------------------------------------------
 // drain — the charge-steal sparkle: an inward spiral of spark shards at the
 // drained target (cast) that converges into a bright flash at the caster
 // (impact), matching the icon's spiral drain path + two dots.
 // ---------------------------------------------------------------------------
-function _drainCore(color) {
+function _drainCore(color: number): THREE.Group {
   return facetedDuo((c, o) => facetedOrb(0.24, c, o), color, {});
 }
 
-function _drainCast(ctx) {
+function _drainCast(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.5, (g, disposables) => {
     const n = 5;
-    const shards = [];
+    const shards: THREE.Group[] = [];
     for (let i = 0; i < n; i++) {
       const a0 = (i / n) * Math.PI * 2;
       const d = _duo(g, disposables, (c, o) => facetedShard(0.2, c, { sx: 0.2, sy: 0.08, sz: 0.08, transparent: true, ...o }), color, {}, 0, 1, 0);
@@ -614,11 +681,11 @@ function _drainCast(ctx) {
   return null;
 }
 
-function _drainImpact(ctx) {
+function _drainImpact(ctx: UtilityFxCtx): THREE.Object3D | null {
   const color = ctx.color;
   const eff = _effect(0.3, (g, disposables) => {
     const n = 5;
-    const shards = [];
+    const shards: THREE.Group[] = [];
     for (let i = 0; i < n; i++) {
       const a0 = (i / n) * Math.PI * 2;
       const d = _duo(g, disposables, (c, o) => facetedShard(0.2, c, { sx: 0.2, sy: 0.08, sz: 0.08, transparent: true, ...o }), brighten(color, 0.25), {}, 0, 1, 0);
@@ -645,7 +712,7 @@ function _drainImpact(ctx) {
 // Registry slice — merge into VFX_REGISTRY (src/vfx/duotone.js) by callers,
 // e.g. `Object.assign(VFX_REGISTRY, UTILITY_VFX)`.
 // ---------------------------------------------------------------------------
-export const UTILITY_VFX = {
+export const UTILITY_VFX: Record<string, UtilityVfxEntry> = {
   teleport: { color: _spellColor("teleport", 0x3ad6ff), buildCore: _teleportCore, cast: _teleportCast, impact: _teleportImpact },
   blink: { color: _spellColor("blink", 0x66ccff), buildCore: _blinkCore, cast: _blinkCast, impact: _blinkImpact },
   swap: { color: _spellColor("swap", 0xe066ff), buildCore: _swapCore, cast: _swapCast, impact: _swapImpact },
