@@ -22,6 +22,7 @@ import { useSessionStore } from "../store/useSessionStore";
 import { MenuRoot } from "./menu/MenuRoot";
 import { LobbyRoot } from "./lobby/LobbyRoot";
 import { Hud } from "./hud/Hud";
+import { Onboarding } from "./onboarding/Onboarding";
 import { Juice } from "./juice/Juice";
 import styles from "./UiRoot.module.css";
 
@@ -67,10 +68,12 @@ export function UiRoot() {
         </div>
       )}
       {screen === "game" && <Hud />}
-      {/* game overlays (#164/#167), always-mounted overlays (#165/#166) —
-          each sibling adds its own region here per design §9's UiRoot
-          render contract. */}
+      {/* always-mounted overlays (gate internally on their own store flags) */}
+      <Onboarding />
       <Juice />
+      {/* remaining Wave-2 regions: game overlays (#164 draft / #167 touch),
+          pause + chat (#166) — each sibling adds its own line here per
+          design §9's UiRoot render contract. */}
     </div>
   );
 }
