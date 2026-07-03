@@ -9,7 +9,7 @@ import { castSpell, advanceCasts, applyAoE, nearestEnemy } from "./spells.js";
 import { BotBrain, BOT_PROFILES, botSpellLoadout, closestApproach as _closestApproach } from "./bot.js";
 import { makePrng } from "./rng.js";
 import { makeMobPrng, stepMobPhysics, spawnMob } from "./mob.js";
-import type { Phase, GameEvent, ObstacleTypeId, ArenaWorld, ArenaLandSize, Snapshot } from "./types";
+import type { Phase, GameEvent, ObstacleTypeId, ArenaWorld, ArenaLandSize, Snapshot, MapLayout } from "./types";
 
 export interface SimulationOptions {
   seed?: number;
@@ -161,7 +161,7 @@ export class Simulation {
   lastWinnerId: string | null;
   matchWinnerId: string | null;
   events: GameEvent[];
-  mapLayout: unknown;
+  mapLayout: MapLayout | null;
   mapVersion: number;
   _lastSentMapV: number;
   _matchSeed: number;
