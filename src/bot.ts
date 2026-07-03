@@ -9,11 +9,78 @@
 //   • Top tier is hard but FAIR: reaction delay + aimError give real openings.
 import { CFG, SPELLS } from "./config.js";
 import { idSeed, makePrng } from "./rng.js";
+import type { Bolt } from "./bolt";
+import type { InputState, CastCmd } from "./types";
+
+/** Minimal player-like shape bot AI reads/writes — Player itself isn't
+ * converted to TS yet (see src/player.js), so this is a narrow structural
+ * interface rather than an import of the real class. */
+export interface BotPlayerLike {
+  id: string;
+  x: number;
+  z: number;
+  alive: boolean;
+  falling: boolean;
+  isBot?: boolean;
+  colorIndex: number;
+  charge: number;
+  status: { disabled: number; [key: string]: unknown };
+  input: InputState;
+  _nextBotAbilityAt: number;
+  _botCastId: number;
+  canCast(spellId: string): boolean;
+}
+
+/** In-flight meteor shape (src/sim.js `this.meteors` entries, pushed ad hoc
+ * by spells.js/sim.js — not the wire MeteorSnap shape). */
+export interface SimMeteorLike {
+  x: number;
+  z: number;
+  radius: number;
+}
+
+/** Minimal sim-like shape bot AI reads — src/sim.js isn't converted yet. */
+export interface BotSimLike {
+  bolts: Bolt[];
+  meteors: SimMeteorLike[];
+  arena: { radius: number };
+  playTime: number;
+  alivePlayers(): BotPlayerLike[];
+}
+
+export interface BotProfile {
+  preferredRange: number;
+  retreatRange: number;
+  abilityEvery: number;
+  leadFactor: number;
+  aimError: number;
+  reactionMs: number;
+  dodgeRange: number;
+  dodgeChance: number;
+  aggression: number;
+  loadout: string[];
+  abilityWeights: Record<string, number>;
+}
+
+export interface DodgeVec {
+  x: number;
+  z: number;
+}
+
+export interface BotAction {
+  move: [number, number];
+  aim: number;
+  seq: number;
+  casts: CastCmd[];
+}
 
 // ── Swept-collision helper (shared with sim.js) ───────────────────────────
 // Minimum distance between two linearly-moving points over a unit time step.
 // Exported so sim.js can import rather than duplicate.
-export function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
+export function closestApproach(
+  a0x: number, a0z: number, a1x: number, a1z: number,
+  b0x: number, b0z: number, b1x: number, b1z: number
+): { dist: number; t: number } {
   const rx = a0x - b0x, rz = a0z - b0z;
   const vx = (a1x - a0x) - (b1x - b0x);
   const vz = (a1z - a0z) - (b1z - b0z);
@@ -31,7 +98,7 @@ export function closestApproach(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
 // abilityWeights, scored by selectAbility() like every other equipped spell.
 // The cast-cadence hierarchy expert > brilliant > smart is guaranteed by
 // abilityEvery (lower = faster) — the single per-tier cast-gate timer.
-export const BOT_PROFILES = {
+export const BOT_PROFILES: Record<string, BotProfile> = {
   /**
    * Brawler — aggressive close-range pressure, telegraphed, approachable.
    * Loses to spacing; the "new player" tier.
@@ -107,7 +174,10 @@ const BOT_DEFAULT_CAST_RANGE = 16; // fallback for spells without an explicit ra
 // ── Skill module: aimWithLead ──────────────────────────────────────────────
 // Intercept-aim: adjust angle to lead a target moving at estimated velocity.
 // leadFactor ∈ [0,1] scales how much of the prediction is applied.
-function aimWithLead(botX, botZ, targetX, targetZ, tvx, tvz, leadFactor) {
+function aimWithLead(
+  botX: number, botZ: number, targetX: number, targetZ: number,
+  tvx: number, tvz: number, leadFactor: number
+): number {
   const dx = targetX - botX, dz = targetZ - botZ;
   const dist = Math.hypot(dx, dz) || 1;
   const travelTime = dist / CFG.BOLT_SPEED;
@@ -121,13 +191,15 @@ function aimWithLead(botX, botZ, targetX, targetZ, tvx, tvz, leadFactor) {
 // Returns a perpendicular evade vector {x,z}, or null if nothing to dodge.
 // O(bolts + meteors) per call.
 // Exported so tests can unit-test the dodge logic in isolation.
-export function dodgeVector(sim, bot, profile, rand) {
+export function dodgeVector(
+  sim: BotSimLike, bot: BotPlayerLike, profile: BotProfile, rand: () => number
+): DodgeVec | null {
   if (profile.dodgeChance <= 0 || profile.dodgeRange <= 0) return null;
 
   const reactionSec = profile.reactionMs / 1000;
   const hitThreshold = CFG.PLAYER_RADIUS + CFG.BOLT_RADIUS + 0.4;
 
-  let bestThreat = null;
+  let bestThreat: { bdx: number; bdz: number } | null = null;
   let bestDist = Infinity;
 
   for (const bolt of sim.bolts) {
@@ -183,7 +255,9 @@ export function dodgeVector(sim, bot, profile, rand) {
 // ── Skill module: positioning ──────────────────────────────────────────────
 // Returns [moveX, moveZ] representing this tick's movement intent.
 // Replaces the fixed per-bot strafe with intent-driven spacing + kiting.
-function positioning(sim, bot, target, profile, dodgeVec) {
+function positioning(
+  sim: BotSimLike, bot: BotPlayerLike, target: BotPlayerLike, profile: BotProfile, dodgeVec: DodgeVec | null
+): [number, number] {
   const dx = target.x - bot.x, dz = target.z - bot.z;
   const dist = Math.hypot(dx, dz) || 1;
   const towardX = dx / dist, towardZ = dz / dist;
@@ -227,12 +301,20 @@ function positioning(sim, bot, target, profile, dodgeVec) {
 // ── Skill module: selectAbility ────────────────────────────────────────────
 // Situational scoring instead of a fixed spell priority ladder.
 // Returns { spell, tx, tz } or null.
-function selectAbility(sim, bot, target, dist, profile) {
+export interface AbilityChoice {
+  spell: string;
+  tx: number;
+  tz: number;
+}
+
+function selectAbility(
+  sim: BotSimLike, bot: BotPlayerLike, target: BotPlayerLike, dist: number, profile: BotProfile
+): AbilityChoice | null {
   if (bot.status.disabled > 0) return null;
 
-  const reach = (id) => {
+  const reach = (id: string): number => {
     const s = SPELLS[id];
-    return s && Number.isFinite(s.range) ? s.range : BOT_DEFAULT_CAST_RANGE;
+    return s && typeof s.range === "number" && Number.isFinite(s.range) ? s.range : BOT_DEFAULT_CAST_RANGE;
   };
 
   const edgeDanger = sim.arena.radius - Math.hypot(bot.x, bot.z) < 4;
@@ -247,8 +329,8 @@ function selectAbility(sim, bot, target, dist, profile) {
     if (bot.canCast("teleport")) return { spell: "teleport", tx: 0, tz: 0 };
   }
 
-  const candidates = [];
-  const tryAdd = (spell, base) => {
+  const candidates: { spell: string; score: number }[] = [];
+  const tryAdd = (spell: string, base: number): void => {
     if (!bot.canCast(spell)) return;
     const weight = w[spell] ?? 0.5;
     if (weight <= 0) return;
@@ -321,7 +403,7 @@ function selectAbility(sim, bot, target, dist, profile) {
 // top-N by weight, the last chosen slot is replaced with thrust.
 // Used by sim.js setBotRoster and stored as p._spawnLoadout so beginRound can
 // re-apply the correct loadout each round rather than falling back to DEFAULT.
-export function botSpellLoadout(profile, slotCount = CFG.SPELL_SLOT_COUNT) {
+export function botSpellLoadout(profile: BotProfile, slotCount: number = CFG.SPELL_SLOT_COUNT): string[] {
   const w = profile.abilityWeights || {};
   const chosen = Object.entries(w)
     .filter(([id, v]) => v > 0 && id !== "fireball" && SPELLS[id])
@@ -339,7 +421,16 @@ export function botSpellLoadout(profile, slotCount = CFG.SPELL_SLOT_COUNT) {
 
 // ── BotBrain ───────────────────────────────────────────────────────────────
 export class BotBrain {
-  constructor(botId, skill) {
+  skill: string;
+  profile: BotProfile;
+  rand: () => number;
+  _prevTarget: { id: string; x: number; z: number } | null;
+  _targetVx: number;
+  _targetVz: number;
+  comboWindow: number;
+  comboSpell: string | null;
+
+  constructor(botId: string, skill: string) {
     this.skill = skill;
     this.profile = BOT_PROFILES[skill] || BOT_PROFILES.smart;
     this.rand = makePrng(idSeed(botId));
@@ -353,7 +444,7 @@ export class BotBrain {
   }
 
   /** Reset cross-round state; called by Player.spawn() on each round start. */
-  reset() {
+  reset(): void {
     this._prevTarget = null;
     this._targetVx = 0;
     this._targetVz = 0;
@@ -365,7 +456,7 @@ export class BotBrain {
    * Main entry point — called once per tick by sim.updateBotInputs().
    * Returns { move:[x,z], aim, fire, seq, casts:[{id,spell,tx,tz},...] }.
    */
-  think(sim, bot) {
+  think(sim: BotSimLike, bot: BotPlayerLike): BotAction {
     const dt = 1 / CFG.TICK_RATE;
     const profile = this.profile;
 
@@ -412,12 +503,12 @@ export class BotBrain {
     // ── Movement ──────────────────────────────────────────────────────────
     const [moveX, moveZ] = positioning(sim, bot, target, profile, dodge);
 
-    const casts = [];
+    const casts: CastCmd[] = [];
 
     // ── Ability selection (fireball now competes here as a normal weighted
     //    candidate — see abilityWeights.fireball on each BOT_PROFILES tier) ──
     if ((bot._nextBotAbilityAt ?? 0) <= sim.playTime) {
-      let chosen = null;
+      let chosen: AbilityChoice | null = null;
 
       // Combo follow-up takes priority over situational selection.
       if (this.comboWindow > 0 && this.comboSpell && bot.canCast(this.comboSpell)) {
