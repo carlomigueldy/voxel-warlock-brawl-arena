@@ -27,7 +27,7 @@
 //    children alongside its own pause Modal, and hands ChatPanel nothing
 //    (chat's Escape/Enter is entirely local to its own input, see that
 //    file).
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CFG, SPELLS, SPELL_ORDER } from "../../config.js";
 import { getAudio, getInput } from "../../services/registry";
 import { gameSessionRef } from "../../loop/useGameSession";
@@ -174,24 +174,49 @@ export function PauseMenu() {
     }
   }, [screen]);
 
-  if (screen !== "game") return null;
-
-  function closePause() {
+  // Every handler below that ends up as a `Modal`'s `onClose` MUST be a
+  // stable reference (useCallback, no closures over changing values —
+  // Zustand's getState()/setters are already stable). Modal's focus-trap
+  // effect deps on `[open, onClose]`; a fresh function identity every render
+  // re-runs that effect on EVERY render (not just open/close), and its
+  // cleanup steals focus back via `previouslyFocusedRef.current?.focus?.()`
+  // — a sibling PR (#165 onboarding) hit this as a failing test, not by
+  // inspection, so it's easy to miss. `setHelpOpen`/`setSocialOpen`/
+  // `setConductOpen` themselves are already stable (useState setters); only
+  // the wrapping arrow needs memoizing.
+  const closePause = useCallback(() => {
     useUiStore.getState().setPaused(false);
-  }
+  }, []);
+  const closeSocial = useCallback(() => setSocialOpen(false), []);
+  const openSocial = useCallback(() => setSocialOpen(true), []);
+  const openConduct = useCallback(() => setConductOpen(true), []);
+  const dismissConduct = useCallback(() => {
+    try {
+      localStorage.setItem(CONDUCT_KEY, "1");
+    } catch {
+      // Ignore storage errors — matches every other single-writer helper in
+      // this codebase; conduct will just re-show next visit.
+    }
+    setConductOpen(false);
+  }, []);
+  const handleResume = useCallback(() => {
+    gameSessionRef.current?.resume();
+    closePause();
+  }, [closePause]);
+  const handleLeave = useCallback(() => {
+    closePause();
+    useUiStore.getState().setChatOpen(false);
+    void gameSessionRef.current?.leaveMatch();
+  }, [closePause]);
+
+  if (screen !== "game") return null;
 
   return (
     <>
       <Modal open={paused} onClose={closePause} ariaLabel="Battle Menu" className={styles.dialog}>
         <h2 className={styles.title}>Battle Menu</h2>
         <div className={styles.actions}>
-          <Button
-            variant="forge"
-            onClick={() => {
-              gameSessionRef.current?.resume();
-              closePause();
-            }}
-          >
+          <Button variant="forge" onClick={handleResume}>
             Resume Game
           </Button>
           <AudioToggle />
@@ -199,40 +224,17 @@ export function PauseMenu() {
             How to Play
           </Button>
           {helpOpen && <ControlsPanel />}
-          <Button variant="ghost" onClick={() => setSocialOpen(true)}>
+          <Button variant="ghost" onClick={openSocial}>
             Voice &amp; Chat
           </Button>
-          <Button
-            variant="ghost"
-            className={styles.leave}
-            onClick={() => {
-              closePause();
-              useUiStore.getState().setChatOpen(false);
-              void gameSessionRef.current?.leaveMatch();
-            }}
-          >
+          <Button variant="ghost" className={styles.leave} onClick={handleLeave}>
             Leave Match
           </Button>
         </div>
       </Modal>
 
-      <SocialSettingsModal
-        open={socialOpen}
-        onClose={() => setSocialOpen(false)}
-        onReadConduct={() => setConductOpen(true)}
-      />
-      <ConductModal
-        open={conductOpen}
-        onDismiss={() => {
-          try {
-            localStorage.setItem(CONDUCT_KEY, "1");
-          } catch {
-            // Ignore storage errors — matches every other single-writer
-            // helper in this codebase; conduct will just re-show next visit.
-          }
-          setConductOpen(false);
-        }}
-      />
+      <SocialSettingsModal open={socialOpen} onClose={closeSocial} onReadConduct={openConduct} />
+      <ConductModal open={conductOpen} onDismiss={dismissConduct} />
     </>
   );
 }
