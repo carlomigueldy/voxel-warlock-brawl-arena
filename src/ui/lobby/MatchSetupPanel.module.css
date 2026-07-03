@@ -1,0 +1,120 @@
+/* Port of src/style.css L501-545 (.lobby-setup-fields/.lobby-client-config/
+   .lobby-rail-title), L166-171 (.field/.field-label/.field-hint/.field-inline/
+   .field-copy — kept local to this sibling's owned directory rather than
+   touching ui/common, see hexColor.ts's header for the same call), and
+   L1605-1656 (.map-toggles/.obs-toggle*) — design §4 partition: lobby ->
+   lobby module. var(--token) only. */
+.panel {
+  grid-area: setup;
+  background: linear-gradient(180deg, rgba(24, 20, 51, 0.35), rgba(15, 11, 33, 0.3));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.summaryPanel { gap: 8px; }
+
+.railTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--muted);
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.railTitle::before { content: "▸"; color: var(--arcane); font-size: 10px; }
+
+.field { display: flex; flex-direction: column; gap: 9px; }
+.fieldInline { flex-direction: row; align-items: center; justify-content: space-between; gap: 14px; }
+.fieldCopy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fieldLabel { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.fieldHint { font-size: 12px; color: rgba(154, 147, 199, 0.7); }
+
+.summaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--text);
+}
+.summaryRow .fieldLabel { margin: 0; }
+
+/* ---------- Map-objects toggle group ---------- */
+.mapToggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+}
+.obsToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 5px 4px;
+  min-height: 44px; /* design floor: touch targets >= 44px */
+  transition: background 0.15s;
+}
+.obsToggle:hover { background: rgba(108, 76, 255, 0.07); }
+.obsToggleCheck {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.obsToggleTrack {
+  flex-shrink: 0;
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--slot);
+  border: 1px solid var(--line);
+  position: relative;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.obsToggleKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.2s var(--ease-spring), background 0.2s;
+}
+.obsToggleOn .obsToggleTrack {
+  background: linear-gradient(90deg, rgba(108, 76, 255, 0.35), rgba(124, 255, 90, 0.35));
+  border-color: var(--rune);
+  box-shadow: 0 0 10px rgba(124, 255, 90, 0.25);
+}
+.obsToggleOn .obsToggleKnob { transform: translateX(16px); background: var(--rune); box-shadow: 0 0 8px rgba(124, 255, 90, 0.7); }
+.obsToggleLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition: color 0.2s;
+  line-height: 1;
+}
+.obsToggleOn .obsToggleLabel { color: var(--text); }
+.obsToggle:has(.obsToggleCheck:focus-visible) { outline: 2px solid var(--arcane); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .obsToggle, .obsToggleTrack, .obsToggleKnob, .obsToggleLabel { transition: none; }
+}

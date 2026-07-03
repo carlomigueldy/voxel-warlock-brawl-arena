@@ -1,0 +1,93 @@
+/* Port of src/style.css L419-501 (#lobby shell/.lobby-scene/.lobby-hud-rail/
+   .lobby-stage grid) and L670-682 (.lobby-launch-bar/.lobby-muster) —
+   design §4 partition map: lobby -> lobby module. Unlike the shared .panel
+   primitive, #lobby fills the viewport rather than sitting in a bounded box
+   (style.css's own comment at L423-424), so LobbyRoot builds its own shell
+   instead of wrapping content in <Panel>. var(--token) only. */
+.scene {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: clamp(16px, 3vw, 36px) clamp(20px, 4vw, 56px) clamp(18px, 3vw, 30px);
+  text-align: left;
+}
+
+@keyframes lobbyZoneIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+.headerRail {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  animation: lobbyZoneIn 0.5s var(--ease-spring) both 0.02s;
+}
+.brand { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.eyebrow { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.wordmark {
+  font-family: var(--font-display);
+  font-size: clamp(15px, 2.2vw, 20px);
+  color: var(--text);
+  letter-spacing: 3px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+  margin: 0;
+}
+
+.stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.6fr) minmax(200px, 0.85fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "warlocks battleground setup"
+    "warlocks filmstrip    setup";
+  gap: 18px 24px;
+  padding: 22px 0;
+  animation: lobbyZoneIn 0.5s var(--ease-spring) both 0.16s;
+}
+@media (max-width: 880px) {
+  .stage {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-template-areas:
+      "battleground"
+      "filmstrip"
+      "warlocks"
+      "setup";
+  }
+}
+
+.launchBar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  animation: lobbyZoneIn 0.5s var(--ease-spring) both 0.3s;
+}
+.muster { display: flex; flex-direction: column; gap: 4px; }
+.musterCount {
+  font-family: var(--font-display);
+  font-size: clamp(11px, 1.6vw, 14px);
+  letter-spacing: 1.5px;
+  color: var(--gold);
+  text-transform: uppercase;
+}
+.status { color: var(--ember); min-height: 16px; margin: 0; font-size: 13px; font-weight: 600; }
+.startBtn { font-size: 18px; padding: 16px 40px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .headerRail, .stage, .launchBar { animation: none; }
+}

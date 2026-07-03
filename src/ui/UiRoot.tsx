@@ -2,9 +2,11 @@
 // §1/§Scope). p5a stood up the seam, the CSS token/fx system, and the
 // shared primitive kit; this is the design §9 UiRoot render contract each
 // sibling PR (#161-#168) adds its own `screen==="..."` / overlay-flag branch
-// to — a pass-through host div, not a styled shell, since every region
-// (MenuRoot, LobbyRoot, Hud, ...) manages its own full-viewport `.overlay`
-// positioning independently.
+// to — a pass-through host div, not a styled shell. Most regions (MenuRoot,
+// Hud, ...) manage their own full-viewport positioning; LobbyRoot is the
+// exception — its `.scene` is `min-height:100%` and relies on the
+// `.screenLayer` full-viewport parent below (a follow-up will make it
+// self-position for symmetry — see the shared-shell consolidation note).
 //
 // Global CSS imports live here (not main.tsx) so `?ui=legacy` never even
 // evaluates this module — tokens.css/global.css/fx.css only ship once
@@ -18,6 +20,8 @@ import { useEffect } from "react";
 import { CAPTURE } from "../three/parity/determinism";
 import { useSessionStore } from "../store/useSessionStore";
 import { MenuRoot } from "./menu/MenuRoot";
+import { LobbyRoot } from "./lobby/LobbyRoot";
+import styles from "./UiRoot.module.css";
 
 // index.html's static legacy `#menu` markup ships `class="overlay
 // menu-cinematic"` (visible by default; `#lobby`/`#hud` already default to
@@ -34,6 +38,8 @@ import { MenuRoot } from "./menu/MenuRoot";
 // copy). Keying the effect on `screen` re-hides it right after each such
 // call, in the same commit `screen` flips to "menu" — a targeted DOM
 // fixup responding to known frozen call sites, not a MutationObserver.
+// (Follow-up: a subscription-based useHideLegacyOverlay covering
+// #menu/#lobby/#hud closes the quick-match-failure edge #171 review flagged.)
 function useHideLegacyMenuDom(screen: string): void {
   useEffect(() => {
     if (screen === "menu") document.getElementById("menu")?.classList.add("hidden");
@@ -53,10 +59,14 @@ export function UiRoot() {
   return (
     <div data-testid="ui-root">
       {screen === "menu" && <MenuRoot />}
-      {/* screen==="lobby" -> LobbyRoot (#162), screen==="game" -> Hud (#163)
-          + game overlays (#164/#167), always-mounted overlays (#165/#166),
-          juice decoration (#168) — each sibling adds its own region here
-          per design §9's UiRoot render contract. */}
+      {screen === "lobby" && (
+        <div className={styles.screenLayer}>
+          <LobbyRoot />
+        </div>
+      )}
+      {/* screen==="game" -> Hud (#163, merging next); game overlays
+          (#164/#167), always-mounted overlays (#165/#166), juice decoration
+          (#168) — each sibling adds its own region here per design §9. */}
     </div>
   );
 }
