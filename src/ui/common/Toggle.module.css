@@ -1,0 +1,56 @@
+/* Port of src/style.css L208-228 (.rune-toggle) — design §4 partition:
+   controls -> shared primitives. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  min-height: 44px; /* design floor: touch targets >= 44px */
+  font-family: var(--font-ui);
+}
+.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.label { font-size: 13px; font-weight: 600; color: var(--text); }
+
+.track {
+  position: relative;
+  width: 56px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--slot);
+  border: 1px solid var(--line);
+  transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
+  flex-shrink: 0;
+}
+.knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.35s var(--ease-spring), background 0.3s, box-shadow 0.3s;
+}
+.state {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--muted);
+  width: 26px;
+  text-align: left;
+  transition: color 0.3s;
+}
+
+.on .track { background: linear-gradient(90deg, rgba(108, 76, 255, 0.35), rgba(124, 255, 90, 0.35)); border-color: var(--rune); box-shadow: 0 0 16px rgba(124, 255, 90, 0.35); }
+.on .knob { transform: translateX(26px); background: var(--rune); box-shadow: 0 0 12px rgba(124, 255, 90, 0.8); }
+.on .state { color: var(--rune); }
+
+.toggle:focus-visible { outline: 2px solid var(--arcane); outline-offset: 4px; border-radius: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .track, .knob, .state { transition: none; }
+}

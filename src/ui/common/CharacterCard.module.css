@@ -1,0 +1,61 @@
+/* Port of src/style.css L279-306 (.char-card) — design §4 partition:
+   controls (character cards) -> shared primitives. --char-color is set
+   inline per instance (the character's accent color), same as the legacy
+   DOM did via a style attribute. */
+.card {
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel-2);
+  padding: 10px 9px;
+  min-height: 44px; /* design floor: touch targets >= 44px */
+  text-align: left;
+  font-family: var(--font-ui);
+  color: var(--text);
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 3px 8px;
+  align-items: center;
+  transition: transform 0.22s var(--ease-spring), border-color 0.25s, box-shadow 0.25s;
+}
+.card:hover { transform: translateY(-2px); border-color: var(--char-color, var(--arcane)); }
+.card:focus-visible { outline: 2px solid var(--char-color, var(--arcane)); outline-offset: 2px; }
+.active {
+  border-color: var(--char-color, var(--arcane));
+  box-shadow: 0 0 0 1px var(--char-color, var(--arcane)), 0 0 20px -5px var(--char-color, var(--arcane));
+}
+
+.swatch {
+  grid-row: span 2;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, var(--char-color, var(--arcane)), rgba(0, 0, 0, 0.35));
+  box-shadow: 0 0 12px -2px var(--char-color, var(--arcane));
+}
+.name { font-size: 12px; font-weight: 800; line-height: 1.1; }
+.blurb { grid-column: 2; font-size: 10px; color: var(--muted); line-height: 1.15; }
+
+.check {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--char-color, var(--arcane));
+  color: #0a0814;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.22s, transform 0.28s var(--ease-spring);
+}
+.active .check { opacity: 1; transform: scale(1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .check { transition: none; }
+  .card:hover { transform: none; }
+}
