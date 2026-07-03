@@ -1,5 +1,15 @@
 // Low-poly voxel mesh builders. Everything is built from boxes for the
 // blocky aesthetic, merged where possible to keep draw calls down.
+//
+// P4-140: ported from voxel.js to TypeScript — value-identical (annotations
+// only, no behavior change). Legacy renderer.js keeps importing "./voxel.js"
+// unmodified; Vite resolves that specifier to this file (same pattern as
+// lowpoly.ts/duotone.ts). This module also owns the R3F voxel-fallback
+// warlock body (src/three/entities/VoxelWarlockBody.tsx wraps buildWarlock/
+// animateWarlock via PrimitiveFx) and the shared bolt/rarity caches below are
+// exported (not just module-private) so src/three/materials/palette.ts can
+// re-export them once p4-projectiles (#142) wires BoltsLayer/BoltEntity to
+// consume them — nothing in this port itself changes their runtime values.
 import * as THREE from "three";
 import { CFG, getArenaWorld, getArenaHazard, isOnArenaWorld } from "./config.js";
 import { CastAnimator } from "./animations.js";
@@ -9,8 +19,9 @@ import {
 } from "./lowpoly.js";
 import { VFX_REGISTRY } from "./vfx/duotone.js";
 import { MOB_MODEL_ASSETS, mobModelReady, loadMobModelTemplate, buildMobModelInstance } from "./mobModel.js";
+import type { ArenaHazard, ArenaHazardDetail } from "./types";
 
-function box(w, h, d, color, x = 0, y = 0, z = 0, flat = true) {
+function box(w: number, h: number, d: number, color: number, x = 0, y = 0, z = 0, flat = true): THREE.Mesh {
   const geo = new THREE.BoxGeometry(w, h, d);
   const mat = new THREE.MeshLambertMaterial({
     color,
@@ -23,23 +34,32 @@ function box(w, h, d, color, x = 0, y = 0, z = 0, flat = true) {
   return m;
 }
 
-function joint(x = 0, y = 0, z = 0) {
+function joint(x = 0, y = 0, z = 0): THREE.Group {
   const j = new THREE.Group();
   j.position.set(x, y, z);
   return j;
 }
 
 // Shade a color by a factor (for cheap voxel "AO"/variation).
-function shade(hex, f) {
+function shade(hex: number, f: number): number {
   const c = new THREE.Color(hex);
   c.offsetHSL(0, 0, f);
   return c.getHex();
 }
 
+interface GlowBoxOpts {
+  x?: number;
+  y?: number;
+  z?: number;
+  emissive?: number;
+  intensity?: number;
+  flat?: boolean;
+}
+
 // Emissive voxel — same box recipe but a Lambert material with self-illumination,
 // for glowing accents (item cores, charge runes, eye/jewel highlights) that still
 // take scene light. opts: { x,y,z, emissive, intensity=0.9, flat=true }.
-function glowBox(w, h, d, color, opts = {}) {
+function glowBox(w: number, h: number, d: number, color: number, opts: GlowBoxOpts = {}): THREE.Mesh {
   const geo = new THREE.BoxGeometry(w, h, d);
   const mat = new THREE.MeshLambertMaterial({
     color,
@@ -54,8 +74,15 @@ function glowBox(w, h, d, color, opts = {}) {
   return m;
 }
 
+interface AuraBoxOpts {
+  x?: number;
+  y?: number;
+  z?: number;
+  opacity?: number;
+}
+
 // Unlit translucent voxel — for halos / aura shells (matches buildBolt halo look).
-function auraBox(w, h, d, color, opts = {}) {
+function auraBox(w: number, h: number, d: number, color: number, opts: AuraBoxOpts = {}): THREE.Mesh {
   const geo = new THREE.BoxGeometry(w, h, d);
   const mat = new THREE.MeshBasicMaterial({
     color,
@@ -68,10 +95,31 @@ function auraBox(w, h, d, color, opts = {}) {
 }
 
 // Richer color transform than shade(): independent hue/sat/light deltas.
-function tint(hex, dh = 0, ds = 0, dl = 0) {
+function tint(hex: number, dh = 0, ds = 0, dl = 0): number {
   const c = new THREE.Color(hex);
   c.offsetHSL(dh, ds, dl);
   return c.getHex();
+}
+
+interface WobbleCfg {
+  bobAmp?: number;
+  bobHz?: number;
+  swayAmp?: number;
+  swayHz?: number;
+  spinX?: number;
+  spinY?: number;
+  spinZ?: number;
+  pulseMat?: boolean;
+  pulseBase?: number;
+  pulseAmp?: number;
+  pulseHz?: number;
+  phase?: number;
+}
+
+interface SecondaryEntry {
+  node: THREE.Object3D;
+  cfg: WobbleCfg;
+  base: THREE.Vector3;
 }
 
 // Register a node for cheap secondary motion (bob / sway / spin / pulse). Pushes
@@ -79,15 +127,15 @@ function tint(hex, dh = 0, ds = 0, dl = 0) {
 // and opt-in — a builder calls wobble() and never touches anim code directly.
 // cfg: { bobAmp, bobHz, swayAmp, swayHz, spinX, spinY, spinZ,
 //        pulseMat, pulseBase, pulseAmp, pulseHz, phase }
-function wobble(group, node, cfg) {
-  (group.userData._sec ||= []).push({ node, cfg, base: node.position.clone() });
+function wobble(group: THREE.Object3D, node: THREE.Object3D, cfg: WobbleCfg): THREE.Object3D {
+  ((group.userData._sec ??= []) as SecondaryEntry[]).push({ node, cfg, base: node.position.clone() });
   return node;
 }
 
 // Drives every node registered via wobble() on this group. Safe to call on a group
 // with no _sec list (no-op). Pure transform/opacity writes, no allocation per frame.
-export function animateSecondary(group, t, dt) {
-  const sec = group.userData._sec;
+export function animateSecondary(group: THREE.Object3D, t: number, dt: number): void {
+  const sec = group.userData._sec as SecondaryEntry[] | undefined;
   if (!sec || !sec.length) return;
   for (const { node, cfg, base } of sec) {
     const ph = cfg.phase ?? 0;
@@ -99,8 +147,9 @@ export function animateSecondary(group, t, dt) {
     // Guard: MeshBasicMaterial has no emissiveIntensity property (it's silently
     // ignored). Only write it on materials that actually support self-illumination
     // (MeshLambertMaterial, MeshStandardMaterial, MeshPhongMaterial, etc.).
-    if (cfg.pulseMat && node.material && 'emissiveIntensity' in node.material) {
-      node.material.emissiveIntensity =
+    const mat = (node as THREE.Mesh).material as (THREE.Material & { emissiveIntensity?: number }) | undefined;
+    if (cfg.pulseMat && mat && 'emissiveIntensity' in mat) {
+      mat.emissiveIntensity =
         (cfg.pulseBase ?? 0.5) + Math.sin(t * (cfg.pulseHz ?? 2) * Math.PI * 2 + ph) * (cfg.pulseAmp ?? 0.3);
     }
   }
@@ -108,7 +157,7 @@ export function animateSecondary(group, t, dt) {
 
 // Build a chunky low-poly warlock from stacked voxels.
 // Returns a Group whose children we can recolor per player.
-export function buildWarlock(color) {
+export function buildWarlock(color: number): THREE.Group {
   const g = new THREE.Group();
 
   const robe = shade(color, -0.05);
@@ -173,14 +222,27 @@ export function buildWarlock(color) {
   // Body-cast archetype overlay (attack/slam/dash/buff/channel), shared with the
   // GLB rig via the same CastAnimator state machine.
   g.userData.castAnim = new CastAnimator();
-  g.userData.triggerCast = (archetype) => g.userData.castAnim.trigger(archetype);
+  g.userData.triggerCast = (archetype: Parameters<CastAnimator["trigger"]>[0]) => g.userData.castAnim.trigger(archetype);
   g.scale.setScalar(0.9);
   return g;
 }
 
-const _lerp = (a, b, t) => a + (b - a) * t;
+const _lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
-export function animateWarlock(group, state) {
+/** Shape voxel.js's animateWarlock/animateMob callers pass in. Every field is
+ * optional/falls back to a default, matching the original untyped duck-typed
+ * `state` object (renderer.js update() and character.js's mirrored shape). */
+export interface VoxelAnimState {
+  speed?: number;
+  maxSpeed?: number;
+  charge?: number;
+  falling?: boolean;
+  channel?: number;
+  time?: number;
+  dt?: number;
+}
+
+export function animateWarlock(group: THREE.Group, state: VoxelAnimState): void {
   const rig = group.userData.rig;
   const anim = group.userData.anim;
   if (!rig || !anim) return;
@@ -243,7 +305,7 @@ export function animateWarlock(group, state) {
   // castGlow is channel-exclusive: hidden when ch ≤ 0.001 so it never renders
   // during normal charging (cast) or on warlocks that have never channeled.
   if (group.userData.castGlow) {
-    const cg = group.userData.castGlow;
+    const cg = group.userData.castGlow as THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
     if (ch > 0.001) {
       cg.visible = true;
       cg.material.emissiveIntensity = _lerp(0, 1.6, ch);
@@ -253,16 +315,23 @@ export function animateWarlock(group, state) {
   }
 
   // Body-cast archetype overlay on top of the locomotion pose.
-  const castAnim = group.userData.castAnim;
+  const castAnim = group.userData.castAnim as CastAnimator | undefined;
   if (castAnim) {
     castAnim.update(dt);
     applyVoxelCastOverlay(rig, castAnim, time);
   }
 }
 
+interface VoxelRig {
+  armL: THREE.Object3D;
+  armR: THREE.Object3D;
+  spine: THREE.Object3D;
+  [key: string]: THREE.Object3D | undefined;
+}
+
 // Per-archetype arm/spine emphasis for the voxel fallback warlock, blended in by
 // the CastAnimator weight so casts read distinctly from movement.
-function applyVoxelCastOverlay(rig, cast, time) {
+function applyVoxelCastOverlay(rig: VoxelRig, cast: CastAnimator, time: number): void {
   const w = cast.weight;
   if (w <= 0.0001 || !cast.archetype) return;
   switch (cast.archetype) {
@@ -306,10 +375,29 @@ function applyVoxelCastOverlay(rig, cast, time) {
 // `kind|color` and NEVER dispose these — they are cache-owned, not
 // instance-owned. This lets src/pool.js reuse whole bolt Groups across
 // projectile spawns without rebuilding geometry/materials every shot.
-const _boltGeoCache = new Map(); // kind -> { coreGeo, haloGeo, bladeGeo, coreR, haloR, haloOp }
-const _boltMatCache = new Map(); // `${kind}|${color}` -> { coreMat, haloMat, bladeMat }
+//
+// Exported (P4-140) so src/three/materials/palette.ts can re-export them once
+// p4-projectiles (#142) wires BoltsLayer/BoltEntity to consume the same
+// cache-owned geometry/materials the legacy `?renderer=legacy` path uses —
+// purely a visibility change, the caches themselves are untouched.
+export interface BoltGeoEntry {
+  coreGeo: THREE.BufferGeometry;
+  haloGeo: THREE.BufferGeometry;
+  bladeGeo: THREE.BufferGeometry | null;
+  coreR: number;
+  haloR: number;
+  haloOp: number;
+}
+export interface BoltMatEntry {
+  coreMat: THREE.MeshLambertMaterial;
+  haloMat: THREE.MeshBasicMaterial;
+  bladeMat: THREE.MeshLambertMaterial | null;
+}
 
-function _boltGeoFor(kind) {
+export const _boltGeoCache = new Map<string, BoltGeoEntry>(); // kind -> { coreGeo, haloGeo, bladeGeo, coreR, haloR, haloOp }
+export const _boltMatCache = new Map<string, BoltMatEntry>(); // `${kind}|${color}` -> { coreMat, haloMat, bladeMat }
+
+function _boltGeoFor(kind: string): BoltGeoEntry {
   let entry = _boltGeoCache.get(kind);
   if (entry) return entry;
   let coreR = 0.34, haloR = 0.62, haloOp = 0.25;
@@ -333,7 +421,7 @@ function _boltGeoFor(kind) {
   return entry;
 }
 
-function _boltMatFor(kind, color) {
+function _boltMatFor(kind: string, color: number): BoltMatEntry {
   const key = `${kind}|${color}`;
   let entry = _boltMatCache.get(key);
   if (entry) return entry;
@@ -362,12 +450,12 @@ function _boltMatFor(kind, color) {
 // module dependency evaluation order), so a plain eager Map is safe here —
 // no lazy/on-demand rebuild needed. Kinds with no claiming entry (e.g.
 // "disable") simply fall through to the untouched legacy path below.
-const _kindVfxEntry = new Map();
+const _kindVfxEntry = new Map<string, (typeof VFX_REGISTRY)[string]>();
 for (const entry of Object.values(VFX_REGISTRY)) {
   if (entry.proj && !_kindVfxEntry.has(entry.proj)) _kindVfxEntry.set(entry.proj, entry);
 }
 
-export function buildBolt(color, kind = "fireball") {
+export function buildBolt(color: number, kind = "fireball"): THREE.Group {
   // Registry-routed path: the traveling bolt gets its bespoke duotone core
   // (already wired for a pooled TrailPool trail internally when the spell
   // opts into `trail: true` — see src/vfx/projectiles.js's `_withTrail`) —
@@ -396,8 +484,9 @@ export function buildBolt(color, kind = "fireball") {
 
   g.add(halo, core);
 
-  let blade = null, blade2 = null;
-  if (kind === "boomerang") {
+  let blade: THREE.Mesh | null = null;
+  let blade2: THREE.Mesh | null = null;
+  if (kind === "boomerang" && geo.bladeGeo && mat.bladeMat) {
     // Faceted cross-blades so it reads as a spinning boomerang.
     blade = new THREE.Mesh(geo.bladeGeo, mat.bladeMat);
     blade.castShadow = false;
@@ -416,12 +505,12 @@ export function buildBolt(color, kind = "fireball") {
   g.userData.halo = halo;
   g.userData.blade = blade;
   g.userData.blade2 = blade2;
-  g.userData.recolor = (newColor) => {
+  g.userData.recolor = (newColor: number) => {
     const m = _boltMatFor(g.userData.kind, newColor);
     core.material = m.coreMat;
     halo.material = m.haloMat;
-    if (blade) blade.material = m.bladeMat;
-    if (blade2) blade2.material = m.bladeMat;
+    if (blade && m.bladeMat) blade.material = m.bladeMat;
+    if (blade2 && m.bladeMat) blade2.material = m.bladeMat;
   };
   // No per-instance resources beyond the group itself — geometry/materials
   // are cache-owned and shared, so there is nothing safe to dispose here.
@@ -429,7 +518,7 @@ export function buildBolt(color, kind = "fireball") {
   return g;
 }
 
-export function buildRune(color) {
+export function buildRune(color: number): THREE.Group {
   const g = new THREE.Group();
   // Faceted glowing base pad (flat-shaded slab, translucent).
   const base = facetedSlab(0.9, 0.25, 0.9, color, {
@@ -445,16 +534,23 @@ export function buildRune(color) {
   return g;
 }
 
+interface BuildBurstOpts {
+  count?: number;
+  speed?: number;
+  size?: number;
+  life?: number;
+}
+
 // A short-lived particle burst (used for hits, casts, impacts). Returns a group
 // with a per-frame `update(dt)` and a `done` flag the renderer polls. Particles
 // are faceted shards (octahedra) so impacts scatter sharp flat-shaded fragments.
-export function buildBurst(color, opts = {}) {
+export function buildBurst(color: number, opts: BuildBurstOpts = {}): THREE.Group {
   const count = Math.min(opts.count || 14, CFG.BURST_MAX_PARTICLES);
   const speed = opts.speed || 6;
   const size = opts.size || 0.22;
   const life = opts.life || 0.5;
   const g = new THREE.Group();
-  const parts = [];
+  const parts: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshLambertMaterial>[] = [];
   // All shards in a single burst share one octahedron geometry (only scale
   // and material opacity vary per-particle), cutting per-burst geometry
   // allocations from `count` down to 1.
@@ -475,7 +571,7 @@ export function buildBurst(color, opts = {}) {
   g.userData.t = 0;
   g.userData.life = life;
   g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k = g.userData.t / life;
     for (const m of parts) {
@@ -497,13 +593,13 @@ export function buildBurst(color, opts = {}) {
 }
 
 // A lightning bolt rendered as a jagged emissive tube between two points.
-export function buildLightning(x1, z1, x2, z2, color) {
+export function buildLightning(x1: number, z1: number, x2: number, z2: number, color: number): THREE.Group {
   const g = new THREE.Group();
   const y = 1.2;
   const start = new THREE.Vector3(x1, y, z1);
   const end = new THREE.Vector3(x2, y, z2);
   const segs = 8;
-  const points = [];
+  const points: THREE.Vector3[] = [];
   for (let i = 0; i <= segs; i++) {
     const t = i / segs;
     const p = start.clone().lerp(end, t);
@@ -521,10 +617,10 @@ export function buildLightning(x1, z1, x2, z2, color) {
   light.position.copy(start.clone().lerp(end, 0.5));
   g.add(light);
   g.userData.t = 0; g.userData.life = 0.3; g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k = g.userData.t / g.userData.life;
-    line.material.opacity = Math.max(0, 1 - k);
+    (line.material as THREE.LineBasicMaterial).opacity = Math.max(0, 1 - k);
     light.intensity = Math.max(0, 2 * (1 - k));
     if (k >= 1) g.userData.done = true;
   };
@@ -532,7 +628,7 @@ export function buildLightning(x1, z1, x2, z2, color) {
 }
 
 // A telegraphed meteor: a falling faceted rock plus a ground ring marker.
-export function buildMeteor(x, z, fall, radius, color) {
+export function buildMeteor(x: number, z: number, fall: number, radius: number, color: number): THREE.Group {
   const g = new THREE.Group();
   const rock = facetedRock(0.9, 0x552211, {
     detail: 1, perturb: 0.18, sx: 1.6, sy: 1.6, sz: 1.6,
@@ -551,11 +647,11 @@ export function buildMeteor(x, z, fall, radius, color) {
   light.position.set(x, 8, z);
   g.add(light);
   g.userData = { x, z, fall, total: fall, rock, ring, light, done: false };
-  g.userData.update = (dt, tLeft) => {
+  g.userData.update = (dt: number, tLeft: number) => {
     const k = 1 - tLeft / g.userData.total; // 0..1 as it falls
     rock.position.y = 30 * (1 - k);
     rock.rotation.x += dt * 4; rock.rotation.z += dt * 3;
-    ring.material.opacity = 0.3 + 0.4 * k;
+    (ring.material as THREE.MeshBasicMaterial).opacity = 0.3 + 0.4 * k;
     ring.scale.setScalar(1 + 0.1 * Math.sin(k * 20));
     light.position.y = rock.position.y;
   };
@@ -563,10 +659,11 @@ export function buildMeteor(x, z, fall, radius, color) {
   // meteor, unlike the shared bolt caches) — safe to dispose on cleanup.
   g.userData.dispose = () => {
     g.traverse((obj) => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) {
-        if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-        else obj.material.dispose();
+      const mesh = obj as THREE.Mesh;
+      if (mesh.geometry) mesh.geometry.dispose();
+      if (mesh.material) {
+        if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+        else mesh.material.dispose();
       }
     });
   };
@@ -576,7 +673,7 @@ export function buildMeteor(x, z, fall, radius, color) {
 // Dark storm clouds that hover over a location during the Storming Vortex
 // "storm" cinematic entrance. Returns a transient effect group with the standard
 // update(dt) / done convention consumed by the renderer's effects list.
-export function buildStormClouds(x, z) {
+export function buildStormClouds(x: number, z: number): THREE.Group {
   const g = new THREE.Group();
   const life = 3.0;
   const cloudY = 7;
@@ -584,7 +681,7 @@ export function buildStormClouds(x, z) {
   const accentColor = 0x7adfff;
 
   // Cluster of faceted puff shapes at varying offsets for depth.
-  const offsets = [
+  const offsets: [number, number, number][] = [
     [0,    0,    0   ],
     [-1.4, 0.3,  0.6 ],
     [ 1.2, -0.2, -0.7],
@@ -610,12 +707,13 @@ export function buildStormClouds(x, z) {
   g.userData.t    = 0;
   g.userData.life = life;
   g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k       = g.userData.t / life;
     const opacity = Math.max(0, (1 - k) * 0.80);
     for (const child of g.children) {
-      if (child.material) child.material.opacity = opacity;
+      const mat = (child as THREE.Mesh).material as THREE.Material & { opacity?: number } | undefined;
+      if (mat) mat.opacity = opacity;
     }
     glow.intensity = Math.max(0, 2.0 * (1 - k * 1.5));
     if (k >= 1) g.userData.done = true;
@@ -625,13 +723,13 @@ export function buildStormClouds(x, z) {
 
 // Build the voxel platform mesh for a given radius using merged boxes.
 // We rebuild it when the radius changes (shrinking arena).
-export function buildPlatform(radius, worldId = CFG.DEFAULT_ARENA_WORLD) {
+export function buildPlatform(radius: number, worldId: string = CFG.DEFAULT_ARENA_WORLD): THREE.Group {
   const g = new THREE.Group();
   const step = 2; // voxel block size for the floor
   const world = getArenaWorld(worldId);
 
   // Use instancing for performance.
-  const cells = [];
+  const cells: [number, number][] = [];
   for (let x = -radius; x <= radius; x += step) {
     for (let z = -radius; z <= radius; z += step) {
       if (isOnArenaWorld(world.id, radius, x, z)) cells.push([x, z]);
@@ -673,7 +771,7 @@ export function buildPlatform(radius, worldId = CFG.DEFAULT_ARENA_WORLD) {
 // `hazard` is an entry from CFG.ARENA_HAZARDS; its `style`/color/amp drive both
 // the look and the per-frame motion in animateHazard so each map reads as its
 // own environment (lava sea, ocean, toxic swamp, sharp rocks, arcane abyss).
-export function buildHazard(size, y, hazard) {
+export function buildHazard(size: number, y: number, hazard?: ArenaHazard): THREE.Mesh {
   const theme = hazard || getArenaHazard(CFG.DEFAULT_ARENA_WORLD);
   const segs = theme.jagged ? 40 : 24;
   const geo = new THREE.PlaneGeometry(size, size, segs, segs);
@@ -693,13 +791,13 @@ export function buildHazard(size, y, hazard) {
   // shimmer) so the rocks feel solid rather than fluid.
   if (theme.jagged) {
     const pos = geo.attributes.position;
-    const base = mesh.userData.base;
+    const base = mesh.userData.base as Float32Array;
     for (let i = 0; i < pos.count; i++) {
       const x = base[i * 3];
       const z = base[i * 3 + 2];
       const spike = (Math.abs(Math.sin(x * 1.7) * Math.cos(z * 1.3)) ** 2) * 3.2;
-      base[i * 3 + 1] = pos.array[i * 3 + 1] + spike;
-      pos.array[i * 3 + 1] = base[i * 3 + 1];
+      base[i * 3 + 1] = (pos.array as Float32Array)[i * 3 + 1] + spike;
+      (pos.array as Float32Array)[i * 3 + 1] = base[i * 3 + 1];
     }
     pos.needsUpdate = true;
     geo.computeVertexNormals();
@@ -709,14 +807,14 @@ export function buildHazard(size, y, hazard) {
 
 // Per-frame motion. The style decides the wave shape: lava churns, ocean rolls
 // in clean swells, swamp oozes slowly, rocks barely shimmer, the void pulses.
-export function animateHazard(mesh, t) {
+export function animateHazard(mesh: THREE.Mesh | null | undefined, t: number): void {
   if (!mesh) return;
-  const theme = mesh.userData.hazard || {};
+  const theme = (mesh.userData.hazard as Partial<ArenaHazard>) || {};
   const style = theme.style || "lava";
   const amp = theme.amp ?? 0.4;
   const speed = theme.speed ?? 1.5;
   const pos = mesh.geometry.attributes.position;
-  const base = mesh.userData.base;
+  const base = mesh.userData.base as Float32Array;
   const tt = t * speed;
   for (let i = 0; i < pos.count; i++) {
     const x = base[i * 3];
@@ -745,7 +843,7 @@ export function animateHazard(mesh, t) {
         h = Math.sin(x * 0.3 + tt) * amp + Math.cos(z * 0.4 + tt * 0.66) * amp;
         break;
     }
-    pos.array[i * 3 + 1] = baseY + h;
+    (pos.array as Float32Array)[i * 3 + 1] = baseY + h;
   }
   pos.needsUpdate = true;
 }
@@ -754,9 +852,9 @@ export function animateHazard(mesh, t) {
 // bubbles, dust, arcane shards). Returns a Group of instanced-ish small meshes,
 // each carrying its own per-particle state. animateHazardDetails advances them
 // and recycles any that rise past their ceiling, so the field loops forever.
-export function buildHazardDetails(size, y, hazard) {
+export function buildHazardDetails(size: number, y: number, hazard?: ArenaHazard): THREE.Group {
   const theme = hazard || getArenaHazard(CFG.DEFAULT_ARENA_WORLD);
-  const detail = theme.detail;
+  const detail = theme.detail as (ArenaHazardDetail & { ceiling?: number }) | undefined;
   const g = new THREE.Group();
   if (!detail) return g;
 
@@ -769,7 +867,7 @@ export function buildHazardDetails(size, y, hazard) {
 
   // Shards (void) are opaque flat-shaded crystals; everything else is a soft
   // additive-looking translucent mote.
-  const makeMesh = () => {
+  const makeMesh = (): THREE.Mesh => {
     if (kind === "shards") {
       return new THREE.Mesh(
         new THREE.OctahedronGeometry(baseSize),
@@ -806,9 +904,9 @@ export function buildHazardDetails(size, y, hazard) {
 
 // Per-frame motion for the ambient detail props. Each particle rises, drifts,
 // fades near its ceiling, then recycles to the surface — an endless loop.
-export function animateHazardDetails(group, t, dt) {
+export function animateHazardDetails(group: THREE.Group | null | undefined, t: number, dt: number): void {
   if (!group || !group.children.length) return;
-  const detail = group.userData.detail || {};
+  const detail = (group.userData.detail as Partial<ArenaHazardDetail>) || {};
   const kind = detail.kind;
   const step = Number.isFinite(dt) ? dt : 0.016;
   for (const m of group.children) {
@@ -824,7 +922,8 @@ export function animateHazardDetails(group, t, dt) {
 
     const climbed = m.position.y - p.baseY;
     const k = Math.min(1, climbed / p.ceiling);
-    if (m.material) m.material.opacity = Math.max(0, (1 - k) * 0.85);
+    const mat = (m as THREE.Mesh).material as THREE.Material & { opacity?: number } | undefined;
+    if (mat) mat.opacity = Math.max(0, (1 - k) * 0.85);
 
     if (kind === "shards") {
       m.rotation.x += p.spin * step;
@@ -838,7 +937,7 @@ export function animateHazardDetails(group, t, dt) {
     if (climbed >= p.ceiling) {
       m.position.y = p.baseY;
       m.scale.setScalar(1);
-      if (m.material) m.material.opacity = 0.85;
+      if (mat) mat.opacity = 0.85;
     }
   }
 }
@@ -849,16 +948,20 @@ export function animateHazardDetails(group, t, dt) {
 // of buildPlatform so the elevation layer feels like a seamless extension of
 // the existing arena tiles.
 
+export interface PlateauLayout {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  height: number;
+}
+
 /**
  * Build the elevated body + top cap for one plateau footprint.
  * Meshes are positioned in world-space so the Group can be added directly
  * to the scene without an extra transform.
- *
- * @param {{ x:number, z:number, w:number, d:number, height:number }} pl
- * @param {string} worldId
- * @returns {THREE.Group}
  */
-export function buildPlateau(pl, worldId = CFG.DEFAULT_ARENA_WORLD) {
+export function buildPlateau(pl: PlateauLayout, worldId: string = CFG.DEFAULT_ARENA_WORLD): THREE.Group {
   const g     = new THREE.Group();
   const world = getArenaWorld(worldId);
 
@@ -883,6 +986,14 @@ export function buildPlateau(pl, worldId = CFG.DEFAULT_ARENA_WORLD) {
   return g;
 }
 
+export interface RampLayout {
+  side: number;
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+}
+
 /**
  * Build the stacked-step ramp that connects ground level to a plateau face.
  * Uses one box per step so the geometry reads as voxel blocks (same aesthetic
@@ -894,12 +1005,9 @@ export function buildPlateau(pl, worldId = CFG.DEFAULT_ARENA_WORLD) {
  *   2 = +z face: ramp extends in +z; head (high) at ramp.z − ramp.d/2.
  *   3 = −z face: ramp extends in −z; head (high) at ramp.z + ramp.d/2.
  *
- * @param {{ side:number, x:number, z:number, w:number, d:number }} ramp
- * @param {number} plateauHeight  – height of the parent plateau above PLATFORM_TOP
- * @param {string} worldId
- * @returns {THREE.Group}
+ * @param plateauHeight  – height of the parent plateau above PLATFORM_TOP
  */
-export function buildRamp(ramp, plateauHeight, worldId = CFG.DEFAULT_ARENA_WORLD) {
+export function buildRamp(ramp: RampLayout, plateauHeight: number, worldId: string = CFG.DEFAULT_ARENA_WORLD): THREE.Group {
   const g     = new THREE.Group();
   const world = getArenaWorld(worldId);
 
@@ -926,7 +1034,7 @@ export function buildRamp(ramp, plateauHeight, worldId = CFG.DEFAULT_ARENA_WORLD
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, h, bd, 2, 1, 2), mat);
 
     // Advance from the foot (low end) toward the head (plateau edge).
-    let px, pz;
+    let px: number, pz: number;
     if (ramp.side === 0) {        // foot at +x, head at −x
       px = ramp.x + ramp.w * 0.5 - (i + 0.5) * stepLen;
       pz = ramp.z;
@@ -959,7 +1067,23 @@ export function buildRamp(ramp, plateauHeight, worldId = CFG.DEFAULT_ARENA_WORLD
 // Each private shape builder returns { group, core } where core is the innermost
 // glow mesh that bobs independently (matches buildRune's userData.core contract).
 
-function _buildOrb(color) {
+export type ItemRarity = "common" | "rare" | "epic" | "legendary" | "unfair";
+
+export interface ItemDropOpts {
+  rarity?: ItemRarity;
+  glow?: boolean;
+  scale?: number;
+  floatAmp?: number;
+  floatHz?: number;
+  spinHz?: number;
+}
+
+interface ItemShapeResult {
+  group: THREE.Group;
+  core: THREE.Object3D;
+}
+
+function _buildOrb(color: number): ItemShapeResult {
   const g    = new THREE.Group();
   const core = facetedOrb(0.4, color, { emissive: color, emissiveIntensity: 1.2, y: 0.55 });
   const halo = facetedAura(0.72, color, { opacity: 0.28, y: 0.55 });
@@ -968,7 +1092,7 @@ function _buildOrb(color) {
   return { group: g, core };
 }
 
-function _buildTome(color) {
+function _buildTome(color: number): ItemShapeResult {
   const g = new THREE.Group();
   const coverColor = tint(color, 0, -0.1, -0.2);
   g.add(facetedSlab(0.7, 0.5, 0.18, coverColor, { widthSegments: 2, y: 0.25 }));        // book body
@@ -981,7 +1105,7 @@ function _buildTome(color) {
   return { group: g, core };
 }
 
-function _buildBlade(color) {
+function _buildBlade(color: number): ItemShapeResult {
   const g = new THREE.Group();
   // Faceted blade — elongated octahedron shard with a diamond cross-section.
   g.add(facetedShard(1.1, shade(color, 0.1), { y: 0.55 }));
@@ -991,7 +1115,7 @@ function _buildBlade(color) {
   return { group: g, core };
 }
 
-function _buildBoots(color) {
+function _buildBoots(color: number): ItemShapeResult {
   const g      = new THREE.Group();
   const lColor = shade(color, -0.1);
   // Left and right boots (foot + shaft faceted slabs each).
@@ -1004,7 +1128,7 @@ function _buildBoots(color) {
   return { group: g, core };
 }
 
-function _buildCrown(color) {
+function _buildCrown(color: number): ItemShapeResult {
   const g = new THREE.Group();
   // Faceted ring base (wide octagonal prism).
   g.add(facetedCylinder(0.45, 0.45, 0.22, shade(color, -0.12), { segments: 8, y: 0.11 }));
@@ -1032,7 +1156,7 @@ function _buildCrown(color) {
 
 // Re-uses the faceted rune recipe so buildItemDrop("rune") is visually identical
 // to the standalone buildRune() — a clear migration path for the renderer rune loop.
-function _buildRuneShape(color) {
+function _buildRuneShape(color: number): ItemShapeResult {
   const g    = new THREE.Group();
   const base = facetedSlab(0.9, 0.25, 0.9, color, { widthSegments: 2, depthSegments: 2, transparent: true, opacity: 0.45, y: 0.12 });
   const core = facetedCrystal(0.34, color, { emissive: color, emissiveIntensity: 1.4, y: 0.55 });
@@ -1041,7 +1165,7 @@ function _buildRuneShape(color) {
   return { group: g, core };
 }
 
-const ITEM_SHAPES = {
+const ITEM_SHAPES: Record<string, (color: number) => ItemShapeResult> = {
   orb:   _buildOrb,
   tome:  _buildTome,
   blade: _buildBlade,
@@ -1050,21 +1174,23 @@ const ITEM_SHAPES = {
   rune:  _buildRuneShape,
 };
 
-// Rarity → ring accent color and glow intensity.
-const _RARITY_COLORS = {
+// Rarity → ring accent color and glow intensity. Exported (P4-140) — see the
+// bolt cache export note above; #142 wires src/three/materials/palette.ts to
+// re-export these for BoltsLayer/BoltEntity, unchanged.
+export const _RARITY_COLORS: Record<ItemRarity, number> = {
   common:    0x888888,
   rare:      0x4499ff,
   epic:      0xbb44ff,
   legendary: 0xffcc22,
   unfair:    0xff2277,  // beyond-legendary: hot magenta for meteorScroll, chronoLocket
 };
-const _RARITY_INTENSITY = { common: 0.4, rare: 1.0, epic: 1.4, legendary: 2.0, unfair: 2.8 };
+export const _RARITY_INTENSITY: Record<ItemRarity, number> = { common: 0.4, rare: 1.0, epic: 1.4, legendary: 2.0, unfair: 2.8 };
 
 // Flat ring + optional PointLight halo placed at ground level; pulsed by animatePickup.
 // Only epic/legendary drops get a real PointLight to keep the per-frame light budget
 // bounded (WebGL forward rendering recompiles materials per active light count).
 // Common and rare drops rely on the emissive core and ring for visual glow.
-function _rarityHalo(color, rarity = "common") {
+function _rarityHalo(color: number, rarity: ItemRarity = "common"): THREE.Group {
   const g  = new THREE.Group();
   const rc = _RARITY_COLORS[rarity] ?? _RARITY_COLORS.common;
   const ring = new THREE.Mesh(
@@ -1079,7 +1205,7 @@ function _rarityHalo(color, rarity = "common") {
   ring.position.y = 0.06;
   g.add(ring);
   // Only high-rarity drops get a real PointLight; others keep their emissive core.
-  let light = null;
+  let light: THREE.PointLight | null = null;
   if (rarity === "epic" || rarity === "legendary" || rarity === "unfair") {
     light = new THREE.PointLight(rc, _RARITY_INTENSITY[rarity] ?? 0.6, 4);
     light.position.y = 0.8;
@@ -1097,7 +1223,7 @@ function _rarityHalo(color, rarity = "common") {
 // matching the renderer's effects-loop convention) works correctly. The optional
 // second argument `t` is an absolute-time override; when omitted or NaN (as when
 // called from g.userData.update(dt)), the internal accumulator is used instead.
-export function animatePickup(group, t, dt) {
+export function animatePickup(group: THREE.Group, t: number | undefined, dt: number): void {
   const p = group.userData.pickup;
   if (!p) return;
   // Accumulate internal clock; fall back to it when absolute t is not provided.
@@ -1105,14 +1231,14 @@ export function animatePickup(group, t, dt) {
   const time = (t !== undefined && !isNaN(t)) ? t : p.t;
   group.rotation.y += dt * Math.PI * 2 * ((p.spinHz ?? 1.4) / 6);
   if (group.userData.core) {
-    group.userData.core.position.y =
+    (group.userData.core as THREE.Object3D).position.y =
       (p.baseY ?? 0.55) + Math.sin(time * (p.floatHz ?? 1.6) * 2) * (p.floatAmp ?? 0.12);
   }
   // Pulse rarity halo ring + light on any child that carries userData.pulse.
   for (const child of group.children) {
     const ph = child.userData.pulse;
     if (!ph) continue;
-    const base = _RARITY_INTENSITY[ph.rarity] ?? 0.6;
+    const base = _RARITY_INTENSITY[ph.rarity as ItemRarity] ?? 0.6;
     if (ph.light) ph.light.intensity = base * (0.75 + Math.sin(time * 3.5) * 0.25);
     if (ph.ring && ph.ring.material) {
       ph.ring.material.opacity =
@@ -1127,10 +1253,11 @@ export function animatePickup(group, t, dt) {
 //         floatAmp, floatHz, spinHz }
 // Returns a self-animating Group; tick via g.userData.update(dt, t) or
 // call animatePickup(g, t, dt) directly from the game loop.
-export function buildItemDrop(kind = "orb", color = 0xffffff, opts = {}) {
+export function buildItemDrop(kind = "orb", color = 0xffffff, opts: ItemDropOpts = {}): THREE.Group {
   const g      = new THREE.Group();
   const shapeFn = ITEM_SHAPES[kind] || ITEM_SHAPES.orb;
-  const body   = shapeFn(color, opts);
+  const body   = shapeFn(color);
+
   g.add(body.group);
 
   if (opts.glow !== false) g.add(_rarityHalo(color, opts.rarity));
@@ -1152,16 +1279,17 @@ export function buildItemDrop(kind = "orb", color = 0xffffff, opts = {}) {
   // Single-arg update(dt) matches the renderer effects-loop convention
   // (buildBurst/buildLightning use the same pattern). animatePickup accumulates
   // time internally so no absolute-t argument is needed.
-  g.userData.update = (dt2) => animatePickup(g, undefined, dt2);
+  g.userData.update = (dt2: number) => animatePickup(g, undefined, dt2);
 
   // Expose dispose() so the renderer can clean up BufferGeometry/Material/Lights
   // when culling drops, rather than leaking them on churn.
   g.userData.dispose = () => {
     g.traverse((obj) => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) {
-        if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-        else obj.material.dispose();
+      const mesh = obj as THREE.Mesh;
+      if (mesh.geometry) mesh.geometry.dispose();
+      if (mesh.material) {
+        if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+        else mesh.material.dispose();
       }
     });
   };
@@ -1183,7 +1311,7 @@ const _makeHealthBar = makeMobHealthBar;
 
 // Stone Giant — grey stone colossus, oversized fists, glowing red eye slits.
 // Faceted polyhedron head/fists + hex-prism limbs for a hewn-stone silhouette.
-export function buildStoneGiant(color = 0x888888) {
+export function buildStoneGiant(color = 0x888888): THREE.Group {
   const g = new THREE.Group();
   const stone = color;
   const dark  = shade(stone, -0.15);
@@ -1258,7 +1386,7 @@ export function buildStoneGiant(color = 0x888888) {
 
 // Storming Vortex — translucent spinning shard ring with glowing core.
 // Faceted octahedron shards + a hex-prism crystal core.
-export function buildStormingVortex(color = 0x7adfff) {
+export function buildStormingVortex(color = 0x7adfff): THREE.Group {
   const g = new THREE.Group();
   const c1 = color;
   const c2 = shade(color, 0.2);
@@ -1342,7 +1470,7 @@ export function buildStormingVortex(color = 0x7adfff) {
 
 // Giant Dwarf — short/wide armoured figure, heavy stomp posture.
 // Faceted armour slabs + hex-prism limbs + a cone helmet.
-export function buildGiantDwarf(color = 0xc47a2e) {
+export function buildGiantDwarf(color = 0xc47a2e): THREE.Group {
   const g = new THREE.Group();
   const body  = shade(color, -0.05);
   const armor = shade(color, -0.2);
@@ -1430,7 +1558,7 @@ export function buildGiantDwarf(color = 0xc47a2e) {
 // Fire Elemental — emissive faceted flame-forms with orbiting flame motes,
 // per-frame flicker. Bodies are perturbed icosahedra so the silhouette reads as
 // hewn flame rather than a plain box.
-export function buildFireElemental(color = 0xff5a1e) {
+export function buildFireElemental(color = 0xff5a1e): THREE.Group {
   const g = new THREE.Group();
   const hot  = color;
   const core = 0xffcc44;
@@ -1512,7 +1640,7 @@ export function buildFireElemental(color = 0xff5a1e) {
 
 // Minion — tiny warlock silhouette tinted to parent colour, 0.7× warlock.
 // Faceted slabs + hex-prism limbs + a cone hat.
-export function buildMinion(color = 0x999999) {
+export function buildMinion(color = 0x999999): THREE.Group {
   const g = new THREE.Group();
   const c     = color;
   const cDark = shade(c, -0.2);
@@ -1575,12 +1703,23 @@ export function buildMinion(color = 0x999999) {
   return g;
 }
 
+/** Shape voxel.js's animateMob callers pass in — mirrors VoxelAnimState with
+ * mob-only fields (`type`). */
+export interface MobAnimState {
+  type?: string;
+  speed?: number;
+  maxSpeed?: number;
+  dt?: number;
+  time?: number;
+  falling?: boolean;
+}
+
 // Shared mob animator — cloned from animateWarlock but handles:
 //   stormingVortex  — spin rings, no arms/legs
 //   fireElemental   — flicker glow + orbit motes
 //   humanoid types  — idle bob + walk swing (stoneGiant, giantDwarf, minion)
 // state: { type, speed, maxSpeed, dt, time, falling }
-export function animateMob(group, state) {
+export function animateMob(group: THREE.Group, state: MobAnimState): void {
   const rig  = group.userData.rig;
   const anim = group.userData.anim;
   if (!rig || !anim) return;
@@ -1626,7 +1765,7 @@ export function animateMob(group, state) {
       rig.crown.scale.y = 1 + Math.sin(anim.flicker * 1.3) * 0.12;
     }
     if (rig.motes) {
-      const children = rig.motes.children;
+      const children = rig.motes.children as THREE.Mesh[];
       for (let i = 0; i < children.length; i++) {
         const m  = children[i];
         const ba = m.userData.baseA ?? 0;
@@ -1637,7 +1776,8 @@ export function animateMob(group, state) {
           1.0 + Math.sin(time * 2 + ba) * 0.35,
           Math.sin(a) * r
         );
-        if (m.material) m.material.opacity = 0.65 + Math.sin(time * 4 + ba) * 0.22;
+        const mat = m.material as THREE.Material & { opacity?: number } | undefined;
+        if (mat) mat.opacity = 0.65 + Math.sin(time * 4 + ba) * 0.22;
       }
     }
     if (rig.spine) rig.spine.position.y = baseY + bob;
@@ -1668,9 +1808,9 @@ export function animateMob(group, state) {
 // per-instance geometry/materials, so buildMobByType attaches a generic
 // dispose() (mirroring buildItemDrop's) so the renderer can release GPU
 // resources on despawn/prune instead of leaking them on churn.
-export function buildMobByType(type, color) {
-  let g;
-  if (MOB_MODEL_ASSETS[type]) {
+export function buildMobByType(type: string, color: number): THREE.Group {
+  let g: THREE.Group | null | undefined;
+  if ((MOB_MODEL_ASSETS as Record<string, unknown>)[type]) {
     if (!mobModelReady(type)) loadMobModelTemplate(type);
     if (mobModelReady(type)) g = buildMobModelInstance(type, color);
   }
@@ -1684,24 +1824,25 @@ export function buildMobByType(type, color) {
       default:               g = buildMinion(color); break;
     }
   }
-  if (!g.userData.dispose) {
-    g.userData.dispose = () => {
-      g.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
+  if (!g!.userData.dispose) {
+    g!.userData.dispose = () => {
+      g!.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) {
+          if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+          else mesh.material.dispose();
         }
       });
     };
   }
-  return g;
+  return g!;
 }
 
 // Back-compat aliases (older callers / any external refs).
-export function buildLava(size, y) {
+export function buildLava(size: number, y: number): THREE.Mesh {
   return buildHazard(size, y, getArenaHazard(CFG.DEFAULT_ARENA_WORLD));
 }
-export function animateLava(mesh, t) {
+export function animateLava(mesh: THREE.Mesh | null | undefined, t: number): void {
   return animateHazard(mesh, t);
 }

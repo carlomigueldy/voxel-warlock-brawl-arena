@@ -11,8 +11,8 @@ import { effectPos } from "../src/renderer-util.js";
 console.log("Source guards (render) checks:");
 
 const renderer = fs.readFileSync("src/renderer.js", "utf8");
-const character = fs.readFileSync("src/character.js", "utf8");
-const voxel = fs.readFileSync("src/voxel.js", "utf8");
+const character = fs.readFileSync("src/character.ts", "utf8");
+const voxel = fs.readFileSync("src/voxel.ts", "utf8");
 const arena = fs.readFileSync("src/arena.js", "utf8");
 const props = fs.readFileSync("src/props.js", "utf8");
 
@@ -23,7 +23,8 @@ test("generated character asset URLs are built via the asset() helper", () => {
   // BASE_URL-prefixed) now that assets are served from public/ under Vite.
   // (legacy source-text guard — folded into the disjoint guards in #103.)
   assert.match(character, /import \{ asset \} from "\.\/asset-url\.js"/);
-  assert.match(character, /const url = \(p\) => asset\(p\)/);
+  // P4-140 TS port adds a `: string` param annotation (strict mode) — tolerate it.
+  assert.match(character, /const url = \(p(?:: string)?\) => asset\(p\)/);
   assert.match(character, /assets\/characters\/[\w-]+-rigged\.glb/);
   assert.match(character, /assets\/characters\/[\w-]+-walking\.glb/);
   assert.match(character, /assets\/characters\/[\w-]+-running\.glb/);

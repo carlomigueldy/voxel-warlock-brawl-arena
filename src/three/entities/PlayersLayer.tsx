@@ -1,7 +1,18 @@
-// P4-137: stub, implemented in #140. Scene.tsx references this layer so the
-// R3F scaffold compiles and renders an empty scene before warlock GLB
-// models/player entities land; #140 replaces this file's contents only (no
-// other file needs to change to wire the real layer in).
-export function PlayersLayer(): null {
-  return null;
+// Maps useRosterStore's id array -> keyed <PlayerEntity> (design §3). Only
+// spawn/despawn (a player joining/leaving) re-renders this component — every
+// per-frame motion/animation update happens inside <PlayerEntity>'s own
+// useFrame, reading snapshotRef directly, never subscribing to a store.
+import { useRosterStore } from "../../store/useRosterStore";
+import { PlayerEntity } from "./PlayerEntity";
+
+export function PlayersLayer() {
+  const ids = useRosterStore((s) => s.playerIds);
+  const meta = useRosterStore((s) => s.meta);
+  return (
+    <>
+      {ids.map((id) => (
+        <PlayerEntity key={id} id={id} meta={meta[id]} />
+      ))}
+    </>
+  );
 }
