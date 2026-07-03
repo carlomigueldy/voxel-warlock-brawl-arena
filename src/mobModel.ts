@@ -303,6 +303,34 @@ export function buildMobModelInstance(type: string, color: number): THREE.Group 
     mixer.update(dt);
   };
 
+  // Materials-only dispose — mirrors useWarlockModel.tsx's dispose() (338-356):
+  // `model` is a SkeletonUtils.clone() of the cached template, so its
+  // BufferGeometry is SHARED across every instance of this mob type AND the
+  // template itself; disposing it here would free GPU buffers still in use
+  // elsewhere. Only the per-instance cloned materials (see the traverse
+  // above) and the health bar's own (never-shared, freshly-allocated-per-call)
+  // geometry/material are this instance's alone to free. Set here (not by the
+  // generic disposer voxel.ts's buildMobByType attaches) so that guard's
+  // `if (!g.userData.dispose)` check never overwrites it with the
+  // geometry-nuking version meant for procedural fallback mobs.
+  root.userData.dispose = () => {
+    mixer.stopAllAction();
+    model.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.material) {
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach((m) => m.dispose());
+      }
+    });
+    hb.group.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      mesh.geometry?.dispose?.();
+      if (mesh.material) {
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach((m) => m.dispose());
+      }
+    });
+  };
   root.userData.mobModel = state;
   return root;
 }

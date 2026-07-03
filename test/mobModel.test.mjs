@@ -140,3 +140,55 @@ test("buildMobModelInstance wires idle/walk/run + an exclusive LoopOnce/clampWhe
     spy.mockRestore();
   }
 });
+
+test("buildMobModelInstance's userData.dispose is materials-only — a sibling instance's shared skinned geometry survives it (#182 F8)", async () => {
+  const type = "stoneGiant";
+  const baseGltf = mockGltf({ scene: makeGltfScene(2), animations: [makeClip("clip0")] });
+  const idleGltf = mockGltf({ animations: [makeClip("Idle")] });
+  const walkGltf = mockGltf({ animations: [makeClip("Walk")] });
+  const runGltf = mockGltf({ animations: [makeClip("Run")] });
+  const attackGltf = mockGltf({ animations: [makeClip("Attack")] });
+  const queue = [baseGltf, idleGltf, walkGltf, runGltf, attackGltf];
+
+  const spy = vi.spyOn(GLTFLoader.prototype, "load").mockImplementation((_url, onLoad) => {
+    onLoad(queue.shift());
+  });
+
+  function findMesh(root) {
+    let mesh = null;
+    root.traverse((o) => { if (o.isMesh) mesh = o; });
+    return mesh;
+  }
+
+  try {
+    await loadMobModelTemplate(type);
+    // Two sibling instances of the same type — SkeletonUtils.clone() shares
+    // BufferGeometry across both (and the cached template), only materials
+    // are cloned per-instance (buildMobModelInstance's own traverse above).
+    const g1 = buildMobModelInstance(type, 0x111111);
+    const g2 = buildMobModelInstance(type, 0x222222);
+
+    const mesh1 = findMesh(g1.userData.mobModel.model);
+    const mesh2 = findMesh(g2.userData.mobModel.model);
+    assert.ok(mesh1 && mesh2, "both instances must have a mesh");
+    assert.strictEqual(mesh1.geometry, mesh2.geometry, "SkeletonUtils.clone must share the SAME BufferGeometry across sibling instances");
+    assert.notStrictEqual(mesh1.material, mesh2.material, "materials must be cloned per-instance");
+
+    const geoDisposed = vi.fn();
+    const matDisposed = vi.fn();
+    const hbGeoDisposed = vi.fn();
+    mesh1.geometry.addEventListener("dispose", geoDisposed);
+    mesh1.material.addEventListener("dispose", matDisposed);
+    g1.userData.healthBar.geometry.addEventListener("dispose", hbGeoDisposed);
+
+    assert.strictEqual(typeof g1.userData.dispose, "function", "buildMobModelInstance must attach its own materials-only userData.dispose");
+    g1.userData.dispose();
+
+    assert.strictEqual(geoDisposed.mock.calls.length, 0, "disposing one GLB instance must NEVER dispose the shared skinned geometry (sibling + template still use it)");
+    assert.strictEqual(matDisposed.mock.calls.length, 1, "the disposed instance's own cloned material must be freed");
+    assert.strictEqual(hbGeoDisposed.mock.calls.length, 1, "the disposed instance's own (never-shared) health-bar geometry must be freed");
+    assert.strictEqual(mesh2.geometry.attributes.position, mesh1.geometry.attributes.position, "the surviving sibling's shared geometry is untouched");
+  } finally {
+    spy.mockRestore();
+  }
+});

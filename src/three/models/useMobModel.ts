@@ -71,6 +71,19 @@ export function useMobModel(type: string, color: number): UseMobModelResult {
 
   useEffect(() => {
     return () => {
+      if (group.userData.mobModel) {
+        // GLB mob: buildMobModelInstance's own userData.dispose is
+        // materials-only (+ health bar + mixer teardown) — NEVER
+        // disposeGroup() here. model is a SkeletonUtils.clone() of the
+        // cached template, so its BufferGeometry is SHARED across every
+        // instance of this mob type AND the template itself; a generic
+        // traverse-dispose would free GPU buffers still in use by sibling
+        // mobs (mirrors useWarlockModel.tsx's dispose() constraint).
+        (group.userData.dispose as (() => void) | undefined)?.();
+        return;
+      }
+      // Procedural fallback (buildMobByType): fully per-instance geometry,
+      // safe (and necessary) to traverse-dispose in full.
       (group.userData.dispose as (() => void) | undefined)?.();
       disposeGroup(group);
     };
