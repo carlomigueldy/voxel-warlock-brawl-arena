@@ -38,8 +38,8 @@ import { secondaryColor, brighten, facetedDuo, TrailPool } from "./duotone.js";
 // documented worst-case dynamic-light budget is LIGHT_POOL_SIZE +
 // BEAM_LIGHT_POOL_SIZE.
 const BEAM_LIGHT_POOL_SIZE = CFG.BEAM_LIGHT_POOL_SIZE;
-const _lightPool = [];
-function _ensureLightPool() {
+const _lightPool: THREE.PointLight[] = [];
+function _ensureLightPool(): void {
   if (_lightPool.length) return;
   for (let i = 0; i < BEAM_LIGHT_POOL_SIZE; i++) {
     const l = new THREE.PointLight(0xffffff, 0, 10);
@@ -51,14 +51,14 @@ function _ensureLightPool() {
 // Acquire a free pooled light, or null if every slot is in use — callers
 // must degrade gracefully (render the beam without a glow light) rather
 // than allocate a new one; this is the hard perf cap.
-function _acquireLight() {
+function _acquireLight(): THREE.PointLight | null {
   _ensureLightPool();
   for (const l of _lightPool) {
     if (l.userData.free) { l.userData.free = false; return l; }
   }
   return null;
 }
-function _releaseLight(l) {
+function _releaseLight(l: THREE.PointLight | null): void {
   if (!l) return;
   l.userData.free = true;
   l.visible = false;
@@ -73,10 +73,10 @@ function _releaseLight(l) {
 // Straight-segment jagged path between two ground points at height `y`,
 // with the interior points perturbed for a lightning-crack silhouette
 // (endpoints are left exact so the beam always lands on its targets).
-function _jaggedPoints(x1, z1, x2, z2, y, segs, jitterXZ, jitterY) {
+function _jaggedPoints(x1: number, z1: number, x2: number, z2: number, y: number, segs: number, jitterXZ: number, jitterY: number): THREE.Vector3[] {
   const start = new THREE.Vector3(x1, y, z1);
   const end = new THREE.Vector3(x2, y, z2);
-  const pts = [];
+  const pts: THREE.Vector3[] = [];
   for (let i = 0; i <= segs; i++) {
     const t = i / segs;
     const p = start.clone().lerp(end, t);
@@ -95,8 +95,21 @@ function _jaggedPoints(x1, z1, x2, z2, y, segs, jitterXZ, jitterY) {
 // THREE.LineCurve3 keeps every bend sharp/angular instead of smoothing it
 // out, preserving the "crack" silhouette from the old Line-based bolt while
 // reading as a solid low-poly faceted volume instead of a 1px line.
-function _tubeMesh(pts, radius, color, opts = {}) {
-  const curve = new THREE.CurvePath();
+interface TubeMeshOpts {
+  unlit?: boolean;
+  opacity?: number;
+  emissive?: number;
+  emissiveIntensity?: number;
+}
+
+// Overloads: `unlit: true` yields an unlit MeshBasicMaterial tube (the
+// SECONDARY jitter arc); omitted/false yields an emissive MeshLambertMaterial
+// tube (the PRIMARY core) — lets callers keep reading `.material.opacity` /
+// `.material.emissiveIntensity` on the exact material type they built.
+function _tubeMesh(pts: THREE.Vector3[], radius: number, color: number, opts: TubeMeshOpts & { unlit: true }): THREE.Mesh<THREE.TubeGeometry, THREE.MeshBasicMaterial>;
+function _tubeMesh(pts: THREE.Vector3[], radius: number, color: number, opts?: TubeMeshOpts & { unlit?: false }): THREE.Mesh<THREE.TubeGeometry, THREE.MeshLambertMaterial>;
+function _tubeMesh(pts: THREE.Vector3[], radius: number, color: number, opts: TubeMeshOpts = {}): THREE.Mesh<THREE.TubeGeometry, THREE.MeshBasicMaterial | THREE.MeshLambertMaterial> {
+  const curve = new THREE.CurvePath<THREE.Vector3>();
   for (let i = 0; i < pts.length - 1; i++) curve.add(new THREE.LineCurve3(pts[i], pts[i + 1]));
   const tubularSegments = Math.max(pts.length - 1, 1) * 2;
   const geo = new THREE.TubeGeometry(curve, tubularSegments, radius, 3, false);
@@ -118,10 +131,10 @@ function _tubeMesh(pts, radius, color, opts = {}) {
 // composition helper so per-spell accents (drain's spiral, pull/drag's hook
 // arrow, link's steady pulse) can layer onto the shared beam core without
 // each rewriting the base fade/light lifecycle.
-function _extend(g, { update, dispose }) {
+function _extend(g: THREE.Group, { update, dispose }: { update?: (dt: number) => void; dispose?: () => void }): void {
   const baseUpdate = g.userData.update;
   const baseDispose = g.userData.dispose;
-  if (update) g.userData.update = (dt) => { baseUpdate(dt); update(dt); };
+  if (update) g.userData.update = (dt: number) => { baseUpdate(dt); update(dt); };
   if (dispose) g.userData.dispose = () => { baseDispose(); dispose(); };
 }
 
@@ -142,7 +155,24 @@ function _extend(g, { update, dispose }) {
 //            crackle=true (per-frame flicker for a buzzing/arcing feel; set
 //            false for calmer beams like link/drag), lightIntensity=2.4,
 //            lightDist=12 }
-function _buildBeamCore(x1, z1, x2, z2, color, opts = {}) {
+interface BeamCoreOpts {
+  y?: number;
+  life?: number;
+  segs?: number;
+  jitter?: number;
+  jitterY?: number;
+  radius?: number;
+  secRadius?: number;
+  secJitter?: number;
+  secondaryOpacity?: number;
+  emissiveIntensity?: number;
+  holdK?: number;
+  crackle?: boolean;
+  lightIntensity?: number;
+  lightDist?: number;
+}
+
+function _buildBeamCore(x1: number, z1: number, x2: number, z2: number, color: number, opts: BeamCoreOpts = {}): THREE.Group {
   const y = opts.y ?? 1.2;
   const life = opts.life ?? 0.3;
   const segs = opts.segs ?? 8;
@@ -191,10 +221,10 @@ function _buildBeamCore(x1, z1, x2, z2, color, opts = {}) {
   g.userData.t = 0;
   g.userData.life = life;
   g.userData.done = false;
-  g.userData.update = (dt) => {
+  g.userData.update = (dt: number) => {
     g.userData.t += dt;
     const k = g.userData.t / life;
-    let alpha;
+    let alpha: number;
     if (k >= 1) { alpha = 0; g.userData.done = true; } else if (k < holdK) {
       alpha = 1;
     } else {
@@ -227,7 +257,7 @@ function _buildBeamCore(x1, z1, x2, z2, color, opts = {}) {
 // duotone.js's shared TrailPool budget, not a new allocation) helix along
 // the beam from the drained target (x1,z1) toward the caster (x2,z2),
 // echoing the icon's inward spiral siphon line.
-function _attachDrainSpiral(g, x1, z1, x2, z2, color, y, life) {
+function _attachDrainSpiral(g: THREE.Group, x1: number, z1: number, x2: number, z2: number, color: number, y: number, life: number): void {
   const dx = x2 - x1, dz = z2 - z1;
   const dist = Math.hypot(dx, dz) || 1;
   const dirX = dx / dist, dirZ = dz / dist;
@@ -235,7 +265,7 @@ function _attachDrainSpiral(g, x1, z1, x2, z2, color, y, life) {
   const tint = secondaryColor(color);
   const glow = brighten(color, 0.25);
   const count = 5;
-  const motes = [];
+  const motes: { mesh: NonNullable<ReturnType<typeof TrailPool.acquire>>; phase: number; t: number }[] = [];
   for (let i = 0; i < count; i++) {
     const m = TrailPool.acquire();
     if (!m) break; // shared pool exhausted — spiral just runs with fewer motes
@@ -246,7 +276,7 @@ function _attachDrainSpiral(g, x1, z1, x2, z2, color, y, life) {
   }
   const radius = 0.35;
   _extend(g, {
-    update: (dt) => {
+    update: (dt: number) => {
       const parent = g.parent;
       const k = Math.min(g.userData.t / life, 1);
       for (const s of motes) {
@@ -269,7 +299,7 @@ function _attachDrainSpiral(g, x1, z1, x2, z2, color, y, life) {
 // (x1,z1) out to the snagged target (x2,z2) over the beam's first ~40% of
 // life, echoing the icon's hook + directional arrow accent, then fades with
 // the beam.
-function _attachHookArrow(g, x1, z1, x2, z2, color, y, life) {
+function _attachHookArrow(g: THREE.Group, x1: number, z1: number, x2: number, z2: number, color: number, y: number, life: number): void {
   const dx = x2 - x1, dz = z2 - z1;
   const yaw = Math.atan2(dx, dz);
   const hookColor = brighten(color, 0.3);
@@ -287,16 +317,16 @@ function _attachHookArrow(g, x1, z1, x2, z2, color, y, life) {
       const k = Math.min(g.userData.t / life, 1);
       const ft = Math.min(k / flightK, 1);
       hook.position.set(x1 + dx * ft, y, z1 + dz * ft);
-      hook.material.opacity = k < flightK ? 1 : Math.max(0, 1 - (k - flightK) / (1 - flightK));
+      (hook.material as THREE.MeshLambertMaterial).opacity = k < flightK ? 1 : Math.max(0, 1 - (k - flightK) / (1 - flightK));
     },
-    dispose: () => { hook.geometry.dispose(); hook.material.dispose(); },
+    dispose: () => { hook.geometry.dispose(); (hook.material as THREE.MeshLambertMaterial).dispose(); },
   });
 }
 
 // link — steady tether: a gentle sinusoidal brightness pulse instead of
 // crackle/flicker, echoing the icon's calm twin-node-and-line motif rather
 // than a jagged bolt zap.
-function _attachSteadyPulse(g) {
+function _attachSteadyPulse(g: THREE.Group): void {
   _extend(g, {
     update: () => {
       const pulse = 0.9 + 0.1 * Math.sin(g.userData.t * 5);
@@ -313,7 +343,7 @@ function _attachSteadyPulse(g) {
 // Chain-arc segment (the "lightning" spell's per-hop visual — renderer.js's
 // `case "lightning": for (const s of ev.segs) buildLightning(...)`) and the
 // generic chain-hop look shared by any future chaining spell.
-export function buildLightningBeam(x1, z1, x2, z2, color = 0x9fe6ff) {
+export function buildLightningBeam(x1: number, z1: number, x2: number, z2: number, color = 0x9fe6ff): THREE.Group {
   return _buildBeamCore(x1, z1, x2, z2, color, {
     life: 0.3, segs: 8, jitter: 1.2, jitterY: 0.8, radius: 0.1,
     lightIntensity: 2.6, lightDist: 13, crackle: true,
@@ -325,7 +355,7 @@ export const buildChainBeam = buildLightningBeam;
 
 // drain — Drain: pulls a foe close and siphons their charge (icon: inward
 // spiral line + a spark node at each end).
-export function buildDrainBeam(x1, z1, x2, z2, color = 0xaa2f6b) {
+export function buildDrainBeam(x1: number, z1: number, x2: number, z2: number, color = 0xaa2f6b): THREE.Group {
   const y = 1.1, life = 0.5;
   const g = _buildBeamCore(x1, z1, x2, z2, color, {
     y, life, segs: 6, jitter: 0.5, jitterY: 0.35, radius: 0.07, secRadius: 0.15,
@@ -337,7 +367,7 @@ export function buildDrainBeam(x1, z1, x2, z2, color = 0xaa2f6b) {
 
 // pull — Hook: yanks one distant foe toward the caster (icon: line + hook +
 // directional arrow).
-export function buildPullBeam(x1, z1, x2, z2, color = 0x8fffc4) {
+export function buildPullBeam(x1: number, z1: number, x2: number, z2: number, color = 0x8fffc4): THREE.Group {
   const y = 1.2, life = 0.35;
   const g = _buildBeamCore(x1, z1, x2, z2, color, {
     y, life, segs: 5, jitter: 0.3, jitterY: 0.2, radius: 0.08, secRadius: 0.17,
@@ -349,7 +379,7 @@ export function buildPullBeam(x1, z1, x2, z2, color = 0x8fffc4) {
 
 // drag — Tow: channel that continuously drags a foe in (icon: diagonal hook
 // line with three trailing chevrons).
-export function buildDragBeam(x1, z1, x2, z2, color = 0x4cff9c) {
+export function buildDragBeam(x1: number, z1: number, x2: number, z2: number, color = 0x4cff9c): THREE.Group {
   const y = 1.15, life = 0.3;
   const g = _buildBeamCore(x1, z1, x2, z2, color, {
     y, life, segs: 5, jitter: 0.25, jitterY: 0.18, radius: 0.07, secRadius: 0.15,
@@ -363,7 +393,7 @@ export function buildDragBeam(x1, z1, x2, z2, color = 0x4cff9c) {
 // joined by a steady line with small rungs). `opts.life` defaults to
 // SPELLS.link.duration (4s) but callers may override to match the actual
 // tether's remaining time; `opts.y` overrides beam height.
-export function buildLinkBeam(x1, z1, x2, z2, color = 0x2fd9c4, opts = {}) {
+export function buildLinkBeam(x1: number, z1: number, x2: number, z2: number, color = 0x2fd9c4, opts: { y?: number; life?: number } = {}): THREE.Group {
   const y = opts.y ?? 1.15;
   const life = opts.life ?? 4.0;
   const g = _buildBeamCore(x1, z1, x2, z2, color, {
@@ -378,7 +408,7 @@ export function buildLinkBeam(x1, z1, x2, z2, color = 0x2fd9c4, opts = {}) {
 // Idle/inventory duotone cores — echo each icon's silhouette, standalone
 // ---------------------------------------------------------------------------
 
-function _drainCore(color = 0xaa2f6b) {
+function _drainCore(color = 0xaa2f6b): THREE.Group {
   const core = facetedDuo((c, o) => facetedOrb(0.26, c, o), color, { emissiveIntensity: 1.1 });
   // Extra swirl accent shell (reuses lowpoly.js's facetedAura, per the task's
   // "reuse faceted builders" guidance) — a loose translucent halo around the
@@ -387,17 +417,17 @@ function _drainCore(color = 0xaa2f6b) {
   swirl.rotation.x = Math.PI / 5;
   core.add(swirl);
   const baseDispose = core.userData.dispose;
-  core.userData.dispose = () => { baseDispose(); swirl.geometry.dispose(); swirl.material.dispose(); };
+  core.userData.dispose = () => { baseDispose(); swirl.geometry.dispose(); (swirl.material as THREE.MeshBasicMaterial).dispose(); };
   return core;
 }
 
-function _hookCore(color) {
+function _hookCore(color: number): THREE.Group {
   return facetedDuo((c, o) => facetedShard(0.9, c, { ...o, sx: 0.3, sy: 0.9, sz: 0.3 }), color, {
     emissiveIntensity: 1.1,
   });
 }
 
-function _linkCore(color = 0x2fd9c4) {
+function _linkCore(color = 0x2fd9c4): THREE.Group {
   const g = new THREE.Group();
   const a = facetedDuo((c, o) => facetedOrb(0.22, c, o), color, { x: -0.5 });
   const b = facetedDuo((c, o) => facetedOrb(0.22, c, o), color, { x: 0.5 });
@@ -411,7 +441,7 @@ function _linkCore(color = 0x2fd9c4) {
   const tube = new THREE.Mesh(tubeGeo, tubeMat);
   tube.castShadow = false;
   g.add(tube);
-  g.userData.recolor = (newColor) => {
+  g.userData.recolor = (newColor: number) => {
     a.userData.recolor(newColor);
     b.userData.recolor(newColor);
     tubeMat.color.setHex(secondaryColor(newColor));
@@ -436,9 +466,34 @@ function _linkCore(color = 0x2fd9c4) {
 // endpoint: ctx.x/ctx.z is the source (caster) point, ctx.x2/ctx.z2 is the
 // target point the beam reaches toward (falls back to ctx.x/ctx.z, i.e. a
 // zero-length beam, if the caller has no target yet).
+//
+// Kept local rather than importing duotone.ts's intentionally-loose VfxCtx
+// (design §5), matching projectiles.ts's ProjectileFxCtx precedent — that
+// type's `[key: string]: unknown` catch-all can't type-check ctx.x2/ctx.z2/
+// ctx.duration/ctx.burstAt directly, and the BEAM_VFX merge into
+// VFX_REGISTRY (duotone.ts) doesn't require structural assignability
+// either way.
 // ---------------------------------------------------------------------------
 
-export const BEAM_VFX = {
+export interface BeamFxCtx {
+  x: number;
+  z: number;
+  x2?: number;
+  z2?: number;
+  color?: number;
+  duration?: number;
+  burstAt?: (x: number, z: number, color: number, opts?: { count?: number; speed?: number; life?: number }) => THREE.Object3D | null;
+}
+
+export interface BeamVfxEntry {
+  color: number;
+  buildCore: (color: number) => THREE.Group;
+  cast: (ctx: BeamFxCtx) => THREE.Object3D | null;
+  impact: (ctx: BeamFxCtx) => THREE.Object3D | null;
+  trail: boolean;
+}
+
+export const BEAM_VFX: Record<string, BeamVfxEntry> = {
   drain: {
     color: 0xaa2f6b,
     buildCore: _drainCore,
