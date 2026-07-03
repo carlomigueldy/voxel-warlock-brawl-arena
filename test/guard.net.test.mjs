@@ -32,7 +32,7 @@ test("clients ignore stale state snapshots", () => {
 
 // legacy text guard — delete in P6
 test("network join names are sanitized as strings before slicing", () => {
-  const net = fs.readFileSync("src/net.js", "utf8");
+  const net = fs.readFileSync("src/net.ts", "utf8");
   assert.match(net, /sanitizeName/);
   assert.match(net, /String\(name \?\? "warlock"\)/);
 });
@@ -50,7 +50,7 @@ test("host menu no longer exposes an all-abilities toggle (strict slots only, ma
 
 // legacy text guard — delete in P6
 test("selected character is networked from client to host on join", () => {
-  const net = fs.readFileSync("src/net.js", "utf8");
+  const net = fs.readFileSync("src/net.ts", "utf8");
   assert.match(net, /type: MSG\.JOIN[\s\S]*name: this\.name[\s\S]*character: this\.character/);
   assert.match(net, /conn\._character/);
 });
