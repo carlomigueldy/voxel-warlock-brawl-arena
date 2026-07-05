@@ -2,4 +2,4 @@ User-agent: *
 Disallow:
 Allow: /
 
-Sitemap: https://voxel-warlock-brawl-arena.vercel.app/sitemap.xml
+Sitemap: https://arena.carlomigueldy.dev/sitemap.xml

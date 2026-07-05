@@ -6,7 +6,7 @@
 
 Voxel Warlock Brawl Arena is an HTML5 + WebGL browser game built with Three.js. Players control low-poly voxel warlocks on a shrinking platform suspended over lava. The goal is to knock all opponents off the platform using spells with knockback. The last warlock standing wins. It is free to play in any modern browser with no installation.
 
-The game is authored by Carlo Miguel Dy and hosted at https://voxel-warlock-brawl-arena.vercel.app/
+The game is authored by Carlo Miguel Dy and hosted at https://arena.carlomigueldy.dev/
 
 ## How to Play
 
@@ -53,4 +53,4 @@ The game implements 20+ spells and abilities from the Warlock Brawl handbook. Ex
 
 ## Links
 
-- Canonical URL: https://voxel-warlock-brawl-arena.vercel.app/
+- Canonical URL: https://arena.carlomigueldy.dev/
