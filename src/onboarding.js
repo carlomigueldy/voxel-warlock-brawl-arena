@@ -48,6 +48,9 @@ class Onboarding {
       hotkeysWrap: $("onboarding-hotkeys"),
       hotkeysFeedback: $("onboarding-hotkeys-feedback"),
       hotkeysReset: $("onboarding-hotkeys-reset"),
+      hotkeysTitle: $("onboarding-hotkeys-title"),
+      hotkeysDesc: $("onboarding-hotkeys-desc"),
+      railLabelHotkeys: $("onboarding-rail-label-hotkeys"),
       back: $("onboarding-back"),
       next: $("onboarding-next"),
       skip: $("onboarding-skip"),
@@ -60,6 +63,13 @@ class Onboarding {
     this.hotkeys = loadHotkeys();
     this.capturingIndex = -1;
     this._captureHandler = null;
+    // Coarse-pointer/touch devices have no physical keyboard to capture a
+    // keydown for, so the "press a key to rebind" step is a dead end there
+    // — it shows "Press a key…" forever. Detected once at construction time
+    // (mirrors the identical touch check already used for the in-match
+    // Settings > Controls panel, src/ui.js's coarsePointer). The hotkeys
+    // step swaps to a tap-only movement/casting hint instead.
+    this.isTouch = !!window.matchMedia?.("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
     this._bindStatic();
     this._buildCharCards();
     this._buildHotkeySlots();
@@ -178,6 +188,10 @@ class Onboarding {
     const host = this.el.hotkeysWrap;
     if (!host) return;
     host.replaceChildren();
+    if (this.isTouch) {
+      this._buildTouchControlsHint(host);
+      return;
+    }
     HOTKEY_SPELL_IDS.forEach((spellId, i) => {
       const spell = SPELLS[spellId];
       const row = document.createElement("div");
@@ -195,6 +209,22 @@ class Onboarding {
       row.append(label, chip);
       host.appendChild(row);
     });
+  }
+
+  // Replaces the (keyboard-only) rebind chip grid on coarse-pointer devices.
+  // Reuses the exact copy already shown in the in-match Settings > Controls
+  // panel (src/ui.js) for a touch player, so the phrasing matches wherever
+  // it's explained — plus the double-tap-to-cast shortcut, which the
+  // in-match panel predates.
+  _buildTouchControlsHint(host) {
+    const hint = document.createElement("p");
+    hint.className = "onboarding-step-desc onboarding-touch-hint";
+    hint.textContent = "Drag the left joystick to move. Tap an ability slot to select it, then tap FIRE — or tap that same slot again — to cast.";
+    host.appendChild(hint);
+    if (this.el.hotkeysReset) this.el.hotkeysReset.classList.add("hidden");
+    if (this.el.hotkeysTitle) this.el.hotkeysTitle.textContent = "Your controls";
+    if (this.el.hotkeysDesc) this.el.hotkeysDesc.textContent = "Touch controls are ready — no keys to bind.";
+    if (this.el.railLabelHotkeys) this.el.railLabelHotkeys.textContent = "Controls";
   }
 
   _chipFor(index) {

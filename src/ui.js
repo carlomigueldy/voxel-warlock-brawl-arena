@@ -111,6 +111,7 @@ export class UI {
     this._mobBannerTimer = null;
     this._lastHandledSnapTime = null;
     this._abilityEls = null;
+    this._selectedSpellId = null;   // mirrors input.selectedSpell — drives the .is-selected slot + double-tap-to-cast
     this._draftBuilt = false;         // tracks whether the draft overlay grid has been rendered
     this._draftKeyBound = false;      // Escape + Tab trap listener attached once per element lifetime
     this._draftPreviousFocus = null;  // element to restore focus to when the overlay closes
@@ -1029,9 +1030,20 @@ export class UI {
       addEventListener("keydown", set, { once: true });
     };
     slot.el.appendChild(picker);
+    // Touch: tapping the already-selected slot casts it (mirrors the FIRE
+    // button, no separate confirm step); tapping a different slot always
+    // just selects, same as desktop. Desktop click behavior is unchanged —
+    // it only ever selects, since aiming/casting there goes through the
+    // keyboard hold-to-aim path in input.js.
     slot.el.onclick = () => {
       const spell = slot.el.dataset.spell;
-      if (spell) this.handlers.selectSpell?.(spell);
+      if (!spell) return;
+      if (this._touchEnabled && this._selectedSpellId === spell) {
+        this.handlers.castSelected?.();
+        return;
+      }
+      this._selectedSpellId = spell;
+      this.handlers.selectSpell?.(spell);
     };
     this._attachTooltip(slot.el);
     this.el.abilityBar.appendChild(slot.el);
@@ -1239,6 +1251,21 @@ export class UI {
       slot.classList.toggle("locked", empty);
       slot.classList.toggle("ready", !empty && remain <= 0);
       slot.classList.toggle("silenced", !empty && silenced);
+      // Selected-slot affordance + the double-tap-to-cast aria hint (touch
+      // only — desktop casts via keyboard hold-to-aim, so "tap" wording
+      // there would be misleading for screen-reader users).
+      const selected = !empty && id === this._selectedSpellId;
+      slot.classList.toggle("is-selected", selected);
+      if (!empty) {
+        const hint = this._touchEnabled
+          ? (selected ? " — selected, tap again to cast" : " — tap to select")
+          : "";
+        slot.setAttribute("aria-label", `${SPELLS[id].name}${hint}`);
+        slot.setAttribute("aria-pressed", String(selected));
+      } else {
+        slot.removeAttribute("aria-label");
+        slot.removeAttribute("aria-pressed");
+      }
     }
   }
 
@@ -1425,7 +1452,12 @@ export class UI {
 
   _maybeShowTouch() {
     const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-    if (isTouch) this._touchEnabled = true;
+    if (isTouch) {
+      this._touchEnabled = true;
+      // CSS hook for touch-only affordances (stronger selected-slot glow,
+      // double-tap-to-cast hint) — desktop never gets this class.
+      document.body.classList.add("touch-enabled");
+    }
   }
 
   _inviteLink() {

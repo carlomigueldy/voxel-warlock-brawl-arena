@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
 <title>Voxel Warlock Brawl — Low-Poly Spell-Slinging Arena Brawler</title>
 
 <!-- ===== SEO / Social / PWA ===== -->
@@ -160,7 +160,7 @@
           <li class="onboarding-rail-step" data-step="0"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Name</span></li>
           <li class="onboarding-rail-step" data-step="1"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Character</span></li>
           <li class="onboarding-rail-step" data-step="2"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Goal</span></li>
-          <li class="onboarding-rail-step" data-step="3"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Hotkeys</span></li>
+          <li class="onboarding-rail-step" data-step="3"><span class="onboarding-rail-dot" aria-hidden="true"></span><span id="onboarding-rail-label-hotkeys" class="onboarding-rail-label">Hotkeys</span></li>
         </ol>
       </header>
 
@@ -217,8 +217,8 @@
         </section>
 
         <section class="onboarding-step" data-step="3" aria-hidden="true">
-          <h3 class="onboarding-step-title">Set your hotkeys</h3>
-          <p class="onboarding-step-desc">Click a slot, then press a key to bind it.</p>
+          <h3 id="onboarding-hotkeys-title" class="onboarding-step-title">Set your hotkeys</h3>
+          <p id="onboarding-hotkeys-desc" class="onboarding-step-desc">Click a slot, then press a key to bind it.</p>
           <div id="onboarding-hotkeys" class="onboarding-hotkeys"></div>
           <button type="button" id="onboarding-hotkeys-reset" class="btn btn-ghost onboarding-hotkeys-reset">Reset to defaults</button>
           <p id="onboarding-hotkeys-feedback" class="onboarding-hotkeys-feedback" aria-live="polite"></p>

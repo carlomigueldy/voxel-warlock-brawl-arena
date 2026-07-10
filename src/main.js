@@ -893,6 +893,14 @@ ui.on("practice", (name, options) => startHosting(name, { ...options, practice: 
 ui.on("resume", () => { input.paused = false; sendAfk(false); input.resetActivity(); });
 ui.on("leaveMatch", leaveMatch);
 ui.on("selectSpell", (id) => input.setSelectedSpell(id));
+// Touch double-tap-to-cast: second tap on the already-selected ability slot
+// fires it, reusing the exact aim-mode-aware touch cast point the FIRE
+// button computes (src/input.js _touchCastPoint), so tap-to-cast and
+// FIRE-to-cast always land the same shot.
+ui.on("castSelected", () => {
+  if (!input.selectedSpell) return;
+  input.queueCast(input.selectedSpell, input._touchCastPoint?.(input.selectedSpell));
+});
 ui.on("spellSlotHotkey", (index, key) => {
   if (input.setSpellSlotHotkey(index, key)) ui.setSpellSlotHotkeys(input.spellSlotHotkeys);
 });
