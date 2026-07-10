@@ -2,6 +2,12 @@
 // that gets sent to the host (or applied directly if we are the host).
 import { CFG, SPELLS, SPELL_ORDER, ITEMS, ITEM_SLOT_HOTKEY_STORAGE_KEY } from "./config.js";
 import { isSelfAim } from "./vfx/reticles.js";
+import { aimForTouchCast } from "./touchAim.js";
+
+// Re-exported so callers/tests can pull the pure touch-aim helper from the
+// same module as the rest of input handling; the canonical (DOM/THREE-free)
+// implementation lives in touchAim.js so it stays importable from plain Node.
+export { aimForTouchCast };
 
 export const SPELL_SLOT_HOTKEY_STORAGE_KEY = "vwb-spell-slot-hotkeys";
 export const PTT_KEY_STORAGE_KEY = "vwb-ptt-key";
@@ -115,6 +121,20 @@ export class InputController {
     this.itemSlotHotkeys = loadItemSlotHotkeys();
     this.itemSlots = Array(CFG.ITEM_SLOT_COUNT).fill(null);
     this.touchMove = [0, 0];
+    // Touch facing vector — the last non-zero joystick direction, persisted
+    // across stick release so a touch cast fired right after letting go of
+    // the stick still aims where the player was last moving/facing (rather
+    // than snapping back to a default). Seeded from the local player's real
+    // heading (via setLocalContext) until the joystick is actually touched
+    // once, then it only ever updates from real joystick drags.
+    this._touchFacing = [0, -1];
+    this._touchFacingSet = false;
+    // Local pose/enemies/arena snapshot fed in every client frame (main.js)
+    // so touch casts can be aim-mode-aware instead of firing at a stale
+    // mouse-derived point. Null until the first snapshot arrives.
+    this._localPose = null;
+    this._localEnemies = [];
+    this._localArena = null;
     this.onCast = null;          // optional callback (e.g. resume audio)
     this.selectedSpell = "fireball"; // touch ability selection
     this.paused = false;         // when true (pause menu open) input is neutralized
@@ -222,6 +242,22 @@ export class InputController {
     if (!this.paused) this.renderer?.setAimSpell?.(id);
   }
 
+  // Fed once per client frame from main.js with the local player's
+  // authoritative pose, a light enemy snapshot, and the live arena bounds —
+  // everything aimForTouchCast() needs to compute an aim-mode-aware touch
+  // cast point. Desktop mouse casting never consults this (it keeps using
+  // screenToPoint()/screenToAim() unchanged); it only feeds the touch path.
+  setLocalContext({ x, z, heading, enemies, arena } = {}) {
+    this._localPose = Number.isFinite(x) && Number.isFinite(z) ? { x, z } : null;
+    this._localEnemies = Array.isArray(enemies) ? enemies : [];
+    this._localArena = arena || null;
+    // Seed the touch facing vector from the real heading until the joystick
+    // has actually been dragged at least once (see _touchFacing above).
+    if (!this._touchFacingSet && Number.isFinite(heading)) {
+      this._touchFacing = [Math.cos(heading), Math.sin(heading)];
+    }
+  }
+
   setSpellSlots(slots = []) {
     this.spellSlots = Array.from({ length: CFG.SPELL_SLOT_COUNT }, (_, i) => slots[i] || null);
   }
@@ -266,12 +302,15 @@ export class InputController {
     return this.keyMap[code];
   }
 
-  // Queue a spell cast aimed at the current cursor's ground point.
-  queueCast(spell) {
+  // Queue a spell cast. With no explicit point (every existing/mouse call
+  // site), aims at the current cursor's ground point — unchanged. The touch
+  // fire path (below) passes an explicit aim-mode-aware {x,z} point instead
+  // of a stale mouse-derived one.
+  queueCast(spell, point) {
     if (!SPELLS[spell]) return;
-    const pt = this.renderer.screenToPoint
+    const pt = point || (this.renderer.screenToPoint
       ? this.renderer.screenToPoint(this.mouseX, this.mouseY)
-      : null;
+      : null);
     this.pendingCasts.push({
       id: ++this.castId,
       spell,
@@ -307,6 +346,13 @@ export class InputController {
       if (len > radius) { dx = (dx / len) * radius; dy = (dy / len) * radius; }
       knob.style.transform = `translate(${dx}px, ${dy}px)`;
       this.touchMove = [dx / radius, dy / radius];
+      // Same [x,z] axes as touchMove/move — track the last non-zero drag
+      // direction as the touch facing vector (persists after release below).
+      const flen = Math.hypot(this.touchMove[0], this.touchMove[1]);
+      if (flen > 0.05) {
+        this._touchFacing = [this.touchMove[0] / flen, this.touchMove[1] / flen];
+        this._touchFacingSet = true;
+      }
       e.preventDefault();
     };
     const end = (e) => {
@@ -319,7 +365,24 @@ export class InputController {
     joystick.addEventListener("touchmove", move, { passive: false });
     joystick.addEventListener("touchend", end);
 
-    fireBtn.addEventListener("touchstart", (e) => { this.queueCast(this.selectedSpell); e.preventDefault(); }, { passive: false });
+    fireBtn.addEventListener("touchstart", (e) => {
+      this.queueCast(this.selectedSpell, this._touchCastPoint(this.selectedSpell));
+      e.preventDefault();
+    }, { passive: false });
+  }
+
+  // Aim-mode-aware touch cast point for `spell`, computed from the last
+  // pose/enemies/arena snapshot (setLocalContext) and the touch facing
+  // vector (last non-zero joystick direction). Returns null before the first
+  // snapshot arrives, in which case queueCast() falls back to the mouse-
+  // derived screenToPoint() path (same as it always has).
+  _touchCastPoint(spell) {
+    const spellDef = SPELLS[spell];
+    if (!spellDef || !this._localPose) return null;
+    const heading = Math.atan2(this._touchFacing[1], this._touchFacing[0]);
+    const pose = { x: this._localPose.x, z: this._localPose.z, heading };
+    const { tx, tz } = aimForTouchCast(spellDef, pose, this._localEnemies, this._localArena);
+    return { x: tx, z: tz };
   }
 
   // Build the current input snapshot to send/apply.

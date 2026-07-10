@@ -370,6 +370,7 @@ function startHosting(name, options = {}) {
     last = now;
 
     if (sim.phase === PHASE.PLAYING || sim.phase === PHASE.COUNTDOWN) {
+      feedLocalInputContext();
       sim.setInput(localId, input.sample());
     }
 
@@ -499,6 +500,7 @@ function startJoining(name, code, character, { userId, region, matchmaking } = {
     // Stop once superseded (leaveMatch/disconnect) before touching the client.
     if (sessionGen !== mySession) return;
     if (now - lastInput >= inputMs) {
+      feedLocalInputContext();
       client.sendInput(input.sample());
       lastInput = now;
     }
@@ -597,6 +599,26 @@ function metaToArray() {
     id, name: m.name, colorIndex: m.colorIndex, isBot: !!m.isBot,
     character: m.character || CFG.DEFAULT_CHARACTER, userId: m.userId || null,
   }));
+}
+
+// Feeds the local player's authoritative pose, a light enemy snapshot, and
+// the live arena radius into input each client frame — so touch casts can be
+// aim-mode-aware (aimForTouchCast in src/touchAim.js) instead of firing at a
+// stale mouse-derived point. Uses the previous tick's snapshot (latestSnapshot
+// is only updated after sim.step()/onState, so this always reads one frame
+// behind — the same staleness input.sample()'s own mouse aim already has).
+// No-op (and harmless) on desktop: the touch path is the only consumer.
+function feedLocalInputContext() {
+  if (!latestSnapshot) return;
+  const me = latestSnapshot.players.find((p) => p.id === localId);
+  if (!me) return;
+  input.setLocalContext({
+    x: me.x,
+    z: me.z,
+    heading: me.a,
+    enemies: latestSnapshot.players.filter((p) => p.id !== localId),
+    arena: { radius: latestSnapshot.arenaR },
+  });
 }
 
 function syncLocalSpellSlots(snap) {
