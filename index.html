@@ -7,7 +7,7 @@
 
 <!-- ===== SEO / Social / PWA ===== -->
 <!-- Core meta -->
-<meta name="description" content="Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing. Free browser P2P multiplayer — no download." />
+<meta name="description" content="Free browser arena brawler: spell-sling in a low-poly voxel arena, knock rivals into the lava, and be the last warlock standing. P2P multiplayer, no download." />
 <meta name="keywords" content="warlock brawl, voxel game, browser game, three.js game, webgl game, p2p multiplayer, arena brawler, spell slinging, knockback, free online game" />
 <meta name="author" content="Carlo Miguel Dy" />
 <meta name="theme-color" content="#0a0814" />
@@ -111,6 +111,16 @@
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
   }
 }
+</script>
+<!-- PWA service worker: registered after load so it never delays first paint;
+     updateViaCache: 'none' makes the browser always re-check sw.js itself
+     (Vercel also serves it with no-cache headers — see vercel.json). -->
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
+    });
+  }
 </script>
 </head>
 <body>
