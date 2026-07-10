@@ -29,17 +29,29 @@ export const CFG = {
   // surface to sell the environment. `kind` selects the motion recipe in
   // voxel.js (buildHazardDetails/animateHazardDetails); `count` is capped for
   // performance and `rise`/`size` tune the look.
+  // WS-J atmosphere fields (appended, existing keys above are untouched):
+  // `sky.top`/`sky.bottom` drive the skybox gradient (src/skybox.js) —
+  // `bottom` is the horizon color and is kept close to `glow` so the
+  // under-hazard light and the sky agree. `fogNear`/`fogFar` retune
+  // scene.fog depth per theme (falls back to 40/90 if omitted).
+  // `bloomStrength` tunes the high-tier UnrealBloomPass per theme (falls
+  // back to a conservative 0.35 in renderer.js if omitted).
   ARENA_HAZARDS: {
     lava: { id: "lava", name: "Lava Sea", style: "lava", color: 0xff3a1e, glow: 0xff3a1e, fog: 0x1a0b08, amp: 0.4, speed: 1.5,
-      detail: { kind: "embers", count: 70, color: 0xff8a3c, size: 0.3, rise: 7 } },
+      detail: { kind: "embers", count: 70, color: 0xff8a3c, size: 0.3, rise: 7 },
+      sky: { top: 0x2a0e0a, bottom: 0xff6a35 }, fogNear: 35, fogFar: 85, bloomStrength: 0.4 },
     ocean: { id: "ocean", name: "Ocean", style: "ocean", color: 0x1f7fd6, glow: 0x2a6fd0, fog: 0x0a1622, amp: 0.6, speed: 1.1,
-      detail: { kind: "spray", count: 60, color: 0xbfe8ff, size: 0.26, rise: 5 } },
+      detail: { kind: "spray", count: 60, color: 0xbfe8ff, size: 0.26, rise: 5 },
+      sky: { top: 0x0a1830, bottom: 0x2a9fc0 }, fogNear: 45, fogFar: 100, bloomStrength: 0.3 },
     swamp: { id: "swamp", name: "Toxic Swamp", style: "swamp", color: 0x4f7a2a, glow: 0x86d040, fog: 0x121a0c, amp: 0.22, speed: 0.6,
-      detail: { kind: "bubbles", count: 45, color: 0xb6f05a, size: 0.34, rise: 2.6 } },
+      detail: { kind: "bubbles", count: 45, color: 0xb6f05a, size: 0.34, rise: 2.6 },
+      sky: { top: 0x182a10, bottom: 0x8ad048 }, fogNear: 30, fogFar: 70, bloomStrength: 0.3 },
     rocks: { id: "rocks", name: "Sharp Rocks", style: "rocks", color: 0x6a5a52, glow: 0x3a2a2a, fog: 0x130f12, amp: 0.05, speed: 0.25, jagged: true,
-      detail: { kind: "dust", count: 40, color: 0x9a8a7a, size: 0.18, rise: 1.4 } },
+      detail: { kind: "dust", count: 40, color: 0x9a8a7a, size: 0.18, rise: 1.4 },
+      sky: { top: 0x2a2830, bottom: 0xc08a4a }, fogNear: 40, fogFar: 90, bloomStrength: 0.3 },
     void: { id: "void", name: "Arcane Abyss", style: "void", color: 0xb24cff, glow: 0xc04cff, fog: 0x140a22, amp: 0.5, speed: 0.9,
-      detail: { kind: "shards", count: 55, color: 0xd79cff, size: 0.32, rise: 3.4 } },
+      detail: { kind: "shards", count: 55, color: 0xd79cff, size: 0.32, rise: 3.4 },
+      sky: { top: 0x0a0612, bottom: 0xc04cff }, fogNear: 50, fogFar: 110, bloomStrength: 0.4 },
   },
   // --- Decorations (WS-C) ---
   // Non-collidable dungeon dressing scattered around each map: a "ring" of

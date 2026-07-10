@@ -33,6 +33,7 @@ import { VFX_REGISTRY, getVfx } from "./vfx/duotone.js";
 import { buildChainBeam } from "./vfx/beams.js";
 import { getReticle } from "./vfx/reticles.js";
 import { resolveTier, QUALITY_PRESETS, registerQualityHandler } from "./quality.js";
+import { createSkybox } from "./skybox.js";
 
 export class GameRenderer {
   constructor(canvas) {
@@ -50,6 +51,11 @@ export class GameRenderer {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0d0b1a);
     this.scene.fog = new THREE.Fog(0x0d0b1a, 40, 90);
+
+    // Permanent per-theme gradient skybox (WS-J) — created once, retinted in
+    // place by _applyHazardTheme(); never rebuilt per-round.
+    this._skybox = createSkybox();
+    this.scene.add(this._skybox.mesh);
 
     this.camera = new THREE.PerspectiveCamera(
       55, window.innerWidth / window.innerHeight, 0.1, 300
@@ -127,16 +133,70 @@ export class GameRenderer {
     registerQualityHandler((preset) => this.setQualityTier(preset));
 
     window.addEventListener("resize", () => this._onResize());
+
+    // Bloom (high tier only) is built lazily so low/med tiers never pay for
+    // the EffectComposer/UnrealBloomPass addon fetch. this._composer stays
+    // null on low/med, and permanently null if the CDN addon import fails
+    // (see _ensureComposer's catch) — the render loop below always falls
+    // back to a plain this.renderer.render() in that case.
+    this._composer = null;
+    this._bloomPass = null;
+    this._composerFailed = false;
+    if (this._qualityPreset.bloom) this._ensureComposer();
   }
 
-  // Live-apply a quality preset (pixel ratio cap, shadow toggle). Particle
-  // scaling is read directly from quality.js's getParticleScale() at each VFX
-  // use site (burst/trail/hazard-detail builders), not stored here.
+  // Live-apply a quality preset (pixel ratio cap, shadow toggle, bloom).
+  // Particle scaling is read directly from quality.js's getParticleScale()
+  // at each VFX use site (burst/trail/hazard-detail builders), not stored
+  // here.
   setQualityTier(preset) {
     this._qualityPreset = preset;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, preset.pixelRatioCap));
     this.renderer.shadowMap.enabled = preset.shadows;
     if (this._sun) this._sun.castShadow = preset.shadows;
+    if (preset.bloom && !this._composerFailed) {
+      this._ensureComposer();
+    } else if (this._composer) {
+      this._composer.dispose();
+      this._composer = null;
+      this._bloomPass = null;
+    }
+  }
+
+  // Lazily import the postprocessing addons (three/addons/postprocessing/*
+  // — verified available under the three@0.160.0 CDN import map in
+  // index.html) and build an EffectComposer with a conservative
+  // UnrealBloomPass. Guarded: if the CDN import ever fails (offline addon
+  // path, CDN outage), this permanently falls back to plain rendering for
+  // the rest of the session rather than retrying every tier toggle.
+  async _ensureComposer() {
+    if (this._composer || this._composerFailed) return;
+    try {
+      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }] = await Promise.all([
+        import("three/addons/postprocessing/EffectComposer.js"),
+        import("three/addons/postprocessing/RenderPass.js"),
+        import("three/addons/postprocessing/UnrealBloomPass.js"),
+      ]);
+      // A tier toggle or hazard change may have raced this fetch — bail if
+      // bloom got turned back off, or a composer already landed, meanwhile.
+      if (this._composer || !this._qualityPreset.bloom) return;
+      const composer = new EffectComposer(this.renderer);
+      composer.addPass(new RenderPass(this.scene, this.camera));
+      const strength = (this._hazard && this._hazard.bloomStrength) ?? 0.35;
+      const bloom = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        strength, 0.4, 0.85
+      );
+      composer.addPass(bloom);
+      composer.setSize(window.innerWidth, window.innerHeight);
+      this._composer = composer;
+      this._bloomPass = bloom;
+    } catch (err) {
+      console.warn("Bloom post-processing addons unavailable, falling back to plain rendering:", err);
+      this._composerFailed = true;
+      this._composer = null;
+      this._bloomPass = null;
+    }
   }
 
   // Preload the 4 big-mob Meshy GLBs (see the constructor comment above for
@@ -191,21 +251,42 @@ export class GameRenderer {
     }
   }
 
-  // Tint the under-glow light and the scene fog/background to match the active
-  // hazard so each map feels like its own place (lava, ocean, swamp, etc.).
+  // Tint the under-glow light, scene fog, skybox gradient, and (high-tier)
+  // bloom strength to match the active hazard so each map feels like its own
+  // place (lava, ocean, swamp, etc.).
   _applyHazardTheme(hazard) {
     if (!hazard || this._hazardId === hazard.id) return;
     this._hazardId = hazard.id;
+    this._hazard = hazard; // read by _ensureComposer() for per-theme bloomStrength
     if (this._hazardGlow) this._hazardGlow.color.setHex(hazard.glow ?? hazard.color);
     const fogHex = hazard.fog ?? 0x0d0b1a;
-    this.scene.background = new THREE.Color(fogHex);
-    if (this.scene.fog) this.scene.fog.color.setHex(fogHex);
+    if (this.scene.fog) {
+      this.scene.fog.color.setHex(fogHex);
+      this.scene.fog.near = hazard.fogNear ?? 40;
+      this.scene.fog.far = hazard.fogFar ?? 90;
+    }
+    if (this._skybox && hazard.sky) {
+      this._skybox.setSkyTheme(hazard.sky.top, hazard.sky.bottom);
+      // Solid fallback matches the sky's horizon color so there's no seam
+      // where the gradient sphere meets whatever scene.background shows
+      // through (e.g. before the skybox mesh is ready to fill the frame).
+      this.scene.background = new THREE.Color(hazard.sky.bottom);
+    } else {
+      this.scene.background = new THREE.Color(fogHex);
+    }
+    if (this._bloomPass) this._bloomPass.strength = hazard.bloomStrength ?? 0.35;
   }
 
   _onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    // EffectComposer.setSize() resizes every pass with a setSize() method
+    // (RenderPass + UnrealBloomPass included) in place, so the bloom render
+    // targets stay correctly sized without a full dispose/rebuild on every
+    // resize event (which can fire repeatedly on mobile as browser chrome
+    // shows/hides).
+    if (this._composer) this._composer.setSize(window.innerWidth, window.innerHeight);
   }
 
   setLocalId(id) { this.localId = id; }
@@ -1805,7 +1886,8 @@ export class GameRenderer {
 
     this._updateCamera(dt);
     this._updateReticle(dt);
-    this.renderer.render(this.scene, this.camera);
+    if (this._composer) this._composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   // Position/hide the local player's hold-to-aim targeting reticle
