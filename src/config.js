@@ -133,6 +133,15 @@ export const CFG = {
   // --- Health / damage (Step 1: HP layered over the charge model) ---
   PLAYER_HP_MAX: 180,        // full health on (re)spawn
   BOLT_BASE_DAMAGE: 8,       // fallback projectile damage when a spell omits `dmg`
+  // Design pillar: knockback -> ring-out/lava is THE kill path. Raw spell/mob
+  // HP damage floors at HP_MIN_FLOOR instead of killing outright; only falling
+  // into the hazard (LAVA_Y) is lethal. Low HP amplifies knockback so a
+  // near-dead player is easier to ring out, keeping HP damage meaningful
+  // without letting it be a second kill path. Flip SPELL_DAMAGE_LETHAL to
+  // restore the old hp<=0-kills behavior (e.g. for tests).
+  SPELL_DAMAGE_LETHAL: false,
+  HP_MIN_FLOOR: 1,
+  LOW_HP_KB_AMP_MAX: 0.5,
 
   // --- Ability slots ---
   RUNE_SPAWN_RADIUS: 13,      // also used by mob spawn position logic
