@@ -63,6 +63,17 @@ const SFX_FILES = {
   muteOff: "t3-mute-off.mp3",
 };
 
+// Base (unity-volume) gain levels for each bus — the volume sliders scale
+// these, and the SFX/Music mute toggles zero their own bus without touching
+// the others (mute always wins over the slider: effective gain = base *
+// volume * (muted ? 0 : 1)).
+const MASTER_BASE_GAIN = 0.9;
+const SFX_BASE_GAIN = 0.8;
+const MUSIC_BASE_GAIN = 0.16;
+const VOLUMES_KEY = "vwba.volumes";
+
+const clampVol = (v, fallback = 1) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback);
+
 let _instance = null;
 export class AudioEngine {
   constructor() {
@@ -76,6 +87,48 @@ export class AudioEngine {
     this._musicNodes = [];
     this._lastPlay = {}; // throttle identical sounds
     this._bufferCache = new Map(); // path -> AudioBuffer | Promise<AudioBuffer|null>
+    this._loadVolumes();
+  }
+
+  /** Read persisted master/sfx/music volume sliders (0..1, default 1 each). */
+  _loadVolumes() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(VOLUMES_KEY) || "{}"); } catch {}
+    this.masterVolume = clampVol(saved.master);
+    this.sfxVolume = clampVol(saved.sfx);
+    this.musicVolume = clampVol(saved.music);
+  }
+
+  _persistVolumes() {
+    try {
+      localStorage.setItem(VOLUMES_KEY, JSON.stringify({
+        master: this.masterVolume, sfx: this.sfxVolume, music: this.musicVolume,
+      }));
+    } catch {}
+  }
+
+  /** Current volume slider values (0..1), independent of the mute toggles. */
+  getVolumes() { return { master: this.masterVolume, sfx: this.sfxVolume, music: this.musicVolume }; }
+
+  setMasterVolume(v) { this.masterVolume = clampVol(v, this.masterVolume); this._persistVolumes(); this._applyMasterGain(); }
+  setSfxVolume(v) { this.sfxVolume = clampVol(v, this.sfxVolume); this._persistVolumes(); this._applySfxGain(); }
+  setMusicVolume(v) { this.musicVolume = clampVol(v, this.musicVolume); this._persistVolumes(); this._applyMusicGain(); }
+
+  _applyMasterGain() {
+    if (!this.master) return;
+    this.master.gain.setTargetAtTime(MASTER_BASE_GAIN * this.masterVolume, this._now(), 0.05);
+  }
+
+  _applySfxGain() {
+    if (!this.sfxGain) return;
+    const target = this.enabled ? SFX_BASE_GAIN * this.sfxVolume : 0;
+    this.sfxGain.gain.setTargetAtTime(target, this._now(), 0.05);
+  }
+
+  _applyMusicGain() {
+    if (!this.musicGain) return;
+    const target = this.musicOn ? MUSIC_BASE_GAIN * this.musicVolume : 0;
+    this.musicGain.gain.setTargetAtTime(target, this._now(), 0.05);
   }
 
   // Must be called from a user gesture (browser autoplay policy).
@@ -88,7 +141,6 @@ export class AudioEngine {
     const AC = window.AudioContext || window.webkitAudioContext;
     this.ctx = new AC();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.9;
     this.master.connect(this.ctx.destination);
 
     // Simple feedback-delay "reverb" send.
@@ -104,22 +156,25 @@ export class AudioEngine {
     fb.connect(delay); lp.connect(this.master);
 
     this.sfxGain = this.ctx.createGain();
-    this.sfxGain.gain.value = 0.8;
     this.sfxGain.connect(this.master);
     this.sfxGain.connect(this.reverb);
 
     this.musicGain = this.ctx.createGain();
-    this.musicGain.gain.value = 0.16;
     this.musicGain.connect(this.master);
+
+    this._applyMasterGain();
+    this._applySfxGain();
+    this._applyMusicGain();
   }
 
   setEnabled(on) {
     this.enabled = on;
-    if (this.master) this.master.gain.setTargetAtTime(on ? 0.9 : 0, this.ctx.currentTime, 0.05);
+    this._applySfxGain();
   }
 
   setMusic(on) {
     this.musicOn = on;
+    this._applyMusicGain();
     if (!this.ctx) return;
     if (on) this.startMusic(); else this.stopMusic();
   }

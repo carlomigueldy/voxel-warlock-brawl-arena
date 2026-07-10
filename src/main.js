@@ -942,6 +942,16 @@ ui.on("pttKey", (code) => {
   if (setPttKey(code)) input.pttKey = code;
 });
 
+// Settings overlay: graphics quality tier ("low"|"med"|"high"|"auto").
+// TODO(src/quality.js, WS-I): once the quality-tier workstream lands, replace
+// window.__applyQualityTier with a direct call into its renderer API — this
+// global is a placeholder hook so the setting persists and takes effect the
+// moment that module exists, without another UI wiring pass.
+ui.on("setQuality", (tier) => {
+  try { localStorage.setItem("vwba.quality", tier); } catch {}
+  window.__applyQualityTier?.(tier);
+});
+
 // Push-to-talk: enable/disable the outgoing mic track (if voice is available),
 // which itself fires onSpeakingChange -> sendSpeak. When the mic was never
 // granted, send SPEAK directly so the ring still shows for other viewers.

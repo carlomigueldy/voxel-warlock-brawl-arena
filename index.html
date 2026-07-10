@@ -423,6 +423,7 @@
         <div id="auth-form" class="auth-form" aria-live="polite"></div>
 
         <button type="button" id="btn-replay-intro" class="btn btn-ghost btn-replay-intro">Replay Intro</button>
+        <button type="button" id="btn-open-settings" class="btn btn-ghost btn-open-settings">Settings</button>
       </div>
 
       <!-- TUTORIAL sub-screen -->
@@ -770,6 +771,7 @@
           <button id="pause-sfx">SFX: On</button>
           <button id="pause-music">Music: On</button>
         </div>
+        <button id="pause-settings" class="btn-ghost">Settings</button>
         <button id="pause-help" class="btn-ghost">How to Play</button>
         <div id="pause-controls" class="pause-controls hidden"></div>
         <button id="pause-social" class="btn-ghost">Voice &amp; Chat</button>
@@ -802,6 +804,15 @@
       <h2 id="social-title" class="social-title">Voice &amp; Chat</h2>
       <div id="social-settings-body"></div>
       <button id="social-close" class="btn btn-ghost" type="button">Done</button>
+    </div>
+  </div>
+
+  <!-- ===== Settings: audio volume, graphics quality, controls (WS-H) ===== -->
+  <div id="game-settings" class="pause-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="game-settings-title">
+    <div class="panel settings-panel">
+      <h2 id="game-settings-title" class="social-title">Settings</h2>
+      <div id="game-settings-body"></div>
+      <button id="game-settings-close" class="btn btn-ghost" type="button">Done</button>
     </div>
   </div>
 

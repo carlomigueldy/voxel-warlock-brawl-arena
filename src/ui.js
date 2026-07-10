@@ -1,7 +1,7 @@
 // All DOM/UI wiring: menus, lobby, HUD, room code, invite link, QR code.
 // QRCode is loaded globally from a <script> tag (window.QRCode).
 import { CFG, SPELLS, SPELL_ORDER, SPELL_TEMPLATES, ITEMS, getArenaHazard } from "./config.js";
-import { spellIconSvg, itemIconSvg } from "./spell-icons.js";
+import { spellIconHtml, itemIconSvg } from "./spell-icons.js";
 import * as social from "./social.js";
 import { isValidPttKey } from "./input.js";
 import { menuCue } from "./audio.js";
@@ -77,6 +77,7 @@ export class UI {
       // ESC pause menu
       pauseMenu: $("pause-menu"), pauseResume: $("pause-resume"),
       pauseSfx: $("pause-sfx"), pauseMusic: $("pause-music"),
+      pauseSettings: $("pause-settings"),
       pauseHelp: $("pause-help"), pauseControls: $("pause-controls"),
       pauseLeave: $("pause-leave"),
       // Big-mob incoming announcement banner.
@@ -98,6 +99,11 @@ export class UI {
       socialSettings: $("social-settings"),
       socialSettingsBody: $("social-settings-body"),
       socialClose: $("social-close"),
+      // Settings overlay (audio volume, graphics quality, controls — WS-H).
+      gameSettings: $("game-settings"),
+      gameSettingsBody: $("game-settings-body"),
+      gameSettingsClose: $("game-settings-close"),
+      btnOpenSettings: $("btn-open-settings"),
     };
     this.handlers = {};
     this.audio = null;
@@ -1049,7 +1055,7 @@ export class UI {
     cdNum.className = "ability-cd-num";
     const swatch = document.createElement("span");
     swatch.className = "ability-swatch";
-    swatch.innerHTML = spellIconSvg("");
+    swatch.innerHTML = spellIconHtml("");
     swatch.style.color = "#" + (color.toString(16).padStart(6, "0"));
     swatch.style.background = "transparent";
     el.append(swatch, key, nm, cd, cdNum);
@@ -1222,7 +1228,7 @@ export class UI {
       slot.dataset.spell = empty ? "" : id;
       slot.title = empty ? `Empty spell slot ${i + 1}` : "";
       nm.textContent = empty ? "Empty" : SPELLS[id].name;
-      swatch.innerHTML = spellIconSvg(empty ? "" : id);
+      swatch.innerHTML = spellIconHtml(empty ? "" : id);
       const color = empty ? 0x444466 : (SPELLS[id].color || 0x8888ff);
       swatch.style.color = "#" + (color.toString(16).padStart(6, "0"));
       swatch.style.background = "transparent";
@@ -1249,6 +1255,10 @@ export class UI {
     // Replay the first-run onboarding overlay (self-contained src/onboarding.js).
     if (this.el.btnReplayIntro) {
       this.el.btnReplayIntro.onclick = () => window.Onboarding?.open();
+    }
+    // Main-menu entry point for the settings overlay (mirrors the pause-menu one).
+    if (this.el.btnOpenSettings) {
+      this.el.btnOpenSettings.onclick = () => this.openGameSettings();
     }
 
     // Private Host — fires hostPrivate event.
@@ -1330,10 +1340,13 @@ export class UI {
       this.el.practiceNoCd.onchange = () => this.handlers.toggleNoCooldown?.(this.el.practiceNoCd.checked);
     }
     if (this.el.pauseSocial) this.el.pauseSocial.onclick = () => this.openSocialSettings();
+    if (this.el.pauseSettings) this.el.pauseSettings.onclick = () => this.openGameSettings();
 
     // ---- Social: conduct disclaimer + settings panel ----
     if (this.el.conductEnter) this.el.conductEnter.onclick = () => this._dismissConduct();
     if (this.el.socialClose) this.el.socialClose.onclick = () => this.closeSocialSettings();
+    // ---- Settings overlay (audio volume, graphics quality, controls) ----
+    if (this.el.gameSettingsClose) this.el.gameSettingsClose.onclick = () => this.closeGameSettings();
   }
 
   _tryJoin() {
@@ -1659,7 +1672,7 @@ export class UI {
         card.setAttribute("aria-label", `${s.name} — ${s.desc}`);
         const swatch = document.createElement("span");
         swatch.className = "dsc-swatch";
-        swatch.innerHTML = spellIconSvg(id);
+        swatch.innerHTML = spellIconHtml(id);
         swatch.style.color = hex(s.color || 0x6c4cff);
         swatch.style.background = "transparent";
         const nm = document.createElement("span");
@@ -2385,7 +2398,7 @@ export class UI {
    * main.js's global Enter-opens-chat handler must not fire underneath them. */
   isDialogOpen() {
     const open = (el) => !!el && !el.classList.contains("hidden");
-    return open(this.el.conductModal) || open(this.el.socialSettings);
+    return open(this.el.conductModal) || open(this.el.socialSettings) || open(this.el.gameSettings);
   }
 
   /** Append a chat-log line (auto-capped, auto-dimmed). Escapes via textContent. */
@@ -2779,6 +2792,187 @@ export class UI {
     if (this._socialPreviousFocus) {
       this._socialPreviousFocus.focus();
       this._socialPreviousFocus = null;
+    }
+  }
+
+  // =========================================================================
+  // ---- Settings: audio volume, graphics quality, controls (WS-H) -----------
+  // =========================================================================
+
+  /** One audio slider row: label, live "NN%" readout, and a 0-100 <input type=range>. */
+  _buildVolumeField(id, labelText, muted, value0to1, onInput) {
+    const field = document.createElement("div");
+    field.className = "field";
+    const labelRow = document.createElement("div");
+    labelRow.className = "settings-slider-label-row";
+    const label = document.createElement("label");
+    label.className = "field-label";
+    label.htmlFor = id;
+    label.textContent = labelText;
+    const readout = document.createElement("span");
+    readout.className = "settings-slider-value";
+    const setReadout = (v) => { readout.textContent = muted ? `${v}% (muted)` : `${v}%`; };
+    labelRow.append(label, readout);
+    const input = document.createElement("input");
+    input.type = "range";
+    input.id = id;
+    input.className = "settings-range";
+    input.min = "0"; input.max = "100"; input.step = "5";
+    const pct = Math.round(value0to1 * 100);
+    input.value = String(pct);
+    setReadout(pct);
+    input.addEventListener("input", () => {
+      const v = Number(input.value);
+      setReadout(v);
+      onInput(v / 100);
+    });
+    field.append(labelRow, input);
+    return field;
+  }
+
+  /** (Re)build the in-game settings panel body: audio, graphics, controls. */
+  _buildGameSettingsBody() {
+    const body = this.el.gameSettingsBody;
+    if (!body) return;
+    body.replaceChildren();
+    const volumes = this.audio?.getVolumes?.() ?? { master: 1, sfx: 1, music: 1 };
+
+    // ---- Audio ----
+    const audioHeader = document.createElement("h3");
+    audioHeader.className = "settings-section-title";
+    audioHeader.textContent = "Audio";
+    // Sliders always scale their bus, but a mute toggle (SFX/Music, from the
+    // HUD or pause menu) forces that bus's effective gain to 0 regardless of
+    // slider position — the readout below flags that so it isn't confused
+    // for a stuck/broken slider.
+    const masterField = this._buildVolumeField(
+      "settings-vol-master", "Master Volume", false, volumes.master,
+      (v) => this.audio?.setMasterVolume(v)
+    );
+    const sfxField = this._buildVolumeField(
+      "settings-vol-sfx", "SFX Volume", !!this._sfxOff, volumes.sfx,
+      (v) => this.audio?.setSfxVolume(v)
+    );
+    const musicField = this._buildVolumeField(
+      "settings-vol-music", "Music Volume", !!this._musicOff, volumes.music,
+      (v) => this.audio?.setMusicVolume(v)
+    );
+
+    // ---- Graphics ----
+    const gfxHeader = document.createElement("h3");
+    gfxHeader.className = "settings-section-title";
+    gfxHeader.textContent = "Graphics";
+    const qualityWrap = document.createElement("div");
+    qualityWrap.className = "segmented";
+    qualityWrap.setAttribute("role", "radiogroup");
+    qualityWrap.setAttribute("aria-label", "Graphics quality");
+    let savedQuality = "auto";
+    try { savedQuality = localStorage.getItem("vwba.quality") || "auto"; } catch {}
+    const tiers = [
+      { id: "low", label: "Low" },
+      { id: "med", label: "Medium" },
+      { id: "high", label: "High" },
+      { id: "auto", label: "Auto" },
+    ];
+    tiers.forEach(({ id, label }) => {
+      const opt = document.createElement("button");
+      opt.type = "button";
+      opt.className = "seg-option";
+      opt.setAttribute("role", "radio");
+      opt.dataset.value = id;
+      opt.textContent = label;
+      opt.setAttribute("aria-checked", String(id === savedQuality));
+      opt.classList.toggle("is-active", id === savedQuality);
+      opt.addEventListener("click", () => {
+        qualityWrap.querySelectorAll(".seg-option").forEach((o) => {
+          const on = o.dataset.value === id;
+          o.classList.toggle("is-active", on);
+          o.setAttribute("aria-checked", String(on));
+        });
+        // main.js persists to localStorage['vwba.quality'] and forwards to
+        // window.__applyQualityTier if present; src/quality.js (WS-I) is the
+        // real consumer once it lands.
+        this.handlers.setQuality?.(id);
+      });
+      qualityWrap.appendChild(opt);
+    });
+    const gfxHint = document.createElement("p");
+    gfxHint.className = "field-hint";
+    gfxHint.textContent = "Auto adapts to your device. Some effects may need a new match to fully apply.";
+
+    // ---- Controls ----
+    const controlsHeader = document.createElement("h3");
+    controlsHeader.className = "settings-section-title";
+    controlsHeader.textContent = "Controls";
+    const controlsBody = document.createElement("div");
+    controlsBody.className = "settings-controls-body";
+    const coarsePointer = !!window.matchMedia?.("(pointer: coarse)").matches;
+    if (coarsePointer) {
+      const tip = document.createElement("p");
+      tip.className = "field-hint";
+      tip.textContent = "Drag the left joystick to move. Tap a spell or item slot to select it, then tap FIRE to cast.";
+      controlsBody.appendChild(tip);
+    } else {
+      const spellKeys = (this.spellSlotHotkeys || CFG.DEFAULT_SPELL_SLOT_HOTKEYS).join(" / ");
+      const itemKeys = (this.itemSlotHotkeys || CFG.DEFAULT_ITEM_SLOT_HOTKEYS).join(" / ");
+      const pttKey = this._pttKeyLabel(this.getSocialPrefs().pttKey);
+      const list = document.createElement("ul");
+      list.className = "settings-hotkey-list";
+      [
+        ["Spell slots", spellKeys],
+        ["Item slots", itemKeys],
+        ["Push-to-talk", pttKey],
+        ["Pause menu", "Esc"],
+        ["Chat", "Enter"],
+      ].forEach(([label, value]) => {
+        const li = document.createElement("li");
+        const lbl = document.createElement("span");
+        lbl.className = "field-label";
+        lbl.textContent = label;
+        const val = document.createElement("span");
+        val.textContent = value;
+        li.append(lbl, val);
+        list.appendChild(li);
+      });
+      controlsBody.appendChild(list);
+    }
+    const rebindHint = document.createElement("p");
+    rebindHint.className = "field-hint";
+    rebindHint.textContent = coarsePointer
+      ? "Touch controls aren't remappable yet."
+      : "Rebind a single slot with the ↻ icon on its ability-bar slot, or replay onboarding to redo every binding.";
+    controlsBody.appendChild(rebindHint);
+    if (!coarsePointer && window.Onboarding) {
+      const rebindBtn = document.createElement("button");
+      rebindBtn.type = "button";
+      rebindBtn.className = "btn btn-ghost";
+      rebindBtn.textContent = "Replay Onboarding";
+      rebindBtn.addEventListener("click", () => window.Onboarding?.open());
+      controlsBody.appendChild(rebindBtn);
+    }
+
+    body.append(
+      audioHeader, masterField, sfxField, musicField,
+      gfxHeader, qualityWrap, gfxHint,
+      controlsHeader, controlsBody
+    );
+  }
+
+  openGameSettings() {
+    const overlay = this.el.gameSettings;
+    if (!overlay) return;
+    this._buildGameSettingsBody();
+    overlay.classList.remove("hidden");
+    this._gameSettingsPreviousFocus = document.activeElement;
+    overlay.querySelector("button:not([disabled]), input:not([disabled])")?.focus();
+    this._bindDialogTrap(overlay, () => this.closeGameSettings(), "_gameSettingsKeyBound");
+  }
+
+  closeGameSettings() {
+    this.el.gameSettings?.classList.add("hidden");
+    if (this._gameSettingsPreviousFocus) {
+      this._gameSettingsPreviousFocus.focus();
+      this._gameSettingsPreviousFocus = null;
     }
   }
 }

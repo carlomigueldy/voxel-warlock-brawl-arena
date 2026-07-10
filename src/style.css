@@ -2778,6 +2778,7 @@ kbd {
 
 /* Onboarding */
 .btn-replay-intro { margin-top: 14px; width: 100%; }
+.btn-open-settings { margin-top: 10px; width: 100%; }
 #onboarding { z-index: 150; }
 .onboarding-panel {
   max-width: 640px;
@@ -2971,4 +2972,45 @@ kbd {
 .hero-select-chip:focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
+}
+
+/* ---- Settings overlay: audio volume, graphics quality, controls (WS-H) ----
+   Reuses .pause-overlay/.panel (dialog chrome) and .field/.field-label/
+   .field-hint/.seg-option/.segmented (rows + segmented control) from the
+   social-settings and leaderboard/bot-skill controls above. */
+.settings-panel { max-width: 520px; text-align: left; }
+#game-settings-body { display: flex; flex-direction: column; gap: 14px; margin-bottom: 18px; text-align: left; }
+.settings-section-title {
+  font-family: var(--font-display);
+  font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--gold); margin: 6px 0 -4px;
+}
+.settings-section-title:first-child { margin-top: 0; }
+.settings-slider-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-slider-value { font-size: 12px; font-weight: 700; color: var(--muted); min-width: 84px; text-align: right; }
+.settings-range {
+  width: 100%; min-height: 44px; margin: 0; accent-color: var(--arcane); touch-action: none;
+}
+.settings-range:focus-visible { outline: 2px solid var(--arcane); outline-offset: 4px; border-radius: 8px; }
+.settings-controls-body { display: flex; flex-direction: column; gap: 10px; }
+.settings-hotkey-list { display: flex; flex-direction: column; gap: 8px; list-style: none; }
+.settings-hotkey-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text); }
+#game-settings-close { width: 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-panel { animation: none !important; }
+}
+
+/* ===== WS-B: Blender-rendered spell icon PNGs layered over SVG glyphs =====
+   spellIconHtml() (src/spell-icons.js) renders the hand-authored SVG glyph
+   plus a sibling <img> on top. .ability-swatch is already `position:
+   absolute` (a valid containing block); .dsc-swatch is a static-position
+   grid cell, so it needs `position: relative` here for the absolutely
+   positioned image to fill it instead of the whole draft card. The PNG
+   removes itself via inline onerror if the asset is missing, leaving the
+   always-present SVG as the only visible glyph — no layout shift either way. */
+.dsc-swatch { position: relative; }
+.spell-icon-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; pointer-events: none; z-index: 1;
 }
