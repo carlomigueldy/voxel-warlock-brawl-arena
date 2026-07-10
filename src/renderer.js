@@ -14,6 +14,9 @@ import {
 } from "./voxel.js";
 import { acquireBolt, releaseBolt } from "./pool.js";
 import { PROP_BUILDERS } from "./props.js";
+import { computeDecorationPlacements } from "./decorations.js";
+import { buildDecorations } from "./decorationsView.js";
+import { preloadAllPropModels } from "./propModel.js";
 import {
   loadCharacterTemplate,
   characterReady,
@@ -78,6 +81,10 @@ export class GameRenderer {
     // Map layout geometry (plateaus, ramps, obstacles) rebuilt once per round.
     this._mapVersion = -1;   // last snapshot.mapV applied
     this._mapMeshes  = [];   // Groups built from the current layout
+    // Cosmetic dungeon-dressing decorations (WS-C), rebuilt alongside the map
+    // layout every round — see _rebuildMapMeshes/decorations.js.
+    this._decorGroup = null;
+    this._decorDispose = null;
 
     // Smoothed camera target.
     this._camTarget = new THREE.Vector3(0, 0, 0);
@@ -104,6 +111,12 @@ export class GameRenderer {
         ?.then(() => this._upgradeMobsToGLB())
         .catch((err) => console.warn(`Mob GLB '${type}' unavailable, using voxel fallback:`, err));
     }
+
+    // Preload every dungeon-prop GLB (WS-C). Decorations are rebuilt wholesale
+    // every round via _rebuildMapMeshes, so — unlike characters/mobs above —
+    // there's no "upgrade already-built instances in place" step needed here:
+    // whichever templates have resolved by the next round's rebuild get used.
+    preloadAllPropModels();
 
     window.addEventListener("resize", () => this._onResize());
   }
@@ -1859,6 +1872,13 @@ export class GameRenderer {
       });
     }
     this._mapMeshes = [];
+
+    if (this._decorDispose) {
+      this._decorDispose();
+      this._decorGroup = null;
+      this._decorDispose = null;
+    }
+
     if (!layout) return;
 
     // Each entry stores its footprint CENTRE (cx,cz) so we can hide features
@@ -1885,6 +1905,19 @@ export class GameRenderer {
       this.scene.add(og);
       this._mapMeshes.push({ g: og, cx: ob.x, cz: ob.z });
     }
+
+    // Cosmetic dungeon-dressing decorations (WS-C): purely visual, never
+    // registered with the sim/collision layer. Seeded from the same
+    // host-broadcast layout.seed mapgen used, so every P2P client places
+    // identical decorations without exchanging any extra data. this.arena.radius
+    // is already the round's starting radius here — setRadius() runs earlier
+    // in apply() than this rebuild, and mapV only bumps at round start.
+    const placements = computeDecorationPlacements(
+      layout.seed, worldId, this.arena.radius, layout.obstacles
+    );
+    const { group, dispose } = buildDecorations(this.scene, placements);
+    this._decorGroup = group;
+    this._decorDispose = dispose;
   }
 
   // Hide map features whose footprint centre has left the platform as the arena
@@ -1893,6 +1926,15 @@ export class GameRenderer {
   _cullMapMeshes(radius, worldId) {
     for (const e of this._mapMeshes) {
       e.g.visible = isOnArenaWorld(worldId, radius, e.cx, e.cz);
+    }
+    // Decoration ring dressing sits outside the play radius by design (like
+    // the hazard's ambient detail props) and is never culled; interior
+    // accents cull exactly like obstacles.
+    if (this._decorGroup) {
+      for (const holder of this._decorGroup.children) {
+        if (holder.userData.ring) continue;
+        holder.visible = isOnArenaWorld(worldId, radius, holder.userData.cx, holder.userData.cz);
+      }
     }
   }
 

@@ -41,6 +41,106 @@ export const CFG = {
     void: { id: "void", name: "Arcane Abyss", style: "void", color: 0xb24cff, glow: 0xc04cff, fog: 0x140a22, amp: 0.5, speed: 0.9,
       detail: { kind: "shards", count: 55, color: 0xd79cff, size: 0.32, rise: 3.4 } },
   },
+  // --- Decorations (WS-C) ---
+  // Non-collidable dungeon dressing scattered around each map: a "ring" of
+  // props just outside the play radius (on the hazard rim, purely visual —
+  // see src/decorations.js) plus a handful of "interior" accents placed near
+  // (never on) obstacles. Every prop name below must resolve to a GLB in
+  // assets/props/<name>.glb (see scripts/blender/props_gen.py) via
+  // src/propModel.js's PROP_MODEL_NAMES, with a procedural fallback in
+  // src/decorationsView.js while the GLB is still loading.
+  // Per-theme pools are `{ prop, weight }` lists — weighted random pick, not
+  // uniform — so each world's rim/interior dressing leans toward its own
+  // hazard's signature prop without excluding the shared kit entirely.
+  DECOR: {
+    maxCount: 26,           // hard cap on total decorations per round (perf)
+    ringOffsetMin: 1.5,     // ring props sit this far OUTSIDE the arena radius...
+    ringOffsetMax: 6,       // ...up to this far, sunk toward the hazard surface
+    ringSinkY: -0.6,        // world-Y offset applied to ring props (toward the hazard)
+    ringCountMin: 8,
+    ringCountMax: 14,
+    interiorCountMin: 4,
+    interiorCountMax: 8,
+    interiorClearance: 1.5, // min gap (world units) from any obstacle's collision circle
+    themes: {
+      circle: { // lava
+        ring: [
+          { prop: "lava-obsidian-spire", weight: 3 },
+          { prop: "broken-pillar",       weight: 3 },
+          { prop: "torch",               weight: 3 },
+          { prop: "rubble",              weight: 2 },
+          { prop: "rune-stone",          weight: 1 },
+        ],
+        interior: [
+          { prop: "torch",          weight: 3 },
+          { prop: "pillar",         weight: 2 },
+          { prop: "rune-stone",     weight: 2 },
+          { prop: "crystal-cluster",weight: 1 },
+        ],
+      },
+      islands: { // ocean
+        ring: [
+          { prop: "ocean-coral-pillar", weight: 3 },
+          { prop: "broken-pillar",      weight: 2 },
+          { prop: "arch",               weight: 2 },
+          { prop: "rubble",             weight: 2 },
+          { prop: "banner",             weight: 1 },
+        ],
+        interior: [
+          { prop: "torch",        weight: 2 },
+          { prop: "pillar",       weight: 2 },
+          { prop: "rune-stone",   weight: 2 },
+          { prop: "banner",       weight: 1 },
+        ],
+      },
+      bridge: { // swamp
+        ring: [
+          { prop: "swamp-root-arch", weight: 3 },
+          { prop: "broken-pillar",   weight: 2 },
+          { prop: "rubble",          weight: 3 },
+          { prop: "crystal-cluster", weight: 1 },
+          { prop: "rune-stone",      weight: 1 },
+        ],
+        interior: [
+          { prop: "torch",           weight: 2 },
+          { prop: "rune-stone",      weight: 2 },
+          { prop: "rubble",          weight: 2 },
+          { prop: "crystal-cluster", weight: 1 },
+        ],
+      },
+      cross: { // rocks
+        ring: [
+          { prop: "rocks-monolith", weight: 3 },
+          { prop: "rubble",         weight: 3 },
+          { prop: "broken-pillar",  weight: 2 },
+          { prop: "arch",           weight: 1 },
+          { prop: "banner",         weight: 1 },
+        ],
+        interior: [
+          { prop: "torch",      weight: 2 },
+          { prop: "pillar",     weight: 2 },
+          { prop: "rubble",     weight: 2 },
+          { prop: "rune-stone", weight: 1 },
+        ],
+      },
+      ring: { // void
+        ring: [
+          { prop: "void-obelisk",    weight: 3 },
+          { prop: "crystal-cluster", weight: 3 },
+          { prop: "broken-pillar",   weight: 2 },
+          { prop: "rune-stone",      weight: 2 },
+          { prop: "banner",          weight: 1 },
+        ],
+        interior: [
+          { prop: "crystal-cluster", weight: 2 },
+          { prop: "rune-stone",      weight: 2 },
+          { prop: "torch",           weight: 2 },
+          { prop: "pillar",          weight: 1 },
+        ],
+      },
+    },
+  },
+
   VOXEL: 1,                  // voxel size
   LAVA_Y: -4,                // height of the lava plane (death below platform top)
   PLATFORM_TOP: 0,           // top surface of the platform

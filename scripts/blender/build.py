@@ -55,11 +55,17 @@ def build_test():
 
 
 def build_props():
-    print("[build.py] --what props: not yet implemented")
+    import props_gen  # local import: keeps this stub's import list minimal until used
+
+    props_gen.generate_all()
 
 
 def build_icons():
-    print("[build.py] --what icons: not yet implemented")
+    import icons  # local import: keeps this stub's import list minimal until used
+
+    out_dir = os.path.join(_compat.REPO_ROOT, "assets", "icons", "spells")
+    icons.render_all(out_dir)
+    print(f"[build.py] wrote spell icons to {out_dir}")
 
 
 def main():
