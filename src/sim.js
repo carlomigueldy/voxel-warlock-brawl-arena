@@ -6,8 +6,8 @@ import { generateMap } from "./mapgen.js";
 import { Player, resolveKillCredit } from "./player.js";
 import { Bolt } from "./bolt.js";
 import { castSpell, advanceCasts, applyAoE, nearestEnemy } from "./spells.js";
-import { BotBrain, BOT_PROFILES, botSpellLoadout, closestApproach as _closestApproach } from "./bot.js";
-import { makePrng } from "./rng.js";
+import { BotBrain, BOT_PROFILES, botSpellLoadout, botDraftPick, closestApproach as _closestApproach } from "./bot.js";
+import { makePrng, idSeed } from "./rng.js";
 import { makeMobPrng, stepMobPhysics, spawnMob } from "./mob.js";
 
 // Re-wrap so the local call sites keep their original shape (returns .x/.z midpoint too).
@@ -216,6 +216,14 @@ export class Simulation {
       // actually cast the spells it scores. Stored as _spawnLoadout so beginRound
       // re-applies it each round instead of falling back to DEFAULT_SPELL_LOADOUT.
       bot._spawnLoadout = botSpellLoadout(profile);
+      // Draft mode: pre-compute a deterministic, legal 6-spell draft pick
+      // (seeded from the bot id, like BotBrain's own PRNG) so beginRound can
+      // commit it via setDraftLoadout exactly like a human's committed pick.
+      // Bots never see the SPELL_SELECTION overlay, so they auto-ready here
+      // (also refreshed defensively in beginDraft()) and never stall the 30s
+      // draft timer.
+      bot._draftLoadout = botDraftPick(profile, makePrng(idSeed(`${botId}:draft`)));
+      bot.draftReady = true;
       bots.push(bot);
     }
     if (this.phase !== PHASE.LOBBY) this.resolveRoundIfNeeded();
@@ -305,7 +313,17 @@ export class Simulation {
     this.phase = PHASE.SPELL_SELECTION;
     this.phaseTimer = CFG.SPELL_SELECTION_TIME;
     for (const p of this.players.values()) {
-      if (!p.isBot) p.beginDraft();
+      if (!p.isBot) { p.beginDraft(); continue; }
+      // Bots never see the draft overlay — auto-ready with a deterministic
+      // pick (already computed in setBotRoster; derived here defensively for
+      // any bot added via a path that skipped it) so they never stall the
+      // 30s timer even though the SPELL_SELECTION readiness gate below
+      // already filters bots out of the human-only allReady check.
+      if (!p._draftLoadout) {
+        const profile = BOT_PROFILES[p.botSkill] || BOT_PROFILES.smart;
+        p._draftLoadout = botDraftPick(profile, makePrng(idSeed(`${p.id}:draft`)));
+      }
+      p.draftReady = true;
     }
   }
 
@@ -392,10 +410,17 @@ export class Simulation {
     list.forEach((p, i) => {
       const spawn = this.spawnPoint((i / n) * Math.PI * 2);
       p.spawn(spawn.angle, spawn.radius);
-      // Draft mode: human players get their committed draft kit every round.
-      // Bots and non-draft matches keep the profile/default loadout path.
-      if (this.draftEnabled && !p.isBot) {
-        p.setDraftLoadout(p._draftLoadout || completeLoadout([]));
+      // Draft mode: every player (human or bot) gets their committed draft
+      // kit every round, via the same setDraftLoadout path. Bots commit the
+      // deterministic pick computed by botDraftPick (see setBotRoster/
+      // beginDraft); botSpellLoadout is only a defensive fallback for a bot
+      // that somehow never got one. Non-draft matches keep the existing
+      // profile/default loadout path unchanged.
+      if (this.draftEnabled) {
+        const fallback = p.isBot
+          ? botSpellLoadout(BOT_PROFILES[p.botSkill] || BOT_PROFILES.smart)
+          : completeLoadout([]);
+        p.setDraftLoadout(p._draftLoadout || fallback);
       } else {
         // Use per-player spawn loadout when set (bots use profile-derived kit).
         p.setLoadout(p._spawnLoadout || CFG.DEFAULT_SPELL_LOADOUT);
