@@ -54,6 +54,12 @@ export const BOT_PROFILES = {
       // bots don't spam fireball exclusively — homing wins the roll whenever
       // it's off cooldown, giving this tier real kit variety (see F1 review).
       fireball: 0.5,
+      // Draft-pool weights for the wider DOTA roster, all kept ≤ boomerang's
+      // 0.4 so a drafted smart bot's *default* (non-draft) loadout ranking is
+      // unaffected — low-finesse brawler avoids telegraphed/channel casts.
+      target: 0.35, stun: 0.3, push: 0.35, pull: 0.2, explode: 0.2,
+      vacuum: 0.15, swap: 0.1, heal: 0.15, invisible: 0.1,
+      teleport: 0.3, windWalk: 0.25, rush: 0.35, blink: 0.25,
     },
   },
 
@@ -76,6 +82,12 @@ export const BOT_PROFILES = {
       thrust: 0.4, shield: 0.7, meteor: 0.5, lightning: 0.8,
       gravity: 0.6, homing: 0.6, bouncer: 0.8, boomerang: 0.7, fireSpray: 0.5,
       fireball: 0.8,
+      // Draft-pool weights, all kept ≤ homing's 0.6 so a drafted brilliant
+      // bot's default (non-draft) loadout ranking is unaffected — trickster
+      // leans into control/utility (stun, swap, invisible) more than smart.
+      target: 0.55, stun: 0.5, push: 0.45, pull: 0.5, explode: 0.5,
+      vacuum: 0.4, swap: 0.45, heal: 0.35, invisible: 0.5,
+      teleport: 0.5, windWalk: 0.5, rush: 0.35, blink: 0.55,
     },
   },
 
@@ -98,11 +110,29 @@ export const BOT_PROFILES = {
       thrust: 0.6, shield: 0.9, meteor: 0.9, lightning: 0.95,
       gravity: 0.85, homing: 0.7, bouncer: 0.7, boomerang: 0.8, fireSpray: 0.4,
       fireball: 0.75,
+      // Draft-pool weights, all kept ≤ boomerang's 0.8 so a drafted expert
+      // bot's default (non-draft) loadout ranking is unaffected — disciplined
+      // pro leans hardest into the highest-value new spells (target, explode).
+      target: 0.75, stun: 0.65, push: 0.55, pull: 0.6, explode: 0.75,
+      vacuum: 0.45, swap: 0.55, heal: 0.4, invisible: 0.45,
+      teleport: 0.6, windWalk: 0.45, rush: 0.4, blink: 0.6,
     },
   },
 };
 
 const BOT_DEFAULT_CAST_RANGE = 16; // fallback for spells without an explicit range
+
+// Spells that reposition the caster — used both by the edge-danger escape
+// branch in selectAbility() and by the "always include an escape spell" rule
+// in botSpellLoadout()/botDraftPick() below.
+const MOBILITY_SPELLS = ["thrust", "teleport", "blink", "windWalk", "rush"];
+
+// New DOTA-roster spells (Step: bot draft-aware kit) worth drafting/casting.
+// Kept separate from CFG.SPELLS' full 33 so drag/summon/speed/link/timeShift/
+// pocketWatch/projectile/splitter/disable — which need bot-AI handling this
+// pass doesn't add (channel-move restrictions, redundant with rush/windWalk,
+// or item-like semantics) — are left out of the weighted draft/combat pool.
+const VARIETY_SPELLS = ["swap", "pull", "stun", "explode", "target", "push", "vacuum", "heal", "invisible", "blink"];
 
 // ── Skill module: aimWithLead ──────────────────────────────────────────────
 // Intercept-aim: adjust angle to lead a target moving at estimated velocity.
@@ -190,6 +220,17 @@ function positioning(sim, bot, target, profile, dodgeVec) {
   const centerDist = Math.hypot(bot.x, bot.z) || 1;
   const edgeDanger = sim.arena.radius - centerDist < 4;
 
+  // Ring-shrink lookahead: bias positioning toward where the ring WILL be a
+  // few seconds from now (using the sim's own shrink rate), not just where it
+  // is this tick, so bots start drifting inward before they're forced to —
+  // mirrors a human anticipating the shrink instead of reacting to it.
+  const SHRINK_LOOKAHEAD_SEC = 4;
+  const shrinking = !sim.practiceMode && sim.playTime > CFG.ROUND.SHRINK_START_DELAY;
+  const projectedRadius = shrinking
+    ? Math.max(CFG.ARENA_MIN_RADIUS, sim.arena.radius - CFG.ROUND.SHRINK_RATE * SHRINK_LOOKAHEAD_SEC)
+    : sim.arena.radius;
+  const projectedEdgeDanger = !edgeDanger && projectedRadius - centerDist < 4;
+
   let mx = 0, mz = 0;
 
   // Active dodge takes highest priority.
@@ -203,14 +244,24 @@ function positioning(sim, bot, target, profile, dodgeVec) {
     const centerX = -bot.x / centerDist, centerZ = -bot.z / centerDist;
     mx += centerX * 1.5;
     mz += centerZ * 1.5;
-  } else if (!dodgeVec) {
-    // Normal intent-driven spacing.
-    if (dist > profile.preferredRange) {
-      mx += towardX * profile.aggression;
-      mz += towardZ * profile.aggression;
-    } else if (dist < profile.retreatRange) {
-      mx -= towardX;
-      mz -= towardZ;
+  } else {
+    if (projectedEdgeDanger) {
+      // Gentle preemptive drift toward centre — weaker than the hard
+      // edgeDanger pull above, layered with normal spacing rather than
+      // overriding it.
+      const centerX = -bot.x / centerDist, centerZ = -bot.z / centerDist;
+      mx += centerX * 0.5;
+      mz += centerZ * 0.5;
+    }
+    if (!dodgeVec) {
+      // Normal intent-driven spacing.
+      if (dist > profile.preferredRange) {
+        mx += towardX * profile.aggression;
+        mz += towardZ * profile.aggression;
+      } else if (dist < profile.retreatRange) {
+        mx -= towardX;
+        mz -= towardZ;
+      }
     }
   }
 
@@ -222,6 +273,67 @@ function positioning(sim, bot, target, profile, dodgeVec) {
   mz += towardX * strafeAmt * strafeSign;
 
   return [mx, mz];
+}
+
+// ── Mob-awareness helpers (used by selectAbility) ──────────────────────────
+
+// A big mob's active telegraph channel covers the ground it's about to hit;
+// firing a long-cooldown single-target/general-zoning spell at a player
+// standing inside it is often wasted — the mob's own attack lands first (or
+// displaces them) for free. Returns true when (x,z) sits in any live channel.
+function mobTelegraphCovers(sim, x, z) {
+  for (const mob of sim.mobs) {
+    if (!mob.alive || !mob.channel) continue;
+    const r = mob.channel.r ?? 0;
+    if (Math.hypot(x - mob.channel.tx, z - mob.channel.tz) <= r) return true;
+  }
+  return false;
+}
+
+// Nearest live, fully-arrived big mob (skips minions and mid-entrance mobs,
+// neither of which are valid AoE targets yet) — a legitimate displacement/
+// damage target in its own right, not just a hazard to dodge.
+function nearestBigMob(sim, bot) {
+  let best = null, bestDist = Infinity;
+  for (const mob of sim.mobs) {
+    if (!mob.alive || mob.entering > 0 || mob.parentId) continue;
+    const d = Math.hypot(mob.x - bot.x, mob.z - bot.z);
+    if (d < bestDist) { bestDist = d; best = mob; }
+  }
+  return best ? { mob: best, dist: bestDist } : null;
+}
+
+// True when a mob sits roughly on the bot→target line, "blocking the path"
+// even when it isn't strictly closer than the player target itself.
+function mobBlocksPath(bot, target, mob) {
+  const dx = target.x - bot.x, dz = target.z - bot.z;
+  const len2 = dx * dx + dz * dz || 1;
+  let t = ((mob.x - bot.x) * dx + (mob.z - bot.z) * dz) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const px = bot.x + dx * t, pz = bot.z + dz * t;
+  return Math.hypot(mob.x - px, mob.z - pz) < 3.5;
+}
+
+// Displacement spells (push/pull/swap) score higher when the projected
+// result lands the victim further past the arena rim — mirrors a human
+// "ring out" read. The displacement math is a rough KB-magnitude estimate
+// (no wall/ground collision), which is precise enough for AI scoring.
+function edgePlayBonus(spellId, bot, target) {
+  const outward = Math.hypot(target.x, target.z) || 1;
+  let dispX = 0, dispZ = 0;
+  if (spellId === "push") {
+    const dx = target.x - bot.x, dz = target.z - bot.z;
+    const d = Math.hypot(dx, dz) || 1;
+    dispX = (dx / d) * 6; dispZ = (dz / d) * 6;
+  } else if (spellId === "pull") {
+    dispX = (bot.x - target.x) * 0.6; dispZ = (bot.z - target.z) * 0.6;
+  } else if (spellId === "swap") {
+    dispX = bot.x - target.x; dispZ = bot.z - target.z;
+  } else {
+    return 0;
+  }
+  const projected = Math.hypot(target.x + dispX, target.z + dispZ);
+  return Math.max(0, projected - outward) * 0.12;
 }
 
 // ── Skill module: selectAbility ────────────────────────────────────────────
@@ -241,18 +353,26 @@ function selectAbility(sim, bot, target, dist, profile) {
   const botHighCharge = bot.charge > 1.2;
   const w = profile.abilityWeights || {};
 
-  // ── Emergency escape: thrust/teleport only when genuinely edge-endangered ─
+  // ── Emergency escape: any owned mobility spell, aimed toward arena centre
+  // (world origin) so blink/teleport/thrust actually relocate the bot away
+  // from the rim; windWalk/rush are self-buffs and ignore tx/tz harmlessly.
+  // Generalizes the old thrust/teleport-only check so drafted kits — which
+  // may carry blink/windWalk/rush instead — can always escape.
   if (edgeDanger) {
-    if (bot.canCast("thrust")) return { spell: "thrust", tx: 0, tz: 0 };
-    if (bot.canCast("teleport")) return { spell: "teleport", tx: 0, tz: 0 };
+    for (const id of MOBILITY_SPELLS) {
+      if (bot.canCast(id)) return { spell: id, tx: 0, tz: 0 };
+    }
+    // No reposition spell available — invisibility at least denies aim while
+    // the bot walks back toward centre (positioning() already pulls inward).
+    if (bot.canCast("invisible")) return { spell: "invisible", tx: 0, tz: 0 };
   }
 
   const candidates = [];
-  const tryAdd = (spell, base) => {
+  const tryAdd = (spell, base, aim) => {
     if (!bot.canCast(spell)) return;
     const weight = w[spell] ?? 0.5;
     if (weight <= 0) return;
-    candidates.push({ spell, score: base * weight });
+    candidates.push({ spell, score: base * weight, aim: aim || null });
   };
 
   // ── KO burst: target is near edge AND has high charge ──────────────────
@@ -264,20 +384,47 @@ function selectAbility(sim, bot, target, dist, profile) {
     if (dist < 7 && !edgeDanger) tryAdd("thrust", 1.5);
   }
 
-  // ── Self-defence: shield when own charge is high ────────────────────────
+  // ── Self-defence: shield/heal when own charge or HP is a liability ──────
   if (botHighCharge && dist < 16) tryAdd("shield", 2.0);
+  // Heal is a 2s channel — only worth starting with breathing room, not
+  // mid-exchange where it just eats a hit for free.
+  if (bot.hp < bot.maxHp * 0.35 && dist > profile.preferredRange) tryAdd("heal", 1.2);
+
+  // ── Mob awareness ────────────────────────────────────────────────────────
+  // A nearby, fully-arrived big mob is a legitimate AoE target in its own
+  // right when it's closer than the player (or blocking the path to them) —
+  // don't waste area spells swinging at empty space across the arena.
+  const mobThreat = nearestBigMob(sim, bot);
+  const mobIsBetterAoeTarget = !!mobThreat && (mobThreat.dist < dist || mobBlocksPath(bot, target, mobThreat.mob));
+  // Don't waste a long-cooldown general-zoning cast on a player a mob is
+  // about to blast anyway — the mob does that work for free.
+  const zoneDamp = mobTelegraphCovers(sim, target.x, target.z) ? 0.4 : 1;
 
   // ── General zoning / combat ────────────────────────────────────────────
-  if (dist <= reach("lightning")) tryAdd("lightning", 1.0);
-  if (dist <= reach("fireball")) tryAdd("fireball", 0.85);
-  if (dist <= reach("meteor")) tryAdd("meteor", 0.9);
-  if (dist <= reach("gravity")) tryAdd("gravity", 0.8);
-  if (dist <= reach("homing")) tryAdd("homing", 0.7);
-  if (dist <= reach("boomerang")) tryAdd("boomerang", 0.7);
-  if (dist <= reach("bouncer")) tryAdd("bouncer", 0.6);
-  if (dist <= reach("fireSpray")) tryAdd("fireSpray", 0.55);
-  if (dist <= reach("drain")) tryAdd("drain", 0.5);
-  if (dist <= reach("disable")) tryAdd("disable", 0.55);
+  if (dist <= reach("lightning")) tryAdd("lightning", 1.0 * zoneDamp);
+  if (dist <= reach("fireball")) tryAdd("fireball", 0.85 * zoneDamp);
+  if (dist <= reach("meteor")) {
+    const useMob = mobIsBetterAoeTarget && mobThreat.dist <= reach("meteor");
+    tryAdd("meteor", useMob ? 1.0 : 0.9 * zoneDamp, useMob ? mobThreat.mob : null);
+  }
+  if (dist <= reach("gravity")) tryAdd("gravity", 0.8 * zoneDamp);
+  if (dist <= reach("homing")) tryAdd("homing", 0.7 * zoneDamp);
+  if (dist <= reach("boomerang")) tryAdd("boomerang", 0.7 * zoneDamp);
+  if (dist <= reach("bouncer")) tryAdd("bouncer", 0.6 * zoneDamp);
+  if (dist <= reach("fireSpray")) tryAdd("fireSpray", 0.55 * zoneDamp);
+  if (dist <= reach("drain")) tryAdd("drain", 0.5 * zoneDamp);
+  if (dist <= reach("disable")) tryAdd("disable", 0.55 * zoneDamp);
+  // ── DOTA-roster spells (see VARIETY_SPELLS / BOT_PROFILES abilityWeights) ─
+  if (dist <= reach("target")) tryAdd("target", 0.85 * zoneDamp);
+  if (dist <= reach("stun")) tryAdd("stun", 0.6 * zoneDamp);
+  if (dist <= reach("push")) tryAdd("push", 0.5 * zoneDamp + edgePlayBonus("push", bot, target));
+  if (dist <= reach("pull")) tryAdd("pull", 0.5 * zoneDamp + edgePlayBonus("pull", bot, target));
+  if (dist <= reach("explode")) {
+    const useMob = mobIsBetterAoeTarget && mobThreat.dist <= reach("explode");
+    tryAdd("explode", useMob ? 0.85 : 0.75 * zoneDamp, useMob ? mobThreat.mob : null);
+  }
+  if (dist <= (SPELLS.vacuum?.radius ?? 8) + 2) tryAdd("vacuum", 0.45 * zoneDamp);
+  if (dist <= reach("swap")) tryAdd("swap", 0.3 * zoneDamp + edgePlayBonus("swap", bot, target));
   // Defensive shield fallback — low-priority, and only worth considering when
   // the target is close enough to plausibly threaten the bot soon (own high
   // charge is already covered above). Without this gate bots would shield
@@ -303,7 +450,7 @@ function selectAbility(sim, bot, target, dist, profile) {
     return { spell: 'gravity', tx: bot.x + (gwx - bot.x) * scale, tz: bot.z + (gwz - bot.z) * scale };
   }
 
-  return { spell: best.spell, tx: target.x, tz: target.z };
+  return { spell: best.spell, tx: best.aim?.x ?? target.x, tz: best.aim?.z ?? target.z };
 }
 
 // ── botSpellLoadout ────────────────────────────────────────────────────────
@@ -335,6 +482,78 @@ export function botSpellLoadout(profile, slotCount = CFG.SPELL_SLOT_COUNT) {
     chosen[chosen.length - 1] = escapeId; // swap out the lowest-ranked chosen spell
   }
   return chosen;
+}
+
+// ── botDraftPick ────────────────────────────────────────────────────────────
+// Deterministic, seeded, weighted sample-without-replacement over the wide
+// spell roster (CFG.SPELLS, 33 spells) producing a legal 6-spell draft pick
+// for a bot — the same shape a human commits via toggleDraftSpell/
+// applyDraftTemplate (fireball excluded; always ≤ SPELL_SLOT_COUNT unique
+// ids). Candidate weights come straight from the profile's abilityWeights so
+// a drafted bot can actually cast whatever it picks (selectAbility scores
+// every candidate spell by this same table) — no separate scoring table to
+// keep in sync. `rand` must be a seeded PRNG (see makePrng/idSeed in rng.js);
+// never Math.random, so two sims with the same bot id + profile draft
+// identically (see sim.js setBotRoster).
+function draftCandidateWeights(profile) {
+  const w = profile.abilityWeights || {};
+  const table = {};
+  for (const [id, weight] of Object.entries(w)) {
+    if (id === "fireball" || weight <= 0 || !SPELLS[id]) continue;
+    table[id] = weight;
+  }
+  // Safety net: guarantee every mobility spell is draftable even if a future
+  // profile omits one, so the "always include an escape spell" rule below
+  // always has a pool to draw from.
+  for (const id of MOBILITY_SPELLS) {
+    if (!(id in table) && SPELLS[id]) table[id] = 0.35;
+  }
+  return table;
+}
+
+// Weighted sample of `count` unique ids from `weights` without replacement.
+function weightedSampleWithoutReplacement(weights, count, rand) {
+  const pool = Object.entries(weights).map(([id, w]) => ({ id, w }));
+  const picked = [];
+  while (picked.length < count && pool.length) {
+    const total = pool.reduce((s, c) => s + c.w, 0);
+    let r = rand() * total;
+    let idx = pool.length - 1;
+    for (let i = 0; i < pool.length; i++) {
+      r -= pool[i].w;
+      if (r <= 0) { idx = i; break; }
+    }
+    picked.push(pool[idx].id);
+    pool.splice(idx, 1);
+  }
+  return picked;
+}
+
+export function botDraftPick(profile, rand) {
+  const table = draftCandidateWeights(profile);
+  const slotCount = CFG.SPELL_SLOT_COUNT;
+  const picks = weightedSampleWithoutReplacement(table, slotCount, rand);
+
+  // Guarantee at least one mobility/escape spell, mirroring botSpellLoadout's
+  // rule — draft picks must always leave selectAbility's edge-danger branch
+  // reachable, whatever the weighted roll produced.
+  if (!picks.some((id) => MOBILITY_SPELLS.includes(id))) {
+    const mobilityPool = {};
+    for (const id of MOBILITY_SPELLS) {
+      if (SPELLS[id]) mobilityPool[id] = table[id] ?? 0.35;
+    }
+    const [chosenMobility] = weightedSampleWithoutReplacement(mobilityPool, 1, rand);
+    if (chosenMobility) {
+      // Replace the lowest-weighted pick (last-ranked by draft weight).
+      let worstIdx = 0, worstW = Infinity;
+      picks.forEach((id, i) => {
+        const wgt = table[id] ?? 0;
+        if (wgt < worstW) { worstW = wgt; worstIdx = i; }
+      });
+      picks[worstIdx] = chosenMobility;
+    }
+  }
+  return picks;
 }
 
 // ── BotBrain ───────────────────────────────────────────────────────────────

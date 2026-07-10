@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
 <title>Voxel Warlock Brawl — Low-Poly Spell-Slinging Arena Brawler</title>
 
 <!-- ===== SEO / Social / PWA ===== -->
 <!-- Core meta -->
-<meta name="description" content="Spell-sling in a low-poly voxel arena. Knock rivals into the lava, outlast the shrinking platform, and be the last warlock standing. Free browser P2P multiplayer — no download." />
+<meta name="description" content="Free browser arena brawler: spell-sling in a low-poly voxel arena, knock rivals into the lava, and be the last warlock standing. P2P multiplayer, no download." />
 <meta name="keywords" content="warlock brawl, voxel game, browser game, three.js game, webgl game, p2p multiplayer, arena brawler, spell slinging, knockback, free online game" />
 <meta name="author" content="Carlo Miguel Dy" />
 <meta name="theme-color" content="#0a0814" />
@@ -112,6 +112,16 @@
   }
 }
 </script>
+<!-- PWA service worker: registered after load so it never delays first paint;
+     updateViaCache: 'none' makes the browser always re-check sw.js itself
+     (Vercel also serves it with no-cache headers — see vercel.json). -->
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
+    });
+  }
+</script>
 </head>
 <body>
   <canvas id="game-canvas"></canvas>
@@ -150,7 +160,7 @@
           <li class="onboarding-rail-step" data-step="0"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Name</span></li>
           <li class="onboarding-rail-step" data-step="1"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Character</span></li>
           <li class="onboarding-rail-step" data-step="2"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Goal</span></li>
-          <li class="onboarding-rail-step" data-step="3"><span class="onboarding-rail-dot" aria-hidden="true"></span><span class="onboarding-rail-label">Hotkeys</span></li>
+          <li class="onboarding-rail-step" data-step="3"><span class="onboarding-rail-dot" aria-hidden="true"></span><span id="onboarding-rail-label-hotkeys" class="onboarding-rail-label">Hotkeys</span></li>
         </ol>
       </header>
 
@@ -207,8 +217,8 @@
         </section>
 
         <section class="onboarding-step" data-step="3" aria-hidden="true">
-          <h3 class="onboarding-step-title">Set your hotkeys</h3>
-          <p class="onboarding-step-desc">Click a slot, then press a key to bind it.</p>
+          <h3 id="onboarding-hotkeys-title" class="onboarding-step-title">Set your hotkeys</h3>
+          <p id="onboarding-hotkeys-desc" class="onboarding-step-desc">Click a slot, then press a key to bind it.</p>
           <div id="onboarding-hotkeys" class="onboarding-hotkeys"></div>
           <button type="button" id="onboarding-hotkeys-reset" class="btn btn-ghost onboarding-hotkeys-reset">Reset to defaults</button>
           <p id="onboarding-hotkeys-feedback" class="onboarding-hotkeys-feedback" aria-live="polite"></p>
@@ -413,6 +423,7 @@
         <div id="auth-form" class="auth-form" aria-live="polite"></div>
 
         <button type="button" id="btn-replay-intro" class="btn btn-ghost btn-replay-intro">Replay Intro</button>
+        <button type="button" id="btn-open-settings" class="btn btn-ghost btn-open-settings">Settings</button>
       </div>
 
       <!-- TUTORIAL sub-screen -->
@@ -760,6 +771,7 @@
           <button id="pause-sfx">SFX: On</button>
           <button id="pause-music">Music: On</button>
         </div>
+        <button id="pause-settings" class="btn-ghost">Settings</button>
         <button id="pause-help" class="btn-ghost">How to Play</button>
         <div id="pause-controls" class="pause-controls hidden"></div>
         <button id="pause-social" class="btn-ghost">Voice &amp; Chat</button>
@@ -792,6 +804,15 @@
       <h2 id="social-title" class="social-title">Voice &amp; Chat</h2>
       <div id="social-settings-body"></div>
       <button id="social-close" class="btn btn-ghost" type="button">Done</button>
+    </div>
+  </div>
+
+  <!-- ===== Settings: audio volume, graphics quality, controls (WS-H) ===== -->
+  <div id="game-settings" class="pause-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="game-settings-title">
+    <div class="panel settings-panel">
+      <h2 id="game-settings-title" class="social-title">Settings</h2>
+      <div id="game-settings-body"></div>
+      <button id="game-settings-close" class="btn btn-ghost" type="button">Done</button>
     </div>
   </div>
 

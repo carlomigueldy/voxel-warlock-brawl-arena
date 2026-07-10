@@ -14,8 +14,10 @@ import {
 } from "./voxel.js";
 import { acquireBolt, releaseBolt } from "./pool.js";
 import { PROP_BUILDERS } from "./props.js";
+import { computeDecorationPlacements } from "./decorations.js";
+import { buildDecorations } from "./decorationsView.js";
+import { preloadAllPropModels } from "./propModel.js";
 import {
-  loadCharacterTemplate,
   characterReady,
   buildCharacterInstance,
 } from "./character.js";
@@ -30,19 +32,30 @@ import { effectPos } from "./renderer-util.js";
 import { VFX_REGISTRY, getVfx } from "./vfx/duotone.js";
 import { buildChainBeam } from "./vfx/beams.js";
 import { getReticle } from "./vfx/reticles.js";
+import { resolveTier, QUALITY_PRESETS, registerQualityHandler } from "./quality.js";
+import { createSkybox } from "./skybox.js";
 
 export class GameRenderer {
   constructor(canvas) {
     this.canvas = canvas;
+    // Quality tier (WS-I): resolved once at construction from ?quality= /
+    // localStorage / device auto-detect (see quality.js). setQualityTier()
+    // below re-applies this live when the settings overlay changes it.
+    this._qualityPreset = QUALITY_PRESETS[resolveTier()];
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this._qualityPreset.pixelRatioCap));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = this._qualityPreset.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0d0b1a);
     this.scene.fog = new THREE.Fog(0x0d0b1a, 40, 90);
+
+    // Permanent per-theme gradient skybox (WS-J) — created once, retinted in
+    // place by _applyHazardTheme(); never rebuilt per-round.
+    this._skybox = createSkybox();
+    this.scene.add(this._skybox.mesh);
 
     this.camera = new THREE.PerspectiveCamera(
       55, window.innerWidth / window.innerHeight, 0.1, 300
@@ -78,6 +91,10 @@ export class GameRenderer {
     // Map layout geometry (plateaus, ramps, obstacles) rebuilt once per round.
     this._mapVersion = -1;   // last snapshot.mapV applied
     this._mapMeshes  = [];   // Groups built from the current layout
+    // Cosmetic dungeon-dressing decorations (WS-C), rebuilt alongside the map
+    // layout every round — see _rebuildMapMeshes/decorations.js.
+    this._decorGroup = null;
+    this._decorDispose = null;
 
     // Smoothed camera target.
     this._camTarget = new THREE.Vector3(0, 0, 0);
@@ -88,24 +105,110 @@ export class GameRenderer {
     this._playerMeta = null;
     this._reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-    // Preload every selectable character so any player's pick renders as a GLB
-    // (falling back to the voxel warlock per-player only if its load fails).
-    for (const ch of CFG.CHARACTERS) {
-      loadCharacterTemplate(ch.id)
-        .then(() => this._upgradePlayersToGLB())
-        .catch((err) => console.warn(`Character GLB '${ch.id}' unavailable, using voxel fallback:`, err));
-    }
+    // Character GLB preload is NOT triggered here (WS-I asset-diet pass):
+    // src/loader.js already preloads the locally-selected character fully
+    // before the loader gate's Enter button unlocks, and src/preview.js
+    // preloads every selectable character for the menu turntable carousel.
+    // Both share character.js's `_loadPromises` cache with this constructor's
+    // former loop, so re-triggering all 4 here was pure duplication — any
+    // player mesh built before its template resolves still upgrades in place
+    // via _upgradePlayersToGLB() once one of those other callers finishes it.
 
-    // Preload the 4 big-mob Meshy GLBs so mobs render as rigged models instead
-    // of the procedural fallback. Mobs are built once and cached at spawn, so
+    // The 4 big-mob Meshy GLBs are deferred to the first non-lobby snapshot
+    // (see apply()) rather than fired here at construction time, so they
+    // don't compete with character/icon fetches for bandwidth during the
+    // initial loader-screen load. Mobs are built once and cached at spawn, so
     // any built before its template resolves gets upgraded in-place once ready.
+    this._mobPreloadStarted = false;
+
+    // Preload every dungeon-prop GLB (WS-C). Decorations are rebuilt wholesale
+    // every round via _rebuildMapMeshes, so — unlike characters/mobs above —
+    // there's no "upgrade already-built instances in place" step needed here:
+    // whichever templates have resolved by the next round's rebuild get used.
+    preloadAllPropModels();
+
+    // Let the settings overlay (src/ui.js) push live quality changes here via
+    // window.__applyQualityTier -> quality.js -> this hook, without quality.js
+    // needing to import renderer.js back (it's already imported above).
+    registerQualityHandler((preset) => this.setQualityTier(preset));
+
+    window.addEventListener("resize", () => this._onResize());
+
+    // Bloom (high tier only) is built lazily so low/med tiers never pay for
+    // the EffectComposer/UnrealBloomPass addon fetch. this._composer stays
+    // null on low/med, and permanently null if the CDN addon import fails
+    // (see _ensureComposer's catch) — the render loop below always falls
+    // back to a plain this.renderer.render() in that case.
+    this._composer = null;
+    this._bloomPass = null;
+    this._composerFailed = false;
+    if (this._qualityPreset.bloom) this._ensureComposer();
+  }
+
+  // Live-apply a quality preset (pixel ratio cap, shadow toggle, bloom).
+  // Particle scaling is read directly from quality.js's getParticleScale()
+  // at each VFX use site (burst/trail/hazard-detail builders), not stored
+  // here.
+  setQualityTier(preset) {
+    this._qualityPreset = preset;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, preset.pixelRatioCap));
+    this.renderer.shadowMap.enabled = preset.shadows;
+    if (this._sun) this._sun.castShadow = preset.shadows;
+    if (preset.bloom && !this._composerFailed) {
+      this._ensureComposer();
+    } else if (this._composer) {
+      this._composer.dispose();
+      this._composer = null;
+      this._bloomPass = null;
+    }
+  }
+
+  // Lazily import the postprocessing addons (three/addons/postprocessing/*
+  // — verified available under the three@0.160.0 CDN import map in
+  // index.html) and build an EffectComposer with a conservative
+  // UnrealBloomPass. Guarded: if the CDN import ever fails (offline addon
+  // path, CDN outage), this permanently falls back to plain rendering for
+  // the rest of the session rather than retrying every tier toggle.
+  async _ensureComposer() {
+    if (this._composer || this._composerFailed) return;
+    try {
+      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }] = await Promise.all([
+        import("three/addons/postprocessing/EffectComposer.js"),
+        import("three/addons/postprocessing/RenderPass.js"),
+        import("three/addons/postprocessing/UnrealBloomPass.js"),
+      ]);
+      // A tier toggle or hazard change may have raced this fetch — bail if
+      // bloom got turned back off, or a composer already landed, meanwhile.
+      if (this._composer || !this._qualityPreset.bloom) return;
+      const composer = new EffectComposer(this.renderer);
+      composer.addPass(new RenderPass(this.scene, this.camera));
+      const strength = (this._hazard && this._hazard.bloomStrength) ?? 0.35;
+      const bloom = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        strength, 0.4, 0.85
+      );
+      composer.addPass(bloom);
+      composer.setSize(window.innerWidth, window.innerHeight);
+      this._composer = composer;
+      this._bloomPass = bloom;
+    } catch (err) {
+      console.warn("Bloom post-processing addons unavailable, falling back to plain rendering:", err);
+      this._composerFailed = true;
+      this._composer = null;
+      this._bloomPass = null;
+    }
+  }
+
+  // Preload the 4 big-mob Meshy GLBs (see the constructor comment above for
+  // why this is deferred rather than fired eagerly). Idempotent — apply()
+  // guards on this._mobPreloadStarted so it only runs once per renderer.
+  _preloadMobModels() {
+    this._mobPreloadStarted = true;
     for (const type of Object.keys(MOB_MODEL_ASSETS)) {
       loadMobModelTemplate(type)
         ?.then(() => this._upgradeMobsToGLB())
         .catch((err) => console.warn(`Mob GLB '${type}' unavailable, using voxel fallback:`, err));
     }
-
-    window.addEventListener("resize", () => this._onResize());
   }
 
   setAudio(audio) { this.audio = audio; }
@@ -122,7 +225,7 @@ export class GameRenderer {
     this.scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xfff0e0, 1.1);
     sun.position.set(20, 40, 20);
-    sun.castShadow = true;
+    sun.castShadow = this._qualityPreset.shadows;
     sun.shadow.mapSize.set(1024, 1024);
     sun.shadow.camera.left = -40;
     sun.shadow.camera.right = 40;
@@ -130,6 +233,7 @@ export class GameRenderer {
     sun.shadow.camera.bottom = -40;
     sun.shadow.camera.far = 120;
     this.scene.add(sun);
+    this._sun = sun; // referenced by setQualityTier() for live shadow toggling
     // Hazard glow from below (color is themed per map in _applyHazardTheme).
     const glow = new THREE.PointLight(0xff3a1e, 0.8, 60);
     glow.position.set(0, -6, 0);
@@ -147,21 +251,42 @@ export class GameRenderer {
     }
   }
 
-  // Tint the under-glow light and the scene fog/background to match the active
-  // hazard so each map feels like its own place (lava, ocean, swamp, etc.).
+  // Tint the under-glow light, scene fog, skybox gradient, and (high-tier)
+  // bloom strength to match the active hazard so each map feels like its own
+  // place (lava, ocean, swamp, etc.).
   _applyHazardTheme(hazard) {
     if (!hazard || this._hazardId === hazard.id) return;
     this._hazardId = hazard.id;
+    this._hazard = hazard; // read by _ensureComposer() for per-theme bloomStrength
     if (this._hazardGlow) this._hazardGlow.color.setHex(hazard.glow ?? hazard.color);
     const fogHex = hazard.fog ?? 0x0d0b1a;
-    this.scene.background = new THREE.Color(fogHex);
-    if (this.scene.fog) this.scene.fog.color.setHex(fogHex);
+    if (this.scene.fog) {
+      this.scene.fog.color.setHex(fogHex);
+      this.scene.fog.near = hazard.fogNear ?? 40;
+      this.scene.fog.far = hazard.fogFar ?? 90;
+    }
+    if (this._skybox && hazard.sky) {
+      this._skybox.setSkyTheme(hazard.sky.top, hazard.sky.bottom);
+      // Solid fallback matches the sky's horizon color so there's no seam
+      // where the gradient sphere meets whatever scene.background shows
+      // through (e.g. before the skybox mesh is ready to fill the frame).
+      this.scene.background = new THREE.Color(hazard.sky.bottom);
+    } else {
+      this.scene.background = new THREE.Color(fogHex);
+    }
+    if (this._bloomPass) this._bloomPass.strength = hazard.bloomStrength ?? 0.35;
   }
 
   _onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    // EffectComposer.setSize() resizes every pass with a setSize() method
+    // (RenderPass + UnrealBloomPass included) in place, so the bloom render
+    // targets stay correctly sized without a full dispose/rebuild on every
+    // resize event (which can fire repeatedly on mobile as browser chrome
+    // shows/hides).
+    if (this._composer) this._composer.setSize(window.innerWidth, window.innerHeight);
   }
 
   setLocalId(id) { this.localId = id; }
@@ -556,6 +681,12 @@ export class GameRenderer {
   // Apply a snapshot from the simulation/network.
   apply(snapshot, playerMeta) {
     if (!snapshot) return;
+    // Kick off the deferred big-mob GLB preload (see constructor comment)
+    // once the match has left the lobby — well before mobs actually spawn in
+    // PLAYING, but off the critical path of the initial loader-screen fetch.
+    if (!this._mobPreloadStarted && snapshot.phase && snapshot.phase !== "lobby") {
+      this._preloadMobModels();
+    }
     // Cached so showChatBubble() (called directly by main.js on a chat event,
     // outside this per-frame pass) can resolve userId for the mute check.
     this._playerMeta = playerMeta;
@@ -1755,7 +1886,8 @@ export class GameRenderer {
 
     this._updateCamera(dt);
     this._updateReticle(dt);
-    this.renderer.render(this.scene, this.camera);
+    if (this._composer) this._composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   // Position/hide the local player's hold-to-aim targeting reticle
@@ -1859,6 +1991,13 @@ export class GameRenderer {
       });
     }
     this._mapMeshes = [];
+
+    if (this._decorDispose) {
+      this._decorDispose();
+      this._decorGroup = null;
+      this._decorDispose = null;
+    }
+
     if (!layout) return;
 
     // Each entry stores its footprint CENTRE (cx,cz) so we can hide features
@@ -1885,6 +2024,19 @@ export class GameRenderer {
       this.scene.add(og);
       this._mapMeshes.push({ g: og, cx: ob.x, cz: ob.z });
     }
+
+    // Cosmetic dungeon-dressing decorations (WS-C): purely visual, never
+    // registered with the sim/collision layer. Seeded from the same
+    // host-broadcast layout.seed mapgen used, so every P2P client places
+    // identical decorations without exchanging any extra data. this.arena.radius
+    // is already the round's starting radius here — setRadius() runs earlier
+    // in apply() than this rebuild, and mapV only bumps at round start.
+    const placements = computeDecorationPlacements(
+      layout.seed, worldId, this.arena.radius, layout.obstacles
+    );
+    const { group, dispose } = buildDecorations(this.scene, placements);
+    this._decorGroup = group;
+    this._decorDispose = dispose;
   }
 
   // Hide map features whose footprint centre has left the platform as the arena
@@ -1893,6 +2045,15 @@ export class GameRenderer {
   _cullMapMeshes(radius, worldId) {
     for (const e of this._mapMeshes) {
       e.g.visible = isOnArenaWorld(worldId, radius, e.cx, e.cz);
+    }
+    // Decoration ring dressing sits outside the play radius by design (like
+    // the hazard's ambient detail props) and is never culled; interior
+    // accents cull exactly like obstacles.
+    if (this._decorGroup) {
+      for (const holder of this._decorGroup.children) {
+        if (holder.userData.ring) continue;
+        holder.visible = isOnArenaWorld(worldId, radius, holder.userData.cx, holder.userData.cz);
+      }
     }
   }
 

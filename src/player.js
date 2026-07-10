@@ -578,6 +578,11 @@ export class Player {
     let resist = this.mods.kbResist;
     if (this.status.rush > 0) resist += SPELLS.rush.kbResist;
     impulse *= (1 - Math.min(0.85, resist));
+    // Low-HP amplifier: a near-dead player is easier to ring out, since HP
+    // damage alone can no longer kill (see SPELL_DAMAGE_LETHAL). Amplifier is
+    // exactly 1.0 at full HP so full-HP knockback is unchanged.
+    const hpFrac = Math.min(1, Math.max(0, this.hp / this.maxHp));
+    impulse *= 1 + CFG.LOW_HP_KB_AMP_MAX * (1 - hpFrac);
     const len = Math.hypot(dirX, dirZ) || 1;
     this.vx += (dirX / len) * impulse;
     this.vz += (dirZ / len) * impulse;
@@ -585,17 +590,21 @@ export class Player {
     return true;
   }
 
-  // HP damage — SEPARATE from applyHit knockback. Clamps to [0,maxHp]; sets the
-  // player dead at 0 (funnels into sim's existing death-detection loop). Records
-  // the attacker for kill-credit so an HP kill is attributed even with no hit event.
+  // HP damage — SEPARATE from applyHit knockback. Clamps to [0,maxHp]. Design
+  // pillar: knockback -> ring-out/lava is THE kill path, so by default (see
+  // CFG.SPELL_DAMAGE_LETHAL) HP damage floors at CFG.HP_MIN_FLOOR instead of
+  // killing outright; only falling into the hazard is lethal (see step()).
+  // Records the attacker for kill-credit so an HP kill (when lethal) or a
+  // low-HP ring-out is attributed even without a fresh hit event.
   applyDamage(amount, byId = null) {
     if (!this.alive || this.falling) return false; // already doomed; ignore
     if (this.invulnerable) return false; // practice mode: no HP damage
     if (!(amount > 0)) return false;
     if (this.status.curse > 0) amount *= this.status.curseMul;
-    this.hp = Math.max(0, this.hp - amount);
+    const floor = CFG.SPELL_DAMAGE_LETHAL ? 0 : CFG.HP_MIN_FLOOR;
+    this.hp = Math.max(floor, this.hp - amount);
     if (byId && byId !== this.id) this.recordAttacker(byId, Date.now());
-    if (this.hp <= 0) {
+    if (CFG.SPELL_DAMAGE_LETHAL && this.hp <= 0) {
       this.hp = 0;
       this.alive = false; // hp death — death loop counts it next (sim.js)
     }

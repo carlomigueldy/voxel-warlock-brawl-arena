@@ -29,18 +29,130 @@ export const CFG = {
   // surface to sell the environment. `kind` selects the motion recipe in
   // voxel.js (buildHazardDetails/animateHazardDetails); `count` is capped for
   // performance and `rise`/`size` tune the look.
+  // WS-J atmosphere fields (appended, existing keys above are untouched):
+  // `sky.top`/`sky.bottom` drive the skybox gradient (src/skybox.js) —
+  // `bottom` is the horizon color and is kept close to `glow` so the
+  // under-hazard light and the sky agree. `fogNear`/`fogFar` retune
+  // scene.fog depth per theme (falls back to 40/90 if omitted).
+  // `bloomStrength` tunes the high-tier UnrealBloomPass per theme (falls
+  // back to a conservative 0.35 in renderer.js if omitted).
   ARENA_HAZARDS: {
     lava: { id: "lava", name: "Lava Sea", style: "lava", color: 0xff3a1e, glow: 0xff3a1e, fog: 0x1a0b08, amp: 0.4, speed: 1.5,
-      detail: { kind: "embers", count: 70, color: 0xff8a3c, size: 0.3, rise: 7 } },
+      detail: { kind: "embers", count: 70, color: 0xff8a3c, size: 0.3, rise: 7 },
+      sky: { top: 0x2a0e0a, bottom: 0xff6a35 }, fogNear: 35, fogFar: 85, bloomStrength: 0.4 },
     ocean: { id: "ocean", name: "Ocean", style: "ocean", color: 0x1f7fd6, glow: 0x2a6fd0, fog: 0x0a1622, amp: 0.6, speed: 1.1,
-      detail: { kind: "spray", count: 60, color: 0xbfe8ff, size: 0.26, rise: 5 } },
+      detail: { kind: "spray", count: 60, color: 0xbfe8ff, size: 0.26, rise: 5 },
+      sky: { top: 0x0a1830, bottom: 0x2a9fc0 }, fogNear: 45, fogFar: 100, bloomStrength: 0.3 },
     swamp: { id: "swamp", name: "Toxic Swamp", style: "swamp", color: 0x4f7a2a, glow: 0x86d040, fog: 0x121a0c, amp: 0.22, speed: 0.6,
-      detail: { kind: "bubbles", count: 45, color: 0xb6f05a, size: 0.34, rise: 2.6 } },
+      detail: { kind: "bubbles", count: 45, color: 0xb6f05a, size: 0.34, rise: 2.6 },
+      sky: { top: 0x182a10, bottom: 0x8ad048 }, fogNear: 30, fogFar: 70, bloomStrength: 0.3 },
     rocks: { id: "rocks", name: "Sharp Rocks", style: "rocks", color: 0x6a5a52, glow: 0x3a2a2a, fog: 0x130f12, amp: 0.05, speed: 0.25, jagged: true,
-      detail: { kind: "dust", count: 40, color: 0x9a8a7a, size: 0.18, rise: 1.4 } },
+      detail: { kind: "dust", count: 40, color: 0x9a8a7a, size: 0.18, rise: 1.4 },
+      sky: { top: 0x2a2830, bottom: 0xc08a4a }, fogNear: 40, fogFar: 90, bloomStrength: 0.3 },
     void: { id: "void", name: "Arcane Abyss", style: "void", color: 0xb24cff, glow: 0xc04cff, fog: 0x140a22, amp: 0.5, speed: 0.9,
-      detail: { kind: "shards", count: 55, color: 0xd79cff, size: 0.32, rise: 3.4 } },
+      detail: { kind: "shards", count: 55, color: 0xd79cff, size: 0.32, rise: 3.4 },
+      sky: { top: 0x0a0612, bottom: 0xc04cff }, fogNear: 50, fogFar: 110, bloomStrength: 0.4 },
   },
+  // --- Decorations (WS-C) ---
+  // Non-collidable dungeon dressing scattered around each map: a "ring" of
+  // props just outside the play radius (on the hazard rim, purely visual —
+  // see src/decorations.js) plus a handful of "interior" accents placed near
+  // (never on) obstacles. Every prop name below must resolve to a GLB in
+  // assets/props/<name>.glb (see scripts/blender/props_gen.py) via
+  // src/propModel.js's PROP_MODEL_NAMES, with a procedural fallback in
+  // src/decorationsView.js while the GLB is still loading.
+  // Per-theme pools are `{ prop, weight }` lists — weighted random pick, not
+  // uniform — so each world's rim/interior dressing leans toward its own
+  // hazard's signature prop without excluding the shared kit entirely.
+  DECOR: {
+    maxCount: 26,           // hard cap on total decorations per round (perf)
+    ringOffsetMin: 1.5,     // ring props sit this far OUTSIDE the arena radius...
+    ringOffsetMax: 6,       // ...up to this far, sunk toward the hazard surface
+    ringSinkY: -0.6,        // world-Y offset applied to ring props (toward the hazard)
+    ringCountMin: 8,
+    ringCountMax: 14,
+    interiorCountMin: 4,
+    interiorCountMax: 8,
+    interiorClearance: 1.5, // min gap (world units) from any obstacle's collision circle
+    themes: {
+      circle: { // lava
+        ring: [
+          { prop: "lava-obsidian-spire", weight: 3 },
+          { prop: "broken-pillar",       weight: 3 },
+          { prop: "torch",               weight: 3 },
+          { prop: "rubble",              weight: 2 },
+          { prop: "rune-stone",          weight: 1 },
+        ],
+        interior: [
+          { prop: "torch",          weight: 3 },
+          { prop: "pillar",         weight: 2 },
+          { prop: "rune-stone",     weight: 2 },
+          { prop: "crystal-cluster",weight: 1 },
+        ],
+      },
+      islands: { // ocean
+        ring: [
+          { prop: "ocean-coral-pillar", weight: 3 },
+          { prop: "broken-pillar",      weight: 2 },
+          { prop: "arch",               weight: 2 },
+          { prop: "rubble",             weight: 2 },
+          { prop: "banner",             weight: 1 },
+        ],
+        interior: [
+          { prop: "torch",        weight: 2 },
+          { prop: "pillar",       weight: 2 },
+          { prop: "rune-stone",   weight: 2 },
+          { prop: "banner",       weight: 1 },
+        ],
+      },
+      bridge: { // swamp
+        ring: [
+          { prop: "swamp-root-arch", weight: 3 },
+          { prop: "broken-pillar",   weight: 2 },
+          { prop: "rubble",          weight: 3 },
+          { prop: "crystal-cluster", weight: 1 },
+          { prop: "rune-stone",      weight: 1 },
+        ],
+        interior: [
+          { prop: "torch",           weight: 2 },
+          { prop: "rune-stone",      weight: 2 },
+          { prop: "rubble",          weight: 2 },
+          { prop: "crystal-cluster", weight: 1 },
+        ],
+      },
+      cross: { // rocks
+        ring: [
+          { prop: "rocks-monolith", weight: 3 },
+          { prop: "rubble",         weight: 3 },
+          { prop: "broken-pillar",  weight: 2 },
+          { prop: "arch",           weight: 1 },
+          { prop: "banner",         weight: 1 },
+        ],
+        interior: [
+          { prop: "torch",      weight: 2 },
+          { prop: "pillar",     weight: 2 },
+          { prop: "rubble",     weight: 2 },
+          { prop: "rune-stone", weight: 1 },
+        ],
+      },
+      ring: { // void
+        ring: [
+          { prop: "void-obelisk",    weight: 3 },
+          { prop: "crystal-cluster", weight: 3 },
+          { prop: "broken-pillar",   weight: 2 },
+          { prop: "rune-stone",      weight: 2 },
+          { prop: "banner",          weight: 1 },
+        ],
+        interior: [
+          { prop: "crystal-cluster", weight: 2 },
+          { prop: "rune-stone",      weight: 2 },
+          { prop: "torch",           weight: 2 },
+          { prop: "pillar",          weight: 1 },
+        ],
+      },
+    },
+  },
+
   VOXEL: 1,                  // voxel size
   LAVA_Y: -4,                // height of the lava plane (death below platform top)
   PLATFORM_TOP: 0,           // top surface of the platform
@@ -133,6 +245,15 @@ export const CFG = {
   // --- Health / damage (Step 1: HP layered over the charge model) ---
   PLAYER_HP_MAX: 180,        // full health on (re)spawn
   BOLT_BASE_DAMAGE: 8,       // fallback projectile damage when a spell omits `dmg`
+  // Design pillar: knockback -> ring-out/lava is THE kill path. Raw spell/mob
+  // HP damage floors at HP_MIN_FLOOR instead of killing outright; only falling
+  // into the hazard (LAVA_Y) is lethal. Low HP amplifies knockback so a
+  // near-dead player is easier to ring out, keeping HP damage meaningful
+  // without letting it be a second kill path. Flip SPELL_DAMAGE_LETHAL to
+  // restore the old hp<=0-kills behavior (e.g. for tests).
+  SPELL_DAMAGE_LETHAL: false,
+  HP_MIN_FLOOR: 1,
+  LOW_HP_KB_AMP_MAX: 0.5,
 
   // --- Ability slots ---
   RUNE_SPAWN_RADIUS: 13,      // also used by mob spawn position logic

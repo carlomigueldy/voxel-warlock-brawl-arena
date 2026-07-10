@@ -383,7 +383,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "gameplay",
-      "status": "todo",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -407,7 +407,9 @@
         "player.js:574-583"
       ],
       "summary": "Stop HP damage from bypassing ring-out as the win condition",
-      "gap_rank": 1
+      "gap_rank": 1,
+      "updated": "2026-07-10",
+      "evidence": "51d0325 feat(balance): floor HP at 1 from spell damage; low-HP knockback amplifier keeps ring-out the kill path (CFG.SPELL_DAMAGE_LETHAL flag)"
     },
     {
       "id": "FEAT-V1-01-02",
@@ -1105,7 +1107,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "mobile",
-      "status": "todo",
+      "status": "done",
       "priority": "P0",
       "labels": [
         "sub-issue",
@@ -1128,7 +1130,9 @@
         "index.html:798-802"
       ],
       "summary": "Let touch players switch spells mid-match",
-      "gap_rank": 5
+      "gap_rank": 5,
+      "updated": "2026-07-10",
+      "evidence": "561dcd9 feat(input): aim-mode-aware touch casting via pure touchAim helper; 4b73371 feat(ui): double-tap-to-cast, touch onboarding"
     },
     {
       "id": "FEAT-V1-05-02",
@@ -1136,7 +1140,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "accessibility",
-      "status": "todo",
+      "status": "done",
       "priority": "P1",
       "labels": [
         "sub-issue",
@@ -1160,7 +1164,9 @@
         "audio.js:28-30"
       ],
       "summary": "Add in-game SFX/music/master volume and graphics quality settings",
-      "gap_rank": 12
+      "gap_rank": 12,
+      "updated": "2026-07-10",
+      "evidence": "4fd696b feat(ui): in-game settings overlay with volume buses and graphics quality tier"
     },
     {
       "id": "FEAT-V1-05-03",
@@ -1168,7 +1174,7 @@
       "type": "sub-issue",
       "phase": "v1",
       "area": "accessibility",
-      "status": "todo",
+      "status": "done",
       "priority": "P2",
       "labels": [
         "sub-issue",
@@ -1192,7 +1198,9 @@
         "onboarding.js:208-220"
       ],
       "summary": "Fix onboarding hotkey capture: add Escape/cancel and skip for touch",
-      "gap_rank": 29
+      "gap_rank": 29,
+      "updated": "2026-07-10",
+      "evidence": "4b73371 feat(ui): onboarding skips the hotkey-capture step entirely on coarse-pointer/touch devices (isTouch check, touch controls hint); Escape already cancelled capture via existing RESERVED_CODES handling"
     },
     {
       "id": "FEAT-V1-05-04",

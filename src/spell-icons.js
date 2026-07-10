@@ -89,6 +89,22 @@ export function spellIconSvg(id) {
   return SPELL_ICONS[id] || FALLBACK_ICON;
 }
 
+// Blender-rendered voxel-art PNGs (scripts/blender/icons.py, WS-B) layered
+// over the hand-authored SVG glyphs above. The SVG stays the load-bearing
+// fallback (it's inline, always present, and every vfx module already
+// cross-references SPELL_ICONS/spellIconSvg) — the PNG is a progressive
+// enhancement that removes itself via `onerror` if the asset is missing, so
+// callers never need a try/catch or a "does this spell have art yet" check.
+export function spellIconPath(id) {
+  return `assets/icons/spells/${id}.png`;
+}
+
+export function spellIconHtml(id) {
+  const svg = spellIconSvg(id);
+  if (!id) return svg; // empty ability slot — no per-spell art to look up
+  return `${svg}<img class="spell-icon-img" src="${spellIconPath(id)}" alt="" draggable="false" onerror="this.remove()">`;
+}
+
 // Item shape -> glyph icons for the item bar (mirrors ITEMS[].shape in
 // config.js: orb, blade, boots, crown, rune, tome). Same viewBox/style
 // contract as SPELL_ICONS so they drop into .ability-swatch unchanged.

@@ -760,13 +760,17 @@ test("applyDamage reduces hp, records attacker, keeps player alive below max", (
   assert.strictEqual(p.alive, true, "player should still be alive");
 });
 
-test("applyDamage kills player at 0 and returns false thereafter", () => {
+test("applyDamage floors hp at HP_MIN_FLOOR and never kills outright (ring-out is the only kill path)", () => {
   const p = new Player("a", "A", 0);
-  p.applyDamage(9999, "x");
-  assert.strictEqual(p.hp, 0, "hp should clamp to 0");
-  assert.strictEqual(p.alive, false, "player should be dead when hp reaches 0");
-  const r2 = p.applyDamage(1, "x");
-  assert.strictEqual(r2, false, "applyDamage on a dead player should return false");
+  const result = p.applyDamage(9999, "x");
+  assert.strictEqual(result, true, "applyDamage should return true when damage lands");
+  assert.strictEqual(p.hp, CFG.HP_MIN_FLOOR, "hp should clamp to the floor, not 0");
+  assert.strictEqual(p.alive, true, "player should remain alive — HP damage alone is not lethal");
+  // Further damage at the floor keeps the player alive and pinned at the floor.
+  const r2 = p.applyDamage(50, "x");
+  assert.strictEqual(r2, true, "applyDamage should still return true — player is alive at the floor");
+  assert.strictEqual(p.hp, CFG.HP_MIN_FLOOR, "hp should remain at the floor");
+  assert.strictEqual(p.alive, true, "player should still be alive after repeated damage at the floor");
 });
 
 test("shield blocks both knockback (applyHit) and damage (applyDamage skipped)", () => {
@@ -877,13 +881,22 @@ test("fireball bolt depletes hp on hit and death is counted once at 0 hp", () =>
   assert.ok(hitOccurred, `fireball bolt should have depleted hp (before:${hpBefore} after:${hpAfter})`);
 
   // Kill b and confirm death is counted exactly once across multiple ticks.
-  if (b.alive) {
-    b.applyDamage(b.hp, a.id); // kill
-    assert.strictEqual(b.alive, false, "b should be dead after hp reaches 0");
+  // This exercises the sim's death-counting gate (_countedDeath), which is
+  // independent of the HP-floor balance rule — flip to lethal mode locally so
+  // an hp-death can be exercised deterministically, then restore the flag.
+  const prevLethal = CFG.SPELL_DAMAGE_LETHAL;
+  CFG.SPELL_DAMAGE_LETHAL = true;
+  try {
+    if (b.alive) {
+      b.applyDamage(b.hp, a.id); // kill
+      assert.strictEqual(b.alive, false, "b should be dead after hp reaches 0");
+    }
+    // Step several ticks — _countedDeath must gate to exactly one increment.
+    for (let i = 0; i < 5; i++) sim.step(1 / CFG.TICK_RATE);
+    assert.strictEqual(b.deaths, 1, "death should be counted exactly once across multiple ticks");
+  } finally {
+    CFG.SPELL_DAMAGE_LETHAL = prevLethal;
   }
-  // Step several ticks — _countedDeath must gate to exactly one increment.
-  for (let i = 0; i < 5; i++) sim.step(1 / CFG.TICK_RATE);
-  assert.strictEqual(b.deaths, 1, "death should be counted exactly once across multiple ticks");
 });
 
 test("lightning depletes hp on primary and chained targets", () => {
