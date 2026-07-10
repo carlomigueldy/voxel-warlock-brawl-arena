@@ -68,10 +68,24 @@ def build_icons():
     print(f"[build.py] wrote spell icons to {out_dir}")
 
 
+def build_decimate(argv):
+    """WS-I asset-diet pass: `--what decimate --in <glb> [--out ...] [--ratio
+    ...]` shrinks one rigged GLB in place (mesh decimate + texture
+    recompress). See decimate_glb.py's module docstring for why both matter.
+    `argv` is whatever CLI args followed `--what decimate` — decimate_glb.py
+    owns its own argparse for those, separate from this file's `--what`."""
+    import decimate_glb  # local import: keeps this stub's import list minimal until used
+
+    decimate_glb.main(argv)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Voxel Warlock Brawl Arena asset pipeline")
-    parser.add_argument("--what", choices=["test", "props", "icons", "all"], required=True)
-    args = parser.parse_args(_compat.get_args())
+    parser.add_argument("--what", choices=["test", "props", "icons", "all", "decimate"], required=True)
+    # parse_known_args (not parse_args): "decimate" carries its own --in/--out/
+    # --ratio/etc. args that this parser doesn't know about and shouldn't
+    # validate — they're forwarded to decimate_glb.main() below untouched.
+    args, remaining = parser.parse_known_args(_compat.get_args())
 
     if args.what in ("test", "all"):
         build_test()
@@ -79,6 +93,8 @@ def main():
         build_props()
     if args.what in ("icons", "all"):
         build_icons()
+    if args.what == "decimate":
+        build_decimate(remaining)
 
 
 if __name__ == "__main__":

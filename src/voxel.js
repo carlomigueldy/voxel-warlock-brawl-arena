@@ -9,6 +9,7 @@ import {
 } from "./lowpoly.js";
 import { VFX_REGISTRY } from "./vfx/duotone.js";
 import { MOB_MODEL_ASSETS, mobModelReady, loadMobModelTemplate, buildMobModelInstance } from "./mobModel.js";
+import { getParticleScale } from "./quality.js";
 
 function box(w, h, d, color, x = 0, y = 0, z = 0, flat = true) {
   const geo = new THREE.BoxGeometry(w, h, d);
@@ -449,7 +450,11 @@ export function buildRune(color) {
 // with a per-frame `update(dt)` and a `done` flag the renderer polls. Particles
 // are faceted shards (octahedra) so impacts scatter sharp flat-shaded fragments.
 export function buildBurst(color, opts = {}) {
-  const count = Math.min(opts.count || 14, CFG.BURST_MAX_PARTICLES);
+  // Render-only quality scaling (WS-I): the low/med/high preset's
+  // particleScale trims shard counts on lower-end devices. Sim-side hit/
+  // damage resolution never reads this — purely cosmetic.
+  const cap = Math.max(1, Math.round(CFG.BURST_MAX_PARTICLES * getParticleScale()));
+  const count = Math.min(opts.count || 14, cap);
   const speed = opts.speed || 6;
   const size = opts.size || 0.22;
   const life = opts.life || 0.5;
@@ -782,7 +787,10 @@ export function buildHazardDetails(size, y, hazard) {
     );
   };
 
-  for (let i = 0; i < detail.count; i++) {
+  // Render-only quality scaling (WS-I): ambient hazard motes are pure
+  // atmosphere, so their count scales with the active particleScale preset.
+  const count = Math.max(0, Math.round(detail.count * getParticleScale()));
+  for (let i = 0; i < count; i++) {
     const m = makeMesh();
     const px = (Math.random() * 2 - 1) * half * 0.55;
     const pz = (Math.random() * 2 - 1) * half * 0.55;

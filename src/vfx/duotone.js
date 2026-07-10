@@ -20,6 +20,7 @@ import { PROJECTILE_VFX } from "./projectiles.js";
 import { AOE_VFX } from "./aoe.js";
 import { BEAM_VFX } from "./beams.js";
 import { UTILITY_VFX } from "./utility.js";
+import { getParticleScale } from "../quality.js";
 
 // ---------------------------------------------------------------------------
 // Color helpers — derive the duotone accent tint from a spell's base color.
@@ -155,7 +156,12 @@ const _trailShardGeo = new THREE.OctahedronGeometry(0.5, 0);
 const _shardPool = [];
 function _ensurePool() {
   if (_shardPool.length) return;
-  for (let i = 0; i < CFG.TRAIL_POOL_SIZE; i++) {
+  // Render-only quality scaling (WS-I): sized once, lazily, on first trail
+  // spawn — so this reads whatever particleScale is active by match start
+  // (a later live quality change won't retroactively resize an already-built
+  // pool, only the per-burst/per-hazard-detail counts above do that).
+  const size = Math.max(1, Math.round(CFG.TRAIL_POOL_SIZE * getParticleScale()));
+  for (let i = 0; i < size; i++) {
     const mat = new THREE.MeshLambertMaterial({
       color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.1, flatShading: true,
       transparent: true, opacity: 0,

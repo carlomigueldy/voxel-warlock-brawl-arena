@@ -18,7 +18,6 @@ import { computeDecorationPlacements } from "./decorations.js";
 import { buildDecorations } from "./decorationsView.js";
 import { preloadAllPropModels } from "./propModel.js";
 import {
-  loadCharacterTemplate,
   characterReady,
   buildCharacterInstance,
 } from "./character.js";
@@ -33,14 +32,19 @@ import { effectPos } from "./renderer-util.js";
 import { VFX_REGISTRY, getVfx } from "./vfx/duotone.js";
 import { buildChainBeam } from "./vfx/beams.js";
 import { getReticle } from "./vfx/reticles.js";
+import { resolveTier, QUALITY_PRESETS, registerQualityHandler } from "./quality.js";
 
 export class GameRenderer {
   constructor(canvas) {
     this.canvas = canvas;
+    // Quality tier (WS-I): resolved once at construction from ?quality= /
+    // localStorage / device auto-detect (see quality.js). setQualityTier()
+    // below re-applies this live when the settings overlay changes it.
+    this._qualityPreset = QUALITY_PRESETS[resolveTier()];
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this._qualityPreset.pixelRatioCap));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = this._qualityPreset.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
@@ -95,22 +99,21 @@ export class GameRenderer {
     this._playerMeta = null;
     this._reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-    // Preload every selectable character so any player's pick renders as a GLB
-    // (falling back to the voxel warlock per-player only if its load fails).
-    for (const ch of CFG.CHARACTERS) {
-      loadCharacterTemplate(ch.id)
-        .then(() => this._upgradePlayersToGLB())
-        .catch((err) => console.warn(`Character GLB '${ch.id}' unavailable, using voxel fallback:`, err));
-    }
+    // Character GLB preload is NOT triggered here (WS-I asset-diet pass):
+    // src/loader.js already preloads the locally-selected character fully
+    // before the loader gate's Enter button unlocks, and src/preview.js
+    // preloads every selectable character for the menu turntable carousel.
+    // Both share character.js's `_loadPromises` cache with this constructor's
+    // former loop, so re-triggering all 4 here was pure duplication — any
+    // player mesh built before its template resolves still upgrades in place
+    // via _upgradePlayersToGLB() once one of those other callers finishes it.
 
-    // Preload the 4 big-mob Meshy GLBs so mobs render as rigged models instead
-    // of the procedural fallback. Mobs are built once and cached at spawn, so
+    // The 4 big-mob Meshy GLBs are deferred to the first non-lobby snapshot
+    // (see apply()) rather than fired here at construction time, so they
+    // don't compete with character/icon fetches for bandwidth during the
+    // initial loader-screen load. Mobs are built once and cached at spawn, so
     // any built before its template resolves gets upgraded in-place once ready.
-    for (const type of Object.keys(MOB_MODEL_ASSETS)) {
-      loadMobModelTemplate(type)
-        ?.then(() => this._upgradeMobsToGLB())
-        .catch((err) => console.warn(`Mob GLB '${type}' unavailable, using voxel fallback:`, err));
-    }
+    this._mobPreloadStarted = false;
 
     // Preload every dungeon-prop GLB (WS-C). Decorations are rebuilt wholesale
     // every round via _rebuildMapMeshes, so — unlike characters/mobs above —
@@ -118,7 +121,34 @@ export class GameRenderer {
     // whichever templates have resolved by the next round's rebuild get used.
     preloadAllPropModels();
 
+    // Let the settings overlay (src/ui.js) push live quality changes here via
+    // window.__applyQualityTier -> quality.js -> this hook, without quality.js
+    // needing to import renderer.js back (it's already imported above).
+    registerQualityHandler((preset) => this.setQualityTier(preset));
+
     window.addEventListener("resize", () => this._onResize());
+  }
+
+  // Live-apply a quality preset (pixel ratio cap, shadow toggle). Particle
+  // scaling is read directly from quality.js's getParticleScale() at each VFX
+  // use site (burst/trail/hazard-detail builders), not stored here.
+  setQualityTier(preset) {
+    this._qualityPreset = preset;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, preset.pixelRatioCap));
+    this.renderer.shadowMap.enabled = preset.shadows;
+    if (this._sun) this._sun.castShadow = preset.shadows;
+  }
+
+  // Preload the 4 big-mob Meshy GLBs (see the constructor comment above for
+  // why this is deferred rather than fired eagerly). Idempotent — apply()
+  // guards on this._mobPreloadStarted so it only runs once per renderer.
+  _preloadMobModels() {
+    this._mobPreloadStarted = true;
+    for (const type of Object.keys(MOB_MODEL_ASSETS)) {
+      loadMobModelTemplate(type)
+        ?.then(() => this._upgradeMobsToGLB())
+        .catch((err) => console.warn(`Mob GLB '${type}' unavailable, using voxel fallback:`, err));
+    }
   }
 
   setAudio(audio) { this.audio = audio; }
@@ -135,7 +165,7 @@ export class GameRenderer {
     this.scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xfff0e0, 1.1);
     sun.position.set(20, 40, 20);
-    sun.castShadow = true;
+    sun.castShadow = this._qualityPreset.shadows;
     sun.shadow.mapSize.set(1024, 1024);
     sun.shadow.camera.left = -40;
     sun.shadow.camera.right = 40;
@@ -143,6 +173,7 @@ export class GameRenderer {
     sun.shadow.camera.bottom = -40;
     sun.shadow.camera.far = 120;
     this.scene.add(sun);
+    this._sun = sun; // referenced by setQualityTier() for live shadow toggling
     // Hazard glow from below (color is themed per map in _applyHazardTheme).
     const glow = new THREE.PointLight(0xff3a1e, 0.8, 60);
     glow.position.set(0, -6, 0);
@@ -569,6 +600,12 @@ export class GameRenderer {
   // Apply a snapshot from the simulation/network.
   apply(snapshot, playerMeta) {
     if (!snapshot) return;
+    // Kick off the deferred big-mob GLB preload (see constructor comment)
+    // once the match has left the lobby — well before mobs actually spawn in
+    // PLAYING, but off the critical path of the initial loader-screen fetch.
+    if (!this._mobPreloadStarted && snapshot.phase && snapshot.phase !== "lobby") {
+      this._preloadMobModels();
+    }
     // Cached so showChatBubble() (called directly by main.js on a chat event,
     // outside this per-frame pass) can resolve userId for the mute check.
     this._playerMeta = playerMeta;
