@@ -1135,8 +1135,9 @@ body.touch-enabled .ability-slot.is-selected {
   animation: abilitySelectedPulse 1.1s ease-in-out infinite;
 }
 @keyframes abilitySelectedPulse {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-1px) scale(1.03); }
+  /* glow-only pulse: no transform, so the tap target never moves under a thumb */
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.18) drop-shadow(0 0 6px rgba(255, 210, 60, 0.5)); }
 }
 .ability-slot.ready .ability-swatch { animation: abilityReadyFlash 0.5s ease-out; }
 @keyframes abilityReadyFlash {
